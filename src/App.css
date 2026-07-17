@@ -1,6 +1,113 @@
-@import url("https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap");
 @import "tailwindcss";
 
+@theme {
+  /* Colors */
+  --color-primary: #004ac6;
+  --color-primary-container: #2563eb;
+  --color-primary-fixed-dim: #b4c5ff;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #eeefff;
+  --color-on-primary-fixed-variant: #003ea8;
+
+  --color-secondary: #006c49;
+  --color-secondary-container: #6cf8bb;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-fixed-variant: #005236;
+
+  --color-tertiary: #ad0033;
+  --color-tertiary-container: #d22348;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-fixed-variant: #92002a;
+
+  --color-surface: #f8f9ff;
+  --color-surface-bright: #f8f9ff;
+  --color-surface-dim: #cbdbf5;
+  --color-surface-variant: #d3e4fe;
+  --color-surface-container: #e5eeff;
+  --color-surface-container-high: #dce9ff;
+  --color-surface-container-highest: #d3e4fe;
+  --color-surface-container-low: #eff4ff;
+
+  --color-on-surface: #0b1c30;
+  --color-on-surface-variant: #434655;
+
+  --color-outline: #737686;
+  --color-outline-variant: #c3c6d7;
+
+  --color-inverse-surface: #213145;
+  --color-inverse-on-surface: #eaf1ff;
+
+  --color-background: #f8f9ff;
+  --color-on-background: #0b1c30;
+  --color-deep-navy: #0a121e;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-base: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 24px;
+  --spacing-gutter: 24px;
+  --spacing-margin: 32px;
+  --spacing-lg: 40px;
+  --spacing-xl: 64px;
+
+  /* Font sizes */
+  --text-headline-xl: 2.25rem;
+  --text-headline-xl--line-height: 2.75rem;
+  --text-headline-xl--font-weight: 700;
+  --text-headline-lg: 1.5rem;
+  --text-headline-lg--line-height: 2rem;
+  --text-headline-lg--font-weight: 600;
+  --text-headline-lg-mobile: 1.25rem;
+  --text-headline-lg-mobile--line-height: 1.75rem;
+  --text-headline-lg-mobile--font-weight: 600;
+  --text-body-md: 1rem;
+  --text-body-md--line-height: 1.5rem;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.25rem;
+  --text-label-md: 0.75rem;
+  --text-label-md--line-height: 1rem;
+  --text-label-md--letter-spacing: 0.05em;
+  --text-label-md--font-weight: 600;
+}
+
 * {
-      font-family: "Nunito", sans-serif;
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  background-color: #0b1c30;
+  color: #eaf1ff;
+  overflow: hidden;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
+
+.glass-card {
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.calendar-cell {
+  border-right: 1px solid rgba(195, 198, 215, 0.15);
+  border-bottom: 1px solid rgba(195, 198, 215, 0.15);
+  transition: background-color 0.15s;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-cell:hover {
+  background: rgba(0, 74, 198, 0.04);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
