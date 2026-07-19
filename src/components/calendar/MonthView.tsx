@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
 import { isDoneOn, isDueOn } from '../../habitLogic';
-import { expandEvents, isBarOccurrence, shortTime, type Occurrence } from '../../eventLogic';
+import { expandEvents, isBarOccurrence, shortTime } from '../../eventLogic';
 import { HABIT_COLORS } from '../habitColors';
 import AddModal from '../AddModal';
 import { assignLanes, weekSegments } from './spans';
@@ -84,7 +84,7 @@ export default function MonthView() {
         {weeks.map(week => {
           const weekDays = week.map(d => fmt(d.date));
 
-          const periodLanes = assignLanes(weekSegments(periods, week.length === 7 ? weekDays : weekDays));
+          const periodLanes = assignLanes(weekSegments(periods, weekDays));
           const nPeriodLanes = periodLanes.length === 0 ? 0 : Math.max(...periodLanes.map(l => l.lane)) + 1;
 
           const barOccs = occurrences.filter(isBarOccurrence);

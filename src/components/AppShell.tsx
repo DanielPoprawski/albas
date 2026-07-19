@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { remindDueHabits } from '../notifications';
+import { remindDueEvents, remindDueHabits } from '../notifications';
 import TopBar from './TopBar';
 import Sidebar from './Sidebar';
 import Calendar from './Calendar';
@@ -8,19 +8,25 @@ import AddModal from './AddModal';
 import { useApp } from '../context/AppContext';
 import TaskList from './TaskList';
 import HabitTracker from './HabitTracker';
+import PeriodsSection from './PeriodsSection';
 
 export default function AppShell() {
   const [showModal, setShowModal] = useState(false);
-  const { activeView, habits, loaded } = useApp();
+  const { activeView, habits, events, loaded } = useApp();
 
-  // Remind about due habits on launch, then re-check periodically so a
-  // long-running app still notifies after midnight.
+  // Remind about due habits and upcoming events on launch, then re-check
+  // periodically. 5-minute cadence so short event offsets (10 min) can't
+  // fall between polls; habit reminders self-dedupe to once a day.
   useEffect(() => {
     if (!loaded) return; // don't notify against empty pre-load state
-    remindDueHabits(habits);
-    const id = setInterval(() => remindDueHabits(habits), 30 * 60 * 1000);
+    const check = () => {
+      remindDueHabits(habits);
+      remindDueEvents(events);
+    };
+    check();
+    const id = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [habits, loaded]);
+  }, [habits, events, loaded]);
 
   if (!loaded) return null; // load is a few ms; avoids seed/empty flicker
 
@@ -40,6 +46,7 @@ export default function AppShell() {
           {activeView === 'habits' && (
             <div className="glass-card rounded-2xl p-md h-full overflow-auto">
               <HabitTracker />
+              <PeriodsSection />
             </div>
           )}
           {activeView === 'settings' && (
