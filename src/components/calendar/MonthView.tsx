@@ -1,23 +1,26 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { fmt } from '../../dates';
-import { isDoneOn, isDueOn } from '../../habitLogic';
-import { expandEvents, isBarOccurrence, shortTime } from '../../eventLogic';
-import { HABIT_COLORS } from '../habitColors';
+import { fmt, rotateWeek, weekdayAt } from '../../dates';
+import { isDoneOn, isDueOn, isRepeating, isDone } from '../../todoLogic';
+import { expandEvents, isBarOccurrence, isLongOccurrence, shortTime } from '../../eventLogic';
+import { colorHex, PILL_BG_ALPHA } from '../../colors';
 import AddModal from '../AddModal';
 import { assignLanes, weekSegments } from './spans';
-import type { CalendarEvent } from '../../types';
+import type { CalendarEvent, FirstDayOfWeek, Todo } from '../../types';
 
-export function getCalendarDays(month: Date): { date: Date; isCurrentMonth: boolean }[] {
+export function getCalendarDays(
+  month: Date,
+  weekStart: FirstDayOfWeek = 1,
+): { date: Date; isCurrentMonth: boolean }[] {
   const year = month.getFullYear();
   const m = month.getMonth();
 
   const firstDay = new Date(year, m, 1);
   const lastDay = new Date(year, m + 1, 0);
 
-  // Monday-start offset
-  const startOffset = (firstDay.getDay() + 6) % 7;
-  const endOffset = (7 - lastDay.getDay()) % 7;
+  // pad back to the week start, and forward to the last day of that week
+  const startOffset = (firstDay.getDay() - weekStart + 7) % 7;
+  const endOffset = (weekStart + 6 - lastDay.getDay() + 7) % 7;
 
   const start = new Date(firstDay);
   start.setDate(start.getDate() - startOffset);
@@ -33,17 +36,35 @@ export function getCalendarDays(month: Date): { date: Date; isCurrentMonth: bool
   return days;
 }
 
-const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-const PERIOD_LANE_H = 7;  // 5px bar + 2px gap
-const EVENT_LANE_H = 20;  // 18px bar + 2px gap
+// Sunday-first to match getDay(); rotated into display order via rotateWeek
+const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+/** A phone column is ~50px — three letters plus padding is wider than that. */
+const WEEKDAYS_NARROW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const EVENT_LANE_H = 20; // 18px bar + 2px gap
 const MAX_BAR_LANES = 3;
 
-export default function MonthView() {
-  const { currentMonth, selectedDate, setSelectedDate, tasks, habits, events, periods } = useApp();
-  const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
+/**
+ * Day-cell wash for the week-plus spans ("periods") covering it: a flat tint
+ * for one, diagonal zig-zag stripes of each color for overlaps.
+ */
+function periodBackground(hexes: string[]): string | undefined {
+  if (hexes.length === 0) return undefined;
+  if (hexes.length === 1) return `${hexes[0]}26`;
+  const stripe = 9; // px per color band
+  const stops = hexes
+    .map((hex, i) => `${hex}2e ${i * stripe}px, ${hex}2e ${(i + 1) * stripe}px`)
+    .join(', ');
+  return `repeating-linear-gradient(135deg, ${stops})`;
+}
+
+export default function MonthView({ isMobile = false }: { isMobile?: boolean }) {
+  const { currentMonth, selectedDate, setSelectedDate, setCalendarMode, todos, events, firstDayOfWeek } = useApp();
+  const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
+  const [editTodo, setEditTodo] = useState<Todo | null>(null);
+  const [addDate, setAddDate] = useState<string | null>(null);
 
   const todayStr = fmt(new Date());
-  const days = getCalendarDays(currentMonth);
+  const days = getCalendarDays(currentMonth, firstDayOfWeek);
   const weeks: { date: Date; isCurrentMonth: boolean }[][] = [];
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
@@ -54,50 +75,76 @@ export default function MonthView() {
     [events, rangeStart, rangeEnd]
   );
 
-  // Tasks render as pills, so dots represent habits only:
+  const repeatingTodos = todos.filter(isRepeating);
+  const onceTodos = todos.filter(t => !isRepeating(t));
+
+  // A phone cell fits one legible chip; two only truncate each other away.
+  const pillCap = isMobile ? 1 : 2;
+  const pillClass = isMobile
+    ? 'text-[9px] font-bold px-0.5 rounded-sm truncate hover:opacity-80'
+    : 'text-[10px] font-bold px-xs py-0.5 rounded truncate hover:opacity-80';
+  const pillBorder = isMobile ? '2px' : '3px';
+
+  // One-time to-dos render as pills, so dots represent repeating ones only:
   // filled dot = completed, hollow ring = due but not (yet) done
   function getDateDots(dateStr: string) {
-    return habits
-      .filter(h => isDueOn(h, dateStr) || isDoneOn(h, dateStr))
-      .map(h => ({ hex: HABIT_COLORS[h.colorKey].hex, done: isDoneOn(h, dateStr) }))
+    return repeatingTodos
+      .filter(t => isDueOn(t, dateStr, firstDayOfWeek) || isDoneOn(t, dateStr))
+      .map(t => ({ hex: colorHex(t.colorKey), done: isDoneOn(t, dateStr) }))
       .slice(0, 4);
   }
 
   return (
-    <div className="flex-1 rounded-xl border overflow-hidden shadow-2xl flex flex-col" style={{ borderColor: 'rgba(195,198,215,0.2)', backgroundColor: '#f8f9ff' }}>
+    <div
+      className={`flex-1 min-h-0 overflow-hidden flex flex-col bg-sheet ${
+        // full bleed on a phone — the grid meets both screen edges
+        isMobile ? '' : 'rounded-xl border shadow-2xl border-sheet-border'
+      }`}
+    >
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b flex-shrink-0" style={{ borderColor: 'rgba(195,198,215,0.3)', backgroundColor: 'rgba(229,238,255,0.5)' }}>
-        {WEEKDAYS.map((day, i) => (
-          <div
-            key={day}
-            className={`py-sm text-center text-label-md font-bold ${
-              i >= 5 ? 'text-on-surface' : 'text-outline'
-            }`}
-          >
-            {day}
-          </div>
-        ))}
+      <div className="grid grid-cols-7 border-b flex-shrink-0 border-sheet-line bg-sheet-header">
+        {rotateWeek(isMobile ? WEEKDAYS_NARROW : WEEKDAYS, firstDayOfWeek).map((day, i) => {
+          // weekend follows the actual weekday, not the column index — under a
+          // Sunday start, columns 5 and 6 are Friday and Saturday
+          const dayNum = weekdayAt(i, firstDayOfWeek);
+          const isWeekendCol = dayNum === 0 || dayNum === 6;
+          return (
+            <div
+              key={i}
+              className={
+                isMobile
+                  ? 'py-1 text-center text-[9px] font-bold text-sheet-txt-faint'
+                  : `py-sm text-center text-label-md font-bold ${
+                      isWeekendCol ? 'text-sheet-txt' : 'text-sheet-txt-faint'
+                    }`
+              }
+            >
+              {day}
+            </div>
+          );
+        })}
       </div>
 
       {/* Week rows */}
-      <div className="flex-1 flex flex-col overflow-y-auto scrollbar-hide">
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
         {weeks.map(week => {
           const weekDays = week.map(d => fmt(d.date));
 
-          const periodLanes = assignLanes(weekSegments(periods, weekDays));
-          const nPeriodLanes = periodLanes.length === 0 ? 0 : Math.max(...periodLanes.map(l => l.lane)) + 1;
+          // week-plus spans (trips, programs — the old periods) tint their day
+          // cells instead of taking a lane
+          const longOccs = occurrences.filter(isLongOccurrence);
 
-          const barOccs = occurrences.filter(isBarOccurrence);
+          const barOccs = occurrences.filter(o => isBarOccurrence(o) && !isLongOccurrence(o));
           const allBarLanes = assignLanes(weekSegments(barOccs, weekDays));
           const barLanes = allBarLanes.filter(l => l.lane < MAX_BAR_LANES);
           // bars that didn't fit fall back to pills in their start cell
           const overflowBars = allBarLanes.filter(l => l.lane >= MAX_BAR_LANES).map(l => l.seg.item);
           const nBarLanes = barLanes.length === 0 ? 0 : Math.max(...barLanes.map(l => l.lane)) + 1;
 
-          const barsHeight = nPeriodLanes * PERIOD_LANE_H + nBarLanes * EVENT_LANE_H;
+          const barsHeight = nBarLanes * EVENT_LANE_H;
 
           return (
-            <div key={weekDays[0]} className="flex-1 relative min-h-[92px]">
+            <div key={weekDays[0]} className={`flex-1 relative ${isMobile ? 'min-h-[76px]' : 'min-h-[92px]'}`}>
               {/* Day cells */}
               <div className="grid grid-cols-7 h-full">
                 {week.map(({ date, isCurrentMonth }) => {
@@ -106,27 +153,79 @@ export default function MonthView() {
                   const isSelected = dateStr === selectedDate;
                   const dots = getDateDots(dateStr);
                   const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                  const dayTasks = tasks.filter(t => t.date === dateStr);
+                  const dayOnce = onceTodos.filter(t => isDueOn(t, dateStr, firstDayOfWeek));
                   // timed single-day events + bars that overflowed the lane cap
                   const dayPillOccs = occurrences.filter(
                     o => o.startDate === dateStr &&
                       (!isBarOccurrence(o) || overflowBars.some(b => b.key === o.key))
                   );
-                  const pillCount = dayPillOccs.length + dayTasks.length;
+                  // One cap across both kinds, so the "+N" count is honest
+                  const shownOccs = dayPillOccs.slice(0, pillCap);
+                  const shownOnce = dayOnce.slice(0, Math.max(0, pillCap - shownOccs.length));
+                  const hiddenCount =
+                    dayPillOccs.length + dayOnce.length - shownOccs.length - shownOnce.length;
+
+                  const cellLongs = longOccs.filter(o => o.startDate <= dateStr && o.endDate >= dateStr);
+                  const background = periodBackground(cellLongs.map(o => colorHex(o.event.colorKey)));
+                  const longStarts = cellLongs.filter(o => o.startDate === dateStr);
+                  const longEnds = cellLongs.filter(o => o.endDate === dateStr);
 
                   return (
                     <div
                       key={dateStr}
-                      className={`calendar-cell p-sm cursor-pointer ${!isCurrentMonth ? 'opacity-30' : ''} ${isSelected && !isToday ? 'bg-blue-50' : ''}`}
-                      onClick={() => setSelectedDate(dateStr)}
+                      className={`calendar-cell relative cursor-pointer ${isMobile ? 'p-0.5' : 'p-sm'} ${!isCurrentMonth ? 'opacity-30' : ''} ${isSelected && !isToday && !background ? 'bg-primary/10' : ''}`}
+                      style={{ background }}
+                      // A phone tile is too small to be a useful agenda, so
+                      // tapping drills into that day. Desktop has the room, so
+                      // clicking there goes straight to "add on this date".
+                      onClick={() => {
+                        setSelectedDate(dateStr);
+                        if (isMobile) setCalendarMode('day');
+                        else setAddDate(dateStr);
+                      }}
                     >
+                      {/* half-border corner brackets marking period start/end days */}
+                      {longStarts.map(o => (
+                        <span key={`s-${o.key}`} className="pointer-events-none">
+                          <span
+                            className="absolute top-0 left-0 w-2 h-2"
+                            style={{ borderTop: `2px solid ${colorHex(o.event.colorKey)}`, borderLeft: `2px solid ${colorHex(o.event.colorKey)}` }}
+                          />
+                          <span
+                            className="absolute bottom-0 left-0 w-2 h-2"
+                            style={{ borderBottom: `2px solid ${colorHex(o.event.colorKey)}`, borderLeft: `2px solid ${colorHex(o.event.colorKey)}` }}
+                          />
+                        </span>
+                      ))}
+                      {longEnds.map(o => (
+                        <span key={`e-${o.key}`} className="pointer-events-none">
+                          <span
+                            className="absolute top-0 right-0 w-2 h-2"
+                            style={{ borderTop: `2px solid ${colorHex(o.event.colorKey)}`, borderRight: `2px solid ${colorHex(o.event.colorKey)}` }}
+                          />
+                          <span
+                            className="absolute bottom-0 right-0 w-2 h-2"
+                            style={{ borderBottom: `2px solid ${colorHex(o.event.colorKey)}`, borderRight: `2px solid ${colorHex(o.event.colorKey)}` }}
+                          />
+                        </span>
+                      ))}
                       <div className="flex items-start justify-between">
                         {isToday ? (
-                          <span className="w-7 h-7 flex items-center justify-center bg-primary text-white rounded-full font-bold text-body-sm shadow-lg">
+                          // flex-none: as a flex child it would otherwise
+                          // stretch and render as a pill rather than a circle
+                          <span
+                            className={`flex-none flex items-center justify-center bg-primary text-on-primary rounded-full font-bold shadow-lg ${
+                              isMobile ? 'w-6 h-6 text-[11px]' : 'w-7 h-7 text-body-sm'
+                            }`}
+                          >
                             {date.getDate()}
                           </span>
                         ) : (
-                          <span className={`text-body-sm ${isWeekend ? 'font-bold text-on-surface' : 'text-on-surface-variant'}`}>
+                          <span
+                            className={`${isMobile ? 'text-[11px] px-0.5' : 'text-body-sm'} ${
+                              isWeekend ? 'font-bold text-sheet-txt' : 'text-sheet-txt-muted'
+                            }`}
+                          >
                             {date.getDate()}
                           </span>
                         )}
@@ -145,46 +244,66 @@ export default function MonthView() {
                         )}
                       </div>
 
+                      {/* period name, shown once on its start day */}
+                      {longStarts.map(o => (
+                        <div
+                          key={`t-${o.key}`}
+                          onClick={e => { e.stopPropagation(); setEditEvent({ event: o.event, date: o.startDate }); }}
+                          className="text-[9px] font-bold uppercase tracking-wide truncate hover:opacity-70"
+                          style={{ color: colorHex(o.event.colorKey) }}
+                        >
+                          {o.event.title}
+                        </div>
+                      ))}
+
                       {/* space reserved for the spanning bars overlay */}
                       {barsHeight > 0 && <div style={{ height: barsHeight }} />}
 
-                      {/* Event + task pills */}
-                      <div className="mt-auto flex flex-col gap-0.5 overflow-hidden">
-                        {dayPillOccs.slice(0, 2).map(o => {
-                          const hex = HABIT_COLORS[o.event.colorKey].hex;
+                      {/* Event + one-time to-do pills */}
+                      {/* Phone cells are tall enough that bottom-pinned chips
+                          float away from their date — group them instead. */}
+                      <div className={`flex flex-col gap-0.5 overflow-hidden ${isMobile ? 'mt-0.5' : 'mt-auto'}`}>
+                        {shownOccs.map(o => {
+                          const hex = colorHex(o.event.colorKey);
                           return (
                             <div
                               key={o.key}
-                              onClick={e => { e.stopPropagation(); setEditEvent(o.event); }}
-                              className="text-[10px] font-bold px-xs py-0.5 rounded truncate hover:opacity-80"
+                              onClick={e => { e.stopPropagation(); setEditEvent({ event: o.event, date: o.startDate }); }}
+                              className={pillClass}
                               style={{
-                                backgroundColor: `${hex}1a`,
-                                borderLeft: `3px solid ${hex}`,
+                                backgroundColor: `${hex}${PILL_BG_ALPHA}`,
+                                borderLeft: `${pillBorder} solid ${hex}`,
                                 color: hex,
                               }}
                             >
-                              {o.event.startTime && !o.event.allDay && (
+                              {!isMobile && o.event.startTime && !o.event.allDay && (
                                 <span className="font-normal opacity-70">{shortTime(o.event.startTime)} </span>
                               )}
                               {o.event.title}
                             </div>
                           );
                         })}
-                        {dayTasks.slice(0, Math.max(0, 2 - dayPillOccs.length)).map(task => (
-                          <div
-                            key={task.id}
-                            className="text-[10px] font-bold px-xs py-0.5 rounded truncate"
-                            style={{
-                              backgroundColor: 'rgba(0,74,198,0.1)',
-                              borderLeft: '3px solid #004ac6',
-                              color: '#003ea8',
-                            }}
-                          >
-                            {task.title}
+                        {shownOnce.map(todo => {
+                          const hex = colorHex(todo.colorKey);
+                          return (
+                            <div
+                              key={todo.id}
+                              onClick={e => { e.stopPropagation(); setEditTodo(todo); }}
+                              className={`${pillClass} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                              style={{
+                                backgroundColor: `${hex}${PILL_BG_ALPHA}`,
+                                borderLeft: `${pillBorder} solid ${hex}`,
+                                color: hex,
+                              }}
+                            >
+                              {todo.name}
+                            </div>
+                          );
+                        })}
+                        {hiddenCount > 0 && (
+                          <div className={`text-[9px] text-sheet-txt-faint ${isMobile ? 'pl-0.5' : 'pl-xs'}`}>
+                            +{hiddenCount}{isMobile ? '' : ' more'}
                           </div>
-                        ))}
-                        {pillCount > 2 && (
-                          <div className="text-[9px] text-outline pl-xs">+{pillCount - 2} more</div>
                         )}
                       </div>
                     </div>
@@ -192,45 +311,23 @@ export default function MonthView() {
                 })}
               </div>
 
-              {/* Spanning bars overlay: period lanes on top, then all-day/multi-day event bars */}
+              {/* Spanning bars overlay: all-day/multi-day event bars */}
               {barsHeight > 0 && (
                 <div
                   className="absolute left-0 right-0 grid grid-cols-7 pointer-events-none"
-                  style={{ top: 34, gridAutoRows: 'min-content' }}
+                  // clears the day-number row, which is shorter under p-0.5
+                  style={{ top: isMobile ? 22 : 34, gridAutoRows: 'min-content' }}
                 >
-                  {periodLanes.map(({ seg, lane }) => {
-                    const hex = HABIT_COLORS[seg.item.colorKey].hex;
-                    return (
-                      <div
-                        key={`p-${seg.item.id}`}
-                        title={seg.item.name}
-                        className="pointer-events-auto cursor-pointer"
-                        style={{
-                          gridColumn: `${seg.startCol} / span ${seg.span}`,
-                          gridRow: lane + 1,
-                          height: 5,
-                          marginBottom: 2,
-                          marginLeft: seg.startsHere ? 6 : 0,
-                          marginRight: seg.endsHere ? 6 : 0,
-                          borderRadius: seg.startsHere && seg.endsHere ? 9999
-                            : seg.startsHere ? '9999px 0 0 9999px'
-                            : seg.endsHere ? '0 9999px 9999px 0' : 0,
-                          backgroundColor: hex,
-                          opacity: 0.65,
-                        }}
-                      />
-                    );
-                  })}
                   {barLanes.map(({ seg, lane }) => {
-                    const hex = HABIT_COLORS[seg.item.event.colorKey].hex;
+                    const hex = colorHex(seg.item.event.colorKey);
                     return (
                       <div
                         key={seg.item.key}
-                        onClick={e => { e.stopPropagation(); setEditEvent(seg.item.event); }}
+                        onClick={e => { e.stopPropagation(); setEditEvent({ event: seg.item.event, date: seg.item.startDate }); }}
                         className="pointer-events-auto cursor-pointer text-[10px] font-bold px-xs truncate hover:opacity-90"
                         style={{
                           gridColumn: `${seg.startCol} / span ${seg.span}`,
-                          gridRow: nPeriodLanes + lane + 1,
+                          gridRow: lane + 1,
                           height: 18,
                           lineHeight: '18px',
                           marginBottom: 2,
@@ -254,7 +351,9 @@ export default function MonthView() {
         })}
       </div>
 
-      {editEvent && <AddModal editEvent={editEvent} onClose={() => setEditEvent(null)} />}
+      {editEvent && <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />}
+      {editTodo && <AddModal editTodo={editTodo} onClose={() => setEditTodo(null)} />}
+      {addDate && <AddModal defaultDate={addDate} defaultType="event" onClose={() => setAddDate(null)} />}
     </div>
   );
 }

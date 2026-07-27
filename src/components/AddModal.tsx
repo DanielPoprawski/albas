@@ -1,71 +1,63 @@
 import { useState } from 'react';
-import type { AddType, CalendarEvent, Habit, Period, Task } from '../types';
+import type { AddType, CalendarEvent, Todo } from '../types';
 import { SegmentedControl } from './forms/shared';
-import TaskForm from './forms/TaskForm';
-import HabitForm from './forms/HabitForm';
+import TodoForm from './forms/TodoForm';
 import EventForm from './forms/EventForm';
-import PeriodForm from './forms/PeriodForm';
 
 interface Props {
   onClose: () => void;
-  editTask?: Task;
-  editHabit?: Habit;
+  editTodo?: Todo;
   editEvent?: CalendarEvent;
-  editPeriod?: Period;
+  /** Start date of the occurrence that was clicked (recurring-event deletes). */
+  editEventDate?: string | null;
+  /** Pre-fill the date fields, e.g. when adding from a calendar day. */
+  defaultDate?: string | null;
+  defaultType?: AddType;
 }
 
-const TYPE_LABELS: Record<AddType, string> = {
-  task: 'Task',
-  habit: 'Habit',
-  event: 'Event',
-  period: 'Period',
-};
-
-export default function AddModal({ onClose, editTask, editHabit, editEvent, editPeriod }: Props) {
-  const isEditing = !!editTask || !!editHabit || !!editEvent || !!editPeriod;
+export default function AddModal({ onClose, editTodo, editEvent, editEventDate, defaultDate, defaultType }: Props) {
+  const isEditing = !!editTodo || !!editEvent;
   const [type, setType] = useState<AddType>(
-    editHabit ? 'habit' : editEvent ? 'event' : editPeriod ? 'period' : 'task'
+    editTodo ? 'todo' : editEvent ? 'event' : defaultType ?? 'todo'
   );
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(10,18,30,0.8)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim"
+      style={{ backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="rounded-2xl p-md w-full max-w-[28rem] mx-md shadow-2xl max-h-[88vh] overflow-y-auto scrollbar-hide border"
-        style={{ backgroundColor: '#13233a', borderColor: 'rgba(255,255,255,0.1)' }}
+        className="rounded-2xl p-md w-full max-w-[28rem] mx-md shadow-2xl max-h-[88vh] overflow-y-auto scrollbar-hide border border-line bg-elevated"
+        
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-md">
-          <h2 className="text-headline-lg-mobile font-bold text-inverse-on-surface">
-            {isEditing ? `Edit ${TYPE_LABELS[type]}` : 'Add New'}
+          <h2 className="text-headline-lg-mobile font-bold text-txt">
+            {isEditing ? `Edit ${type === 'todo' ? 'To-Do' : 'Event'}` : 'Add New'}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-outline-variant hover:text-inverse-on-surface transition-colors"
+            className="text-txt-muted hover:text-txt transition-colors"
           >
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
-        {/* Type toggle (create only) */}
+        {/* Event = something that's just there; Task = something to do (create only) */}
         {!isEditing && (
           <div className="mb-md">
             <SegmentedControl
-              options={(Object.keys(TYPE_LABELS) as AddType[]).map(t => ({ value: t, label: TYPE_LABELS[t] }))}
+              options={[{ value: 'event', label: 'Event' }, { value: 'todo', label: 'Task' }]}
               value={type}
               onChange={setType}
             />
           </div>
         )}
 
-        {type === 'task' && <TaskForm edit={editTask} onDone={onClose} />}
-        {type === 'habit' && <HabitForm edit={editHabit} onDone={onClose} />}
-        {type === 'event' && <EventForm edit={editEvent} onDone={onClose} />}
-        {type === 'period' && <PeriodForm edit={editPeriod} onDone={onClose} />}
+        {type === 'todo' && <TodoForm edit={editTodo} defaultDate={defaultDate} onDone={onClose} />}
+        {type === 'event' && <EventForm edit={editEvent} occurrenceDate={editEventDate} defaultDate={defaultDate} onDone={onClose} />}
       </div>
     </div>
   );

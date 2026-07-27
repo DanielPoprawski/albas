@@ -9,31 +9,78 @@ Albas is a Tauri v2 desktop app — an all-in-one to-do list, calendar, and habi
 ## Commands
 
 ```bash
-# Run in development (standard)
+# Run in development — the Hyprland/Wayland WebKit workarounds
+# (WEBKIT_DISABLE_DMABUF_RENDERER etc.) are baked into the npm "tauri" script
 npm run tauri dev
 
-# Run on Hyprland (Wayland compositor workaround)
-WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 npm run tauri dev
+# Android (SDK lives in ~/Android/Sdk; env vars set in ~/.bashrc)
+npm run tauri android dev     # run on connected device/emulator
+npm run tauri android build   # build APK
 
 # Build for production
 npm run build          # frontend only (tsc + vite)
 npm run tauri build    # full app bundle
 
-## TODO LIST
-1. The habit tracker should have a color wheel or at least more color options
-2. Instead of just every N days, it should also have options for every N weeks, N times per week, N times per month, etc. 
-3. The Week and Day view doesn't seem to work.
-4. Reminder should show options for how long before the event takes place to remind the user, as well as an option for multiple reminders (1 week prior, 1 day prior)
-
 # Frontend dev server only (no Tauri)
 npm run dev
 ```
+
+## TODO LIST
+1. To-do reminders only fire on the due day; consider firing at the to-do's `time` when one is set.
+
+## Unified data model (v1.3)
+Three concepts:
+- **Todo** (`src/types.ts`) — anything that needs doing. Tasks, habits, and chores are all Todos distinguished only by their `schedule` (`Repeat`): `once` = task, fixed cadences (`daily`/`weekdays`/`every` with `fromDone: false`/`timesPer`) = habit, `every` with `fromDone: true` = chore (next due counts from the last completion). Stored in the SQLite `habits` table / `save_habit` commands for backward compatibility.
+- **CalendarEvent** — anything that's just *there* on the calendar. The old Period type was merged in: a period is now a long all-day event (spans ≥ 7 days render as thin lanes). Legacy `tasks`/`periods` rows are converted to todos/events once at load in `AppContext`.
+- **WeightEntry** — one scale reading (`weights` table). Weight is **always stored in kg**; `weightUnit` is a display setting. Wyze rows use the upstream `data_id` as their id, so re-syncing a range is idempotent. Logic in `src/weightLogic.ts`, UI in `WeightPanel.tsx`.
+
+Colors are hex strings picked from a palette + native color-wheel input (`src/colors.ts`; legacy named keys resolve via `colorHex()`).
+
+## Theming (v1.4)
+Four themes: `dark` (default), `light`, `grey-high`, `grey-low`, selected in Settings and applied as `data-theme` on `<html>`.
+
+`src/App.css` defines a `@theme inline` block mapping Tailwind color names to `--t-*` custom properties, so utilities emit `var(--t-…)` and a runtime theme swap repaints everything — including every existing `bg-primary` call site, since the accent is aliased onto the old M3 names. **Never hardcode a hex or `bg-white/N` in a component**; use the tokens.
+
+Two surface worlds with separate text scales:
+- **chrome** (`bg-chrome`, `bg-elevated`, `text-txt`/`-muted`/`-faint`, `bg-fill`/`-strong`/`-stronger`, `border-line`) — sidebar, top bar, panels, modals.
+- **sheet** (`bg-sheet`, `bg-sheet-header`, `border-sheet-line`/`-border`, `text-sheet-txt`/`-muted`/`-faint`) — the calendar card. As of v1.4 the sheet *follows* the theme instead of inverting it: a dark surface just above `app-bg` in `dark`/`grey-low`, near-black in `grey-high`, white only in `light`. `--t-grid-line` is the sheet's own cell border and must flip with it.
+
+Because the sheet is dark in three of four themes, tinted chips behind a user-chosen colour use `PILL_BG_ALPHA` (`src/colors.ts`) rather than a hardcoded alpha — the old `1a` washed out to nothing.
+
+The theme is mirrored to `localStorage['albas-theme']` purely so the inline script in `index.html` can paint before React mounts; SQLite (`meta` table, `setting:` prefix) stays the source of truth.
+
+## Responsive / Android
+`useIsMobile()` (`src/useMedia.ts`) is a `matchMedia('(max-width: 767px)')` hook — narrowing the desktop window exercises the exact mobile layout, so test there first.
+
+Below the breakpoint: the icon rail becomes an off-canvas drawer (hamburger in `TopBar`), `RightPanel` is dropped, and tapping a month tile drills into that day's Day view instead of opening the add modal. The calendar view gets `p-0` from `AppShell` so the month grid goes edge-to-edge; the nav row carries its own `px-sm`.
+
+## One list, one title (v1.4)
+- **There is no Agenda panel.** `DayPanel` was deleted and the day's events live only on the calendar (Day view). `TodoPanel` is the single list surface — habits then to-dos under `HABITS` / `TO-DO` headings — used both as the main view and as the whole of `RightPanel`. Re-adding a second list is what caused a habit to render twice.
+- **The title lives in `TopBar`**, built by `calendarTitle()` in `src/dates.ts`; `Calendar` renders navigation only. Month view omits the year in the current year. Don't reintroduce an `<h2>` in `Calendar` — the month name would render twice.
+- The Month/Week/Day switcher and Today are one dropdown (`ViewMenu` in `Calendar.tsx`), following the hand-rolled overlay+scrim shape from `EventForm`'s colour picker.
+
+## First day of the week (v1.4)
+`firstDayOfWeek` (settings blob, `0` = Sunday, `1` = Monday, default Monday) is threaded explicitly — there is no module-level global. `weekOf()` and `getCalendarDays()` take it as a trailing parameter defaulting to `1`, as do `isDueOn` / `doneCountIn` / `streakOf` / `statusLabel` / `repeatLabel` (`todoLogic.ts`), `weeklyRows` (`weightLogic.ts`), `calendarTitle`, and `remindDueTodos`. **A missing argument silently means Monday**, so new call sites must pass it from `useApp()`.
+
+Two rules that are easy to get wrong:
+- Weekday label tables are written **Sunday-first** (matching `getDay()`) and rotated for display with `rotateWeek()`. `weekdayAt(i, firstDay)` maps a column back to a real weekday.
+- **Weekend styling must come from `getDay()`, not the column index** — under a Sunday start, columns 5 and 6 are Friday and Saturday.
+- `Repeat.weekdays` stores absolute `getDay()` values, so scheduling itself is week-start independent — only the *display order* of the picker rotates.
+
+Known behavioural consequence: `timesPer: 'week'` to-dos bucket completions with `weekOf`, so flipping the setting re-partitions past completions and a "3× per week" habit's streak/quota can change value. Settings says so inline.
+
+**`min-h-0` is load-bearing** on every `flex flex-col` ancestor of `HourGrid` — flex items default to `min-height: auto`, which lets the 1152px hour body dictate the container height and silently defeats `overflow-y-auto`. This is what broke Week/Day view before v1.3.
+
+## Wyze scale sync
+`src-tauri/src/wyze.rs` ports the community `shauntarves/wyze-sdk` request shapes (Wyze has no public API). Login needs email + password + an API Key/Key ID from developer-api-console.wyze.com — the API key acts as the second factor, so it works with 2FA on. Requests carry a `signature2` header: HMAC-MD5 of the body (for GET, query params joined **sorted by key**) keyed by `md5(access_token + salt)`. Both the sort order and the exact body bytes are load-bearing; a mismatch surfaces as a 403. `cargo test --lib` pins the hashes against the Python reference — check those first if sync breaks.
+
+Credentials go to the OS keyring on desktop; Android has no keyring backend, so they fall back to the app-private SQLite file (sandboxed, not encrypted).
 
 ## Architecture
 
 The app has two distinct layers that communicate via Tauri's IPC bridge:
 
-- **Frontend** (`src/`): React app rendered in a WebView. Entry point is `src/main.tsx`, which mounts `AppShell` inside `AppProvider` (`src/context/AppContext.tsx`) — the single source of truth for tasks, habits, selected date, and active view. State persists to `localStorage` (key `albas-data-v1`); swap the load/save in `AppContext` for Tauri commands when moving persistence to Rust. UI components live in `src/components/`, shared date helpers in `src/dates.ts`, and Tailwind v4 design tokens in `src/App.css` under `@theme`.
+- **Frontend** (`src/`): React app rendered in a WebView. Entry point is `src/main.tsx`, which mounts `AppShell` inside `AppProvider` (`src/context/AppContext.tsx`) — the single source of truth for todos, events, weights, settings, selected date, and active view. Persistence goes through `src/persistence.ts`, which picks SQLite-via-Tauri or a whole-blob `localStorage` fallback (key `albas-data-v1`) for the browser dev server. UI components live in `src/components/`, shared date helpers in `src/dates.ts`, and Tailwind v4 design tokens in `src/App.css`.
 - **Backend** (`src-tauri/src/`): Rust. `lib.rs` defines Tauri commands registered with `invoke_handler`; `main.rs` calls `run()`. To expose a new Rust function to the frontend, annotate it with `#[tauri::command]` and add it to `generate_handler![]` in `lib.rs`.
 
 Frontend calls Rust via `invoke()` from `@tauri-apps/api`. Tauri capabilities (permissions) are configured in `src-tauri/capabilities/default.json`.

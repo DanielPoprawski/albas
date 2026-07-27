@@ -1,49 +1,62 @@
-export interface Task {
-  id: string;
-  title: string;
-  category: string;
-  completed: boolean;
-  date: string | null; // YYYY-MM-DD
-}
+export type RepeatUnit = 'day' | 'week' | 'month';
 
-export type ColorKey = 'primary' | 'secondary' | 'tertiary';
-
-export type HabitKind = 'yesno' | 'measurable';
-
-export type Schedule =
+/**
+ * How a to-do repeats. This is the only thing separating a task, a habit,
+ * and a chore — they're all "things that need to be done":
+ * - 'once'      → task: done a single time
+ * - fixed rules → habit: due on a cadence regardless of past completions
+ * - 'every' + fromDone → chore: next due N units after the last completion
+ */
+export type Repeat =
+  | { type: 'once' }
   | { type: 'daily' }
   | { type: 'weekdays'; days: number[] } // JS getDay() values: 0=Sun … 6=Sat
-  | { type: 'interval'; every: number }  // fixed cadence counted from createdAt
-  | { type: 'chore'; every: number };    // due N days after the last completion
+  | { type: 'every'; n: number; unit: RepeatUnit; fromDone: boolean }
+  | { type: 'timesPer'; times: number; per: 'week' | 'month' };
 
-export interface Habit {
+export type TodoKind = 'yesno' | 'measurable';
+
+/** Unified to-do: tasks, habits, and chores are all this one shape. */
+export interface Todo {
   id: string;
   name: string;
-  colorKey: ColorKey;
-  kind: HabitKind;
-  /** Unit label for measurable habits (e.g. "pushups", "L"). Empty for yes/no. */
+  /** Hex color. Legacy saves may hold 'primary'|'secondary'|'tertiary' — resolve via colorHex(). */
+  colorKey: string;
+  kind: TodoKind;
+  /** Unit label for measurable to-dos (e.g. "pushups", "L"). Empty for yes/no. */
   unit: string;
-  /** Daily target. Always 1 for yes/no habits. */
+  /** Per-day target. Always 1 for yes/no. */
   target: number;
-  schedule: Schedule;
-  createdAt: string; // YYYY-MM-DD — anchor date for interval schedules
+  schedule: Repeat;
+  /** Once: the due day (null = anytime). Repeating: start/anchor day (falls back to createdAt). */
+  dueDate: string | null;
+  /** Optional time of day, 'HH:MM'. */
+  time: string | null;
+  createdAt: string; // YYYY-MM-DD
+  /** Notify on days it's due and not yet done. */
   reminder: boolean;
-  /** Progress per day. Yes/no habits store 1 when done. */
+  /** Progress per day. Yes/no to-dos store 1 when done. */
   completions: Record<string, number>;
 }
 
+/** `exdates` lists occurrence start dates deleted individually ("just this event"). */
 export type Recurrence =
   | { type: 'none' }
-  | { type: 'daily'; interval: number; until?: string | null }   // every N days
-  | { type: 'weekly'; interval: number; until?: string | null }  // every N weeks, on startDate's weekday
-  | { type: 'monthly'; interval: number; until?: string | null }; // every N months, on startDate's day-of-month
+  | { type: 'daily'; interval: number; until?: string | null; exdates?: string[] }   // every N days
+  | { type: 'weekly'; interval: number; until?: string | null; exdates?: string[] }  // every N weeks, on startDate's weekday
+  | { type: 'monthly'; interval: number; until?: string | null; exdates?: string[] }; // every N months, on startDate's day-of-month
 
-/** Named CalendarEvent to avoid colliding with the DOM `Event` type. */
+/**
+ * Anything that's "just there" on the calendar — meetings, trips, and long
+ * spans like a 12-week program (formerly Periods) are all events now.
+ * Named CalendarEvent to avoid colliding with the DOM `Event` type.
+ */
 export interface CalendarEvent {
   id: string;
   title: string;
   description: string;
-  colorKey: ColorKey;
+  /** Hex color; legacy saves may hold a named key — resolve via colorHex(). */
+  colorKey: string;
   allDay: boolean;
   startDate: string; // YYYY-MM-DD (local wall-clock, no timezone)
   /** 'HH:MM' when not allDay, else null. */
@@ -56,18 +69,29 @@ export interface CalendarEvent {
   reminders: number[];
 }
 
-/** A long-running span (12-week gym routine, diet, …) shown as a bar across the calendar. */
-export interface Period {
+/**
+ * One scale reading. Weight is always stored in kg — lb is a display choice
+ * (`weightUnit` setting) so switching units can never drift the stored value.
+ * Wyze rows reuse the upstream `data_id` as `id`, making a re-sync idempotent.
+ */
+export interface WeightEntry {
   id: string;
-  name: string;
-  colorKey: ColorKey;
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // inclusive
-  notes: string;
-  /** Habits tracked as part of this period. */
-  habitIds: string[];
+  date: string; // YYYY-MM-DD, local
+  ts: number; // epoch ms of the measurement
+  weightKg: number;
+  /** Body fat percentage. Null when the scale only captured weight. */
+  bodyFat: number | null;
+  bmi: number | null;
+  muscle: number | null;
+  bodyWater: number | null;
+  source: 'wyze' | 'manual';
 }
 
-export type ActiveView = 'calendar' | 'tasks' | 'habits' | 'settings';
-export type AddType = 'task' | 'habit' | 'event' | 'period';
+export type ThemeName = 'dark' | 'light' | 'grey-high' | 'grey-low';
+export type WeightUnit = 'kg' | 'lb';
+/** Which weekday grids start on, as a JS `getDay()` value: 0 = Sunday, 1 = Monday. */
+export type FirstDayOfWeek = 0 | 1;
+
+export type ActiveView = 'calendar' | 'todos' | 'weight' | 'settings';
+export type AddType = 'todo' | 'event';
 export type CalendarMode = 'month' | 'week' | 'day';

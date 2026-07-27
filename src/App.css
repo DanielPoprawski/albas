@@ -1,11 +1,194 @@
 @import "tailwindcss";
 
+/*
+ * Theme layer.
+ *
+ * `@theme inline` makes Tailwind emit `var(--t-…)` into the generated utilities
+ * instead of copying the literal value, which is what lets a runtime
+ * `data-theme` swap on <html> repaint the whole app. The `--t-*` variables are
+ * defined per theme below.
+ *
+ * Two surface worlds, and they do not share a text scale:
+ *   chrome — the app frame (sidebar, top bar, panels, modals). Dark in 3 of 4
+ *            themes. Uses txt / txt-muted / txt-faint.
+ *   sheet  — the calendar card, deliberately the inverse of the chrome for
+ *            contrast. Uses sheet-txt / sheet-txt-muted / sheet-txt-faint.
+ */
+@theme inline {
+  --color-app-bg: var(--t-app-bg);
+  --color-chrome: var(--t-chrome);
+  --color-elevated: var(--t-elevated);
+  --color-scrim: var(--t-scrim);
+
+  --color-line: var(--t-line);
+  --color-fill: var(--t-fill);
+  --color-fill-strong: var(--t-fill-strong);
+  --color-fill-stronger: var(--t-fill-stronger);
+
+  --color-txt: var(--t-txt);
+  --color-txt-muted: var(--t-txt-muted);
+  --color-txt-faint: var(--t-txt-faint);
+  --color-danger: var(--t-danger);
+  --color-success: var(--t-success);
+
+  --color-sheet: var(--t-sheet);
+  --color-sheet-header: var(--t-sheet-header);
+  --color-sheet-line: var(--t-sheet-line);
+  --color-sheet-border: var(--t-sheet-border);
+  --color-sheet-txt: var(--t-sheet-txt);
+  --color-sheet-txt-muted: var(--t-sheet-txt-muted);
+  --color-sheet-txt-faint: var(--t-sheet-txt-faint);
+
+  /* Accent. Aliased onto the original M3 names so every existing
+     bg-primary / text-primary-fixed-dim call site follows the theme. */
+  --color-primary: var(--t-accent);
+  --color-primary-container: var(--t-accent-hi);
+  --color-primary-fixed-dim: var(--t-accent-text);
+  --color-on-primary: var(--t-accent-fg);
+}
+
+:root,
+:root[data-theme='dark'] {
+  --t-app-bg: #0b1c30;
+  --t-chrome: #0a121e;
+  --t-elevated: #13233a;
+  --t-scrim: rgb(10 18 30 / 0.8);
+
+  --t-line: rgb(195 198 215 / 0.1);
+  --t-grid-line: rgb(195 198 215 / 0.12);
+  --t-fill: rgb(255 255 255 / 0.05);
+  --t-fill-strong: rgb(255 255 255 / 0.1);
+  --t-fill-stronger: rgb(255 255 255 / 0.2);
+
+  --t-txt: #eaf1ff;
+  --t-txt-muted: #c3c6d7;
+  --t-txt-faint: #737686;
+  --t-danger: #ff8a8f;
+  --t-success: #4edea3;
+
+  --t-accent: #004ac6;
+  --t-accent-hi: #2563eb;
+  --t-accent-text: #b4c5ff;
+  --t-accent-fg: #ffffff;
+
+  /* The sheet sits just above app-bg rather than inverting to white — a white
+     calendar under a dark chrome read as unthemed. */
+  --t-sheet: #0f2440;
+  --t-sheet-header: #142a48;
+  --t-sheet-line: rgb(195 198 215 / 0.14);
+  --t-sheet-border: rgb(195 198 215 / 0.16);
+  --t-sheet-hour-line: rgb(255 255 255 / 0.07);
+  --t-sheet-hover: rgb(255 255 255 / 0.05);
+  --t-sheet-txt: #eaf1ff;
+  --t-sheet-txt-muted: #c3c6d7;
+  --t-sheet-txt-faint: #8b90a3;
+}
+
+:root[data-theme='light'] {
+  --t-app-bg: #eef1f6;
+  --t-chrome: #ffffff;
+  --t-elevated: #ffffff;
+  --t-scrim: rgb(11 28 48 / 0.45);
+
+  --t-line: rgb(11 28 48 / 0.12);
+  --t-grid-line: rgb(11 28 48 / 0.1);
+  --t-fill: rgb(11 28 48 / 0.04);
+  --t-fill-strong: rgb(11 28 48 / 0.08);
+  --t-fill-stronger: rgb(11 28 48 / 0.14);
+
+  --t-txt: #0b1c30;
+  --t-txt-muted: #4b5565;
+  --t-txt-faint: #79839a;
+  --t-danger: #c0182f;
+  --t-success: #067a52;
+
+  --t-accent: #1d4ed8;
+  --t-accent-hi: #2563eb;
+  --t-accent-text: #1d4ed8;
+  --t-accent-fg: #ffffff;
+
+  --t-sheet: #ffffff;
+  --t-sheet-header: #f2f5fa;
+  --t-sheet-line: rgb(11 28 48 / 0.12);
+  --t-sheet-border: rgb(11 28 48 / 0.14);
+  --t-sheet-hour-line: rgb(0 0 0 / 0.07);
+  --t-sheet-hover: rgb(29 78 216 / 0.05);
+  --t-sheet-txt: #0b1c30;
+  --t-sheet-txt-muted: #434655;
+  --t-sheet-txt-faint: #737686;
+}
+
+:root[data-theme='grey-high'] {
+  --t-app-bg: #121212;
+  --t-chrome: #000000;
+  --t-elevated: #1e1e1e;
+  --t-scrim: rgb(0 0 0 / 0.75);
+
+  --t-line: rgb(255 255 255 / 0.18);
+  --t-grid-line: rgb(255 255 255 / 0.26);
+  --t-fill: rgb(255 255 255 / 0.07);
+  --t-fill-strong: rgb(255 255 255 / 0.14);
+  --t-fill-stronger: rgb(255 255 255 / 0.26);
+
+  --t-txt: #fafafa;
+  --t-txt-muted: #cfcfcf;
+  --t-txt-faint: #9a9a9a;
+  --t-danger: #ff7b7b;
+  --t-success: #4ce6a6;
+
+  --t-accent: #2563eb;
+  --t-accent-hi: #3b82f6;
+  --t-accent-text: #a8c4ff;
+  --t-accent-fg: #ffffff;
+
+  --t-sheet: #000000;
+  --t-sheet-header: #141414;
+  --t-sheet-line: rgb(255 255 255 / 0.24);
+  --t-sheet-border: rgb(255 255 255 / 0.3);
+  --t-sheet-hour-line: rgb(255 255 255 / 0.14);
+  --t-sheet-hover: rgb(255 255 255 / 0.08);
+  --t-sheet-txt: #ffffff;
+  --t-sheet-txt-muted: #d4d4d4;
+  --t-sheet-txt-faint: #9a9a9a;
+}
+
+:root[data-theme='grey-low'] {
+  --t-app-bg: #2b2e33;
+  --t-chrome: #23262a;
+  --t-elevated: #32363c;
+  --t-scrim: rgb(20 22 25 / 0.7);
+
+  --t-line: rgb(255 255 255 / 0.1);
+  --t-grid-line: rgb(255 255 255 / 0.09);
+  --t-fill: rgb(255 255 255 / 0.05);
+  --t-fill-strong: rgb(255 255 255 / 0.09);
+  --t-fill-stronger: rgb(255 255 255 / 0.16);
+
+  --t-txt: #d7dade;
+  --t-txt-muted: #a2a7ae;
+  --t-txt-faint: #7d828a;
+  --t-danger: #e08b8b;
+  --t-success: #7fc9a9;
+
+  --t-accent: #3f6fd8;
+  --t-accent-hi: #5b86e5;
+  --t-accent-text: #a9c0ee;
+  --t-accent-fg: #ffffff;
+
+  --t-sheet: #33373d;
+  --t-sheet-header: #2c3036;
+  --t-sheet-line: rgb(255 255 255 / 0.1);
+  --t-sheet-border: rgb(255 255 255 / 0.09);
+  --t-sheet-hour-line: rgb(255 255 255 / 0.07);
+  --t-sheet-hover: rgb(255 255 255 / 0.05);
+  --t-sheet-txt: #d7dade;
+  --t-sheet-txt-muted: #a2a7ae;
+  --t-sheet-txt-faint: #7d828a;
+}
+
 @theme {
-  /* Colors */
-  --color-primary: #004ac6;
-  --color-primary-container: #2563eb;
-  --color-primary-fixed-dim: #b4c5ff;
-  --color-on-primary: #ffffff;
+  /* Fixed accents — these read acceptably on both surface worlds, so they
+     don't participate in theming. */
   --color-on-primary-container: #eeefff;
   --color-on-primary-fixed-variant: #003ea8;
 
@@ -18,28 +201,6 @@
   --color-tertiary-container: #d22348;
   --color-on-tertiary: #ffffff;
   --color-on-tertiary-fixed-variant: #92002a;
-
-  --color-surface: #f8f9ff;
-  --color-surface-bright: #f8f9ff;
-  --color-surface-dim: #cbdbf5;
-  --color-surface-variant: #d3e4fe;
-  --color-surface-container: #e5eeff;
-  --color-surface-container-high: #dce9ff;
-  --color-surface-container-highest: #d3e4fe;
-  --color-surface-container-low: #eff4ff;
-
-  --color-on-surface: #0b1c30;
-  --color-on-surface-variant: #434655;
-
-  --color-outline: #737686;
-  --color-outline-variant: #c3c6d7;
-
-  --color-inverse-surface: #213145;
-  --color-inverse-on-surface: #eaf1ff;
-
-  --color-background: #f8f9ff;
-  --color-on-background: #0b1c30;
-  --color-deep-navy: #0a121e;
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -76,8 +237,8 @@
 }
 
 body {
-  background-color: #0b1c30;
-  color: #eaf1ff;
+  background-color: var(--t-app-bg);
+  color: var(--t-txt);
   overflow: hidden;
 }
 
@@ -88,20 +249,26 @@ body {
 
 .glass-card {
   backdrop-filter: blur(12px);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--t-fill);
+  border: 1px solid var(--t-line);
 }
 
 .calendar-cell {
-  border-right: 1px solid rgba(195, 198, 215, 0.15);
-  border-bottom: 1px solid rgba(195, 198, 215, 0.15);
+  border-right: 1px solid var(--t-grid-line);
+  border-bottom: 1px solid var(--t-grid-line);
   transition: background-color 0.15s;
   display: flex;
   flex-direction: column;
 }
 
 .calendar-cell:hover {
-  background: rgba(0, 74, 198, 0.04);
+  background: var(--t-sheet-hover);
+}
+
+/* Hour rules inside the day/week grid — same idea as .calendar-cell borders,
+   exposed as a class so HourGrid doesn't need an inline rgba(). */
+.hour-line {
+  border-top: 1px solid var(--t-sheet-hour-line);
 }
 
 .scrollbar-hide::-webkit-scrollbar {

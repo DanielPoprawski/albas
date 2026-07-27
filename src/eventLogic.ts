@@ -32,6 +32,7 @@ export function expandEvents(events: CalendarEvent[], rangeStart: string, rangeE
     const rec = event.recurrence;
     const until = rec.type !== 'none' && rec.until ? rec.until : null;
     const lastStart = until && until < rangeEnd ? until : rangeEnd;
+    const exdates = rec.type !== 'none' ? rec.exdates ?? [] : [];
 
     if (rec.type === 'none') {
       if (event.startDate <= rangeEnd && event.endDate >= rangeStart) {
@@ -45,7 +46,7 @@ export function expandEvents(events: CalendarEvent[], rangeStart: string, rangeE
       // first k >= 0 whose occurrence-end reaches the range
       const k = Math.max(0, Math.ceil((diffDays(event.startDate, rangeStart) - duration) / step));
       for (let start = addDays(event.startDate, k * step); start <= lastStart; start = addDays(start, step)) {
-        out.push(occurrence(event, start, duration));
+        if (!exdates.includes(start)) out.push(occurrence(event, start, duration));
       }
       continue;
     }
@@ -61,7 +62,9 @@ export function expandEvents(events: CalendarEvent[], rangeStart: string, rangeE
       if (d.getDate() !== day) continue; // JS rolled e.g. Feb 31 into March — skip this month
       const start = fmt(d);
       if (start > lastStart) break;
-      if (addDays(start, duration) >= rangeStart) out.push(occurrence(event, start, duration));
+      if (addDays(start, duration) >= rangeStart && !exdates.includes(start)) {
+        out.push(occurrence(event, start, duration));
+      }
     }
   }
 
@@ -82,6 +85,14 @@ export function occurrencesOn(events: CalendarEvent[], dateStr: string): Occurre
 /** True when the occurrence spans more than one day or the event is all-day. */
 export function isBarOccurrence(o: Occurrence): boolean {
   return o.event.allDay || o.startDate !== o.endDate;
+}
+
+/**
+ * Week-plus spans (trips, 12-week programs — the old "periods") render as
+ * thin background lanes instead of thick titled bars.
+ */
+export function isLongOccurrence(o: Occurrence): boolean {
+  return diffDays(o.startDate, o.endDate) + 1 >= 7;
 }
 
 /** "14:30" -> minutes since midnight. */

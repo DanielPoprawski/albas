@@ -24,4 +24,14 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
+ureq = "2"
+# Wyze request signing: md5(md5(md5(pw))) for login, HMAC-MD5 for signature2.
+md-5 = "0.10"
+hmac = "0.12"
+uuid = { version = "1", features = ["v4"] }
+
+# The keyring crate has no Android backend, so credentials fall back to the
+# app-private SQLite file there. See the note in src/wyze.rs.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 

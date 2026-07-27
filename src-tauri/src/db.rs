@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS habits (
   schedule TEXT NOT NULL,
   created_at TEXT NOT NULL,
   reminder INTEGER NOT NULL DEFAULT 0,
+  due_date TEXT,
+  time TEXT,
   updated_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0
 );
@@ -71,15 +73,72 @@ CREATE TABLE IF NOT EXISTS periods (
 );
 ";
 
+/// v3 addition, kept separate so the migration can replay it on existing DBs.
+/// Weights are always stored in kg; the lb/kg choice is a display setting.
+const SCHEMA_V3: &str = "
+CREATE TABLE IF NOT EXISTS weights (
+  id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  weight_kg REAL NOT NULL,
+  body_fat REAL,
+  bmi REAL,
+  muscle REAL,
+  body_water REAL,
+  source TEXT NOT NULL DEFAULT 'manual',
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+";
+
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version < 1 {
         conn.execute_batch(SCHEMA)?;
-        conn.pragma_update(None, "user_version", 1)?;
+    } else if version < 2 {
+        // v2 (todo unification): habits became unified to-dos with an
+        // optional due day (once to-dos) and time of day.
+        conn.execute_batch(
+            "ALTER TABLE habits ADD COLUMN due_date TEXT;
+             ALTER TABLE habits ADD COLUMN time TEXT;",
+        )?;
+    }
+    // v3 (weight tracking). CREATE TABLE IF NOT EXISTS, so replaying is harmless.
+    if version < 3 {
+        conn.execute_batch(SCHEMA_V3)?;
+        conn.pragma_update(None, "user_version", 3)?;
     }
     Ok(conn)
+}
+
+/// User preferences live in `meta` under this prefix so they can't collide with
+/// internal bookkeeping keys like `legacy_import_done`.
+const SETTING_PREFIX: &str = "setting:";
+
+pub fn read_setting(conn: &Connection, key: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM meta WHERE key = ?1",
+        params![format!("{SETTING_PREFIX}{key}")],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+}
+
+pub fn write_setting(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = ?2",
+        params![format!("{SETTING_PREFIX}{key}"), value],
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_setting(db: tauri::State<Db>, key: String, value: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(err)?;
+    write_setting(&conn, &key, &value).map_err(err)
 }
 
 fn now_ms() -> i64 {
@@ -116,6 +175,10 @@ pub struct Habit {
     pub created_at: String,
     pub reminder: bool,
     #[serde(default)]
+    pub due_date: Option<String>,
+    #[serde(default)]
+    pub time: Option<String>,
+    #[serde(default)]
     pub completions: HashMap<String, f64>,
 }
 
@@ -147,6 +210,22 @@ pub struct Period {
     pub habit_ids: serde_json::Value,
 }
 
+/// One scale reading. `source` is 'wyze' or 'manual'; for Wyze rows the id is
+/// the upstream `data_id`, which makes re-syncing a range idempotent.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Weight {
+    pub id: String,
+    pub date: String,
+    pub ts: i64,
+    pub weight_kg: f64,
+    pub body_fat: Option<f64>,
+    pub bmi: Option<f64>,
+    pub muscle: Option<f64>,
+    pub body_water: Option<f64>,
+    pub source: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppData {
@@ -154,6 +233,8 @@ pub struct AppData {
     pub habits: Vec<Habit>,
     pub events: Vec<Event>,
     pub periods: Vec<Period>,
+    pub weights: Vec<Weight>,
+    pub settings: HashMap<String, String>,
     pub needs_legacy_import: bool,
 }
 
@@ -200,7 +281,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         });
 
     let habits = conn
-        .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder FROM habits WHERE deleted = 0")
+        .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time FROM habits WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
             Ok(Habit {
@@ -213,6 +294,8 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
                 schedule: parse_json(r.get(6)?),
                 created_at: r.get(7)?,
                 reminder: r.get::<_, i64>(8)? != 0,
+                due_date: r.get(9)?,
+                time: r.get(10)?,
                 completions: HashMap::new(),
             })
         })
@@ -266,6 +349,37 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(err)?;
 
+    let weights = conn
+        .prepare("SELECT id, date, ts, weight_kg, body_fat, bmi, muscle, body_water, source FROM weights WHERE deleted = 0 ORDER BY ts")
+        .map_err(err)?
+        .query_map([], |r| {
+            Ok(Weight {
+                id: r.get(0)?,
+                date: r.get(1)?,
+                ts: r.get(2)?,
+                weight_kg: r.get(3)?,
+                body_fat: r.get(4)?,
+                bmi: r.get(5)?,
+                muscle: r.get(6)?,
+                body_water: r.get(7)?,
+                source: r.get(8)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(err)?;
+
+    let settings = conn
+        .prepare("SELECT key, value FROM meta WHERE key LIKE 'setting:%'")
+        .map_err(err)?
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(err)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(err)?
+        .into_iter()
+        .map(|(k, v)| (k[SETTING_PREFIX.len()..].to_string(), v))
+        .collect();
+
     let needs_legacy_import = conn
         .query_row(
             "SELECT value FROM meta WHERE key = 'legacy_import_done'",
@@ -274,7 +388,30 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         )
         .is_err();
 
-    Ok(AppData { tasks, habits, events, periods, needs_legacy_import })
+    Ok(AppData { tasks, habits, events, periods, weights, settings, needs_legacy_import })
+}
+
+pub fn upsert_weight(conn: &Connection, w: &Weight) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO weights (id, date, ts, weight_kg, body_fat, bmi, muscle, body_water, source, updated_at, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)
+         ON CONFLICT(id) DO UPDATE SET date=?2, ts=?3, weight_kg=?4, body_fat=?5, bmi=?6,
+           muscle=?7, body_water=?8, source=?9, updated_at=?10, deleted=0",
+        params![w.id, w.date, w.ts, w.weight_kg, w.body_fat, w.bmi, w.muscle, w.body_water, w.source, now_ms()],
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_weight(db: tauri::State<Db>, weight: Weight) -> Result<(), String> {
+    let conn = db.0.lock().map_err(err)?;
+    upsert_weight(&conn, &weight).map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_weight(db: tauri::State<Db>, id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(err)?;
+    tombstone(&conn, "weights", &id).map_err(err)
 }
 
 fn upsert_task(conn: &Connection, t: &Task) -> rusqlite::Result<()> {
@@ -289,12 +426,13 @@ fn upsert_task(conn: &Connection, t: &Task) -> rusqlite::Result<()> {
 
 fn upsert_habit(conn: &Connection, h: &Habit) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)
-         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, kind=?4, unit=?5, target=?6, schedule=?7, created_at=?8, reminder=?9, updated_at=?10, deleted=0",
+        "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, updated_at, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0)
+         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, kind=?4, unit=?5, target=?6, schedule=?7, created_at=?8, reminder=?9, due_date=?10, time=?11, updated_at=?12, deleted=0",
         params![
             h.id, h.name, h.color_key, h.kind, h.unit, h.target,
-            json_col(&h.schedule), h.created_at, h.reminder as i64, now_ms()
+            json_col(&h.schedule), h.created_at, h.reminder as i64,
+            h.due_date, h.time, now_ms()
         ],
     )?;
     Ok(())

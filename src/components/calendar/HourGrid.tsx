@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { fmt } from '../../dates';
 import { shortTime, timeToMinutes, type Occurrence } from '../../eventLogic';
-import { HABIT_COLORS } from '../habitColors';
+import { colorHex } from '../../colors';
 import type { CalendarEvent } from '../../types';
 
 export const HOUR_H = 48; // px per hour
@@ -61,7 +61,7 @@ interface Props {
   days: string[]; // 1 (day view) or 7 (week view) YYYY-MM-DD strings
   /** Timed single-day occurrences only (bars live in the all-day section). */
   occurrences: Occurrence[];
-  onEditEvent: (event: CalendarEvent) => void;
+  onEditEvent: (event: CalendarEvent, occurrenceDate: string) => void;
   onSelectDate?: (dateStr: string) => void;
 }
 
@@ -77,14 +77,16 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
+    // min-h-0 is load-bearing: flex items default to min-height:auto, which would let
+    // the 1152px body below dictate this element's height and defeat overflow-y-auto.
+    <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
       <div className="flex" style={{ height: 24 * HOUR_H }}>
         {/* Time gutter */}
         <div className="flex-shrink-0 relative" style={{ width: GUTTER_W }}>
           {Array.from({ length: 23 }, (_, i) => i + 1).map(h => (
             <span
               key={h}
-              className="absolute right-2 text-[10px] text-outline -translate-y-1/2"
+              className="absolute right-2 text-[10px] text-sheet-txt-faint -translate-y-1/2"
               style={{ top: h * HOUR_H }}
             >
               {hourLabel(h)}
@@ -99,16 +101,15 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
           return (
             <div
               key={dateStr}
-              className="flex-1 relative border-l"
-              style={{ borderColor: 'rgba(0,0,0,0.06)' }}
+              className="flex-1 relative border-l border-sheet-line"
               onClick={() => onSelectDate?.(dateStr)}
             >
               {/* hour lines */}
               {Array.from({ length: 23 }, (_, i) => i + 1).map(h => (
                 <div
                   key={h}
-                  className="absolute left-0 right-0 border-t"
-                  style={{ top: h * HOUR_H, borderColor: 'rgba(0,0,0,0.05)' }}
+                  className="hour-line absolute left-0 right-0"
+                  style={{ top: h * HOUR_H }}
                 />
               ))}
 
@@ -125,12 +126,12 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
 
               {/* timed events */}
               {positioned.map(({ occ, startMin, endMin, lane, lanes }) => {
-                const hex = HABIT_COLORS[occ.event.colorKey].hex;
+                const hex = colorHex(occ.event.colorKey);
                 const height = ((endMin - startMin) / 60) * HOUR_H;
                 return (
                   <div
                     key={occ.key}
-                    onClick={e => { e.stopPropagation(); onEditEvent(occ.event); }}
+                    onClick={e => { e.stopPropagation(); onEditEvent(occ.event, occ.startDate); }}
                     className="absolute rounded px-xs py-0.5 cursor-pointer overflow-hidden hover:opacity-90"
                     style={{
                       top: (startMin / 60) * HOUR_H,

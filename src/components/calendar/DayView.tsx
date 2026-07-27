@@ -1,17 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { fmt } from '../../dates';
-import { expandEvents, isBarOccurrence } from '../../eventLogic';
-import { isDoneOn, isDueOn, valueOn } from '../../habitLogic';
-import { periodsOn, periodProgress, periodStatusLabel } from '../../periodLogic';
-import { HABIT_COLORS } from '../habitColors';
+import { fmt, shortDate } from '../../dates';
+import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
+import { isDoneOn, isDueOn, valueOn } from '../../todoLogic';
+import { colorHex } from '../../colors';
 import AddModal from '../AddModal';
 import HourGrid from './HourGrid';
 import type { CalendarEvent } from '../../types';
 
 export default function DayView() {
-  const { selectedDate, tasks, habits, events, periods, toggleTask, toggleHabit } = useApp();
-  const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
+  const { selectedDate, setSelectedDate, todos, events, toggleTodo, firstDayOfWeek } = useApp();
+  const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
 
   const todayStr = fmt(new Date());
   const dateStr = selectedDate ?? todayStr;
@@ -20,42 +19,43 @@ export default function DayView() {
     () => expandEvents(events, dateStr, dateStr),
     [events, dateStr]
   );
-  const barOccs = occurrences.filter(isBarOccurrence);
+  const longOccs = occurrences.filter(isLongOccurrence);
+  const barOccs = occurrences.filter(o => isBarOccurrence(o) && !isLongOccurrence(o));
   const timedOccs = occurrences.filter(o => !isBarOccurrence(o));
 
-  const dayTasks = tasks.filter(t => t.date === dateStr);
-  const dayHabits = habits.filter(h => isDueOn(h, dateStr) || valueOn(h, dateStr) > 0);
-  const dayPeriods = periodsOn(periods, dateStr);
-  const hasAllDayContent =
-    barOccs.length > 0 || dayTasks.length > 0 || dayHabits.length > 0 || dayPeriods.length > 0;
+  const dayTodos = todos.filter(t => isDueOn(t, dateStr, firstDayOfWeek) || valueOn(t, dateStr) > 0);
+  const hasAllDayContent = longOccs.length > 0 || barOccs.length > 0 || dayTodos.length > 0;
 
   return (
-    <div className="flex-1 rounded-xl border overflow-hidden shadow-2xl flex flex-col" style={{ borderColor: 'rgba(195,198,215,0.2)', backgroundColor: '#f8f9ff' }}>
+    <div className="flex-1 min-h-0 rounded-xl border overflow-hidden shadow-2xl flex flex-col border-sheet-border bg-sheet">
       {/* All-day strip */}
       {hasAllDayContent && (
-        <div className="border-b flex-shrink-0 px-sm py-sm flex flex-col gap-xs" style={{ borderColor: 'rgba(195,198,215,0.3)', backgroundColor: 'rgba(229,238,255,0.5)' }}>
-          {dayPeriods.map(period => {
-            const hex = HABIT_COLORS[period.colorKey].hex;
-            const progress = periodProgress(period, habits, todayStr);
+        <div className="border-b flex-shrink-0 px-sm py-sm flex flex-col gap-xs border-sheet-line bg-sheet-header">
+          {/* week-plus spans (trips, programs) shown as summary lines */}
+          {longOccs.map(o => {
+            const hex = colorHex(o.event.colorKey);
             return (
-              <div key={period.id} className="flex items-center gap-sm">
+              <button
+                key={o.key}
+                onClick={() => setEditEvent({ event: o.event, date: o.startDate })}
+                className="flex items-center gap-sm cursor-pointer text-left hover:opacity-80"
+              >
                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: hex }} />
-                <span className="text-body-sm font-semibold text-on-surface">{period.name}</span>
-                <span className="text-[10px] text-outline">
-                  {periodStatusLabel(progress, period, todayStr)}
-                  {progress.habitCompletion !== null && ` · ${Math.round(progress.habitCompletion * 100)}%`}
+                <span className="text-body-sm font-semibold text-sheet-txt">{o.event.title}</span>
+                <span className="text-[10px] text-sheet-txt-faint">
+                  {shortDate(o.startDate)} – {shortDate(o.endDate)}
                 </span>
-              </div>
+              </button>
             );
           })}
 
           <div className="flex flex-wrap gap-xs">
             {barOccs.map(o => {
-              const hex = HABIT_COLORS[o.event.colorKey].hex;
+              const hex = colorHex(o.event.colorKey);
               return (
                 <button
                   key={o.key}
-                  onClick={() => setEditEvent(o.event)}
+                  onClick={() => setEditEvent({ event: o.event, date: o.startDate })}
                   className="text-[11px] font-bold px-sm py-0.5 rounded-full cursor-pointer hover:opacity-90"
                   style={{ backgroundColor: `${hex}cc`, color: '#fff' }}
                 >
@@ -63,28 +63,13 @@ export default function DayView() {
                 </button>
               );
             })}
-            {dayTasks.map(task => (
-              <button
-                key={task.id}
-                onClick={() => toggleTask(task.id)}
-                title={task.completed ? 'Mark incomplete' : 'Mark complete'}
-                className={`text-[11px] font-bold px-sm py-0.5 rounded-full cursor-pointer border ${task.completed ? 'line-through opacity-50' : ''}`}
-                style={{
-                  backgroundColor: 'rgba(0,74,198,0.1)',
-                  borderColor: '#004ac6',
-                  color: '#003ea8',
-                }}
-              >
-                {task.title}
-              </button>
-            ))}
-            {dayHabits.map(habit => {
-              const done = isDoneOn(habit, dateStr);
-              const hex = HABIT_COLORS[habit.colorKey].hex;
+            {dayTodos.map(todo => {
+              const done = isDoneOn(todo, dateStr);
+              const hex = colorHex(todo.colorKey);
               return (
                 <button
-                  key={habit.id}
-                  onClick={() => toggleHabit(habit.id, dateStr)}
+                  key={todo.id}
+                  onClick={() => toggleTodo(todo.id, dateStr)}
                   title={done ? 'Mark not done' : 'Mark done'}
                   className="text-[11px] font-bold px-sm py-0.5 rounded-full cursor-pointer border flex items-center gap-xs"
                   style={{
@@ -97,7 +82,7 @@ export default function DayView() {
                   <span className="material-symbols-outlined" style={{ fontSize: '12px', fontVariationSettings: done ? "'FILL' 1" : undefined }}>
                     {done ? 'check_circle' : 'radio_button_unchecked'}
                   </span>
-                  {habit.name}
+                  {todo.name}
                 </button>
               );
             })}
@@ -108,10 +93,11 @@ export default function DayView() {
       <HourGrid
         days={[dateStr]}
         occurrences={timedOccs}
-        onEditEvent={setEditEvent}
+        onEditEvent={(event, date) => setEditEvent({ event, date })}
+        onSelectDate={setSelectedDate}
       />
 
-      {editEvent && <AddModal editEvent={editEvent} onClose={() => setEditEvent(null)} />}
+      {editEvent && <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />}
     </div>
   );
 }

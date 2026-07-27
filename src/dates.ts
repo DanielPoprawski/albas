@@ -1,3 +1,5 @@
+import type { CalendarMode, FirstDayOfWeek } from './types';
+
 export function fmt(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -21,6 +23,22 @@ export function addDays(dateStr: string, n: number): string {
   return fmt(d);
 }
 
+/** `dateStr` shifted by `n` calendar months, day-of-month clamped to the target month's end. */
+export function addMonths(dateStr: string, n: number): string {
+  const d = parse(dateStr);
+  const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const lastDay = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  t.setDate(Math.min(d.getDate(), lastDay));
+  return fmt(t);
+}
+
+/** Whole calendar months from `fromStr`'s month to `toStr`'s month. */
+export function monthsBetween(fromStr: string, toStr: string): number {
+  const a = parse(fromStr);
+  const b = parse(toStr);
+  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+
 /** "2026-07-04" -> "Jul 4" */
 export function shortDate(dateStr: string): string {
   return parse(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -31,13 +49,56 @@ export function longDate(dateStr: string): string {
   return parse(dateStr).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
-/** Mon–Sun dates of the week containing `d`. */
-export function weekOf(d: Date): string[] {
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+/**
+ * The seven dates of the week containing `d`, starting on `firstDay`
+ * (0 = Sunday, 1 = Monday). The default keeps every un-threaded caller on the
+ * Monday behaviour this app shipped with.
+ */
+export function weekOf(d: Date, firstDay: FirstDayOfWeek = 1): string[] {
+  const start = new Date(d);
+  start.setDate(d.getDate() - ((d.getDay() - firstDay + 7) % 7));
   return Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(monday);
-    day.setDate(monday.getDate() + i);
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
     return fmt(day);
   });
+}
+
+/**
+ * Reorder a Sunday-first array of seven into display order. Label tables are
+ * written Sunday-first (matching `getDay()`) and rotated for display, so the
+ * index of a column always maps back to a real weekday.
+ */
+export function rotateWeek<T>(sundayFirst: readonly T[], firstDay: FirstDayOfWeek): T[] {
+  return Array.from({ length: 7 }, (_, i) => sundayFirst[(firstDay + i) % 7]);
+}
+
+/** `getDay()` value shown in display column `i`. */
+export function weekdayAt(i: number, firstDay: FirstDayOfWeek): number {
+  return (firstDay + i) % 7;
+}
+
+export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+/**
+ * The calendar's header label, shared by `Calendar` and the top bar so the
+ * month name isn't rendered twice. Month view drops the year in the current
+ * year — it's the common case and the space is worth more on a phone.
+ */
+export function calendarTitle(
+  mode: CalendarMode,
+  currentMonth: Date,
+  anchor: string,
+  firstDay: FirstDayOfWeek = 1,
+): string {
+  if (mode === 'week') {
+    const weekDays = weekOf(parse(anchor), firstDay);
+    return `${shortDate(weekDays[0])} – ${shortDate(weekDays[6])}, ${parse(weekDays[6]).getFullYear()}`;
+  }
+  if (mode === 'day') return longDate(anchor);
+
+  const name = MONTH_NAMES[currentMonth.getMonth()];
+  const year = currentMonth.getFullYear();
+  return year === new Date().getFullYear() ? name : `${name} ${year}`;
 }

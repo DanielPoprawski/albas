@@ -1,7 +1,7 @@
 import { addDays, fmt, parse, shortDate } from './dates';
 import { expandEvents, shortTime, type Occurrence } from './eventLogic';
-import { isDoneOn, isDueOn } from './habitLogic';
-import type { CalendarEvent, Habit } from './types';
+import { isDoneOn, isDueOn } from './todoLogic';
+import type { CalendarEvent, FirstDayOfWeek, Todo } from './types';
 
 const NOTIFIED_KEY = 'albas-last-reminder';
 const EVENT_NOTIFIED_KEY = 'albas-event-reminders-sent';
@@ -11,17 +11,22 @@ function inTauri(): boolean {
 }
 
 /**
- * Send one desktop notification per day listing habits that are due today,
+ * Send one desktop notification per day listing to-dos that are due today,
  * have reminders enabled, and aren't done yet. No-op outside Tauri (plain
  * browser dev server) and when everything is already done.
  */
-export async function remindDueHabits(habits: Habit[]): Promise<void> {
+export async function remindDueTodos(
+  todos: Todo[],
+  firstDay: FirstDayOfWeek = 1,
+): Promise<void> {
   if (!inTauri()) return;
 
   const todayStr = fmt(new Date());
   if (localStorage.getItem(NOTIFIED_KEY) === todayStr) return;
 
-  const due = habits.filter(h => h.reminder && isDueOn(h, todayStr) && !isDoneOn(h, todayStr));
+  const due = todos.filter(
+    t => t.reminder && isDueOn(t, todayStr, firstDay) && !isDoneOn(t, todayStr)
+  );
   if (due.length === 0) return;
 
   try {
@@ -33,8 +38,8 @@ export async function remindDueHabits(habits: Habit[]): Promise<void> {
     if (!granted) return;
 
     sendNotification({
-      title: due.length === 1 ? 'Habit due today' : `${due.length} habits due today`,
-      body: due.map(h => h.name).join(', '),
+      title: due.length === 1 ? 'Due today' : `${due.length} to-dos due today`,
+      body: due.map(t => t.name).join(', '),
     });
     localStorage.setItem(NOTIFIED_KEY, todayStr);
   } catch (err) {

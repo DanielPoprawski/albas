@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import type { ActiveView, CalendarEvent, CalendarMode, Habit, Period, Task } from '../types';
+import type {
+  ActiveView, CalendarEvent, CalendarMode, FirstDayOfWeek, Repeat, ThemeName, Todo, WeightEntry, WeightUnit,
+} from '../types';
 import { fmt, parse, weekOf } from '../dates';
-import { inTauri, persistence, readLocalBlob } from '../persistence';
+import { inTauri, persistence, readLocalBlob, type LegacyPeriod, type LegacyTask } from '../persistence';
+import { DEFAULT_COLOR } from '../colors';
 
 const today = new Date();
 const todayStr = fmt(today);
@@ -13,74 +16,149 @@ const weekAgo = new Date(today);
 weekAgo.setDate(today.getDate() - 7);
 const weekAgoStr = fmt(weekAgo);
 
-const initialTasks: Task[] = [
-  { id: '1', title: 'Finalize Q4 roadmap', category: 'Planning', completed: false, date: null },
-  { id: '2', title: 'Client meeting prep', category: 'Marketing', completed: false, date: todayStr },
-  { id: '3', title: 'Inbox Zero', category: 'General', completed: true, date: null },
-];
+const baseTodo = {
+  kind: 'yesno' as const, unit: '', target: 1,
+  dueDate: null, time: null, createdAt: weekAgoStr, reminder: false,
+};
 
-const initialHabits: Habit[] = [
+const initialTodos: Todo[] = [
   {
-    id: '1', name: 'Deep Work', colorKey: 'secondary', kind: 'measurable', unit: 'h', target: 4,
-    schedule: { type: 'weekdays', days: [1, 2, 3, 4, 5] }, createdAt: weekAgoStr, reminder: false,
+    ...baseTodo, id: '1', name: 'Deep Work', colorKey: '#10b981', kind: 'measurable', unit: 'h', target: 4,
+    schedule: { type: 'weekdays', days: [1, 2, 3, 4, 5] },
     completions: Object.fromEntries(
       weekDates.filter(d => { const day = parse(d).getDay(); return day >= 1 && day <= 5; }).map(d => [d, 4])
     ),
   },
   {
-    id: '2', name: 'Meditation', colorKey: 'tertiary', kind: 'yesno', unit: '', target: 1,
-    schedule: { type: 'daily' }, createdAt: weekAgoStr, reminder: false,
+    ...baseTodo, id: '2', name: 'Meditation', colorKey: '#a855f7',
+    schedule: { type: 'daily' },
     completions: Object.fromEntries(weekDates.filter((_, i) => i % 2 === 0).map(d => [d, 1])),
   },
   {
-    id: '3', name: 'Take out trash', colorKey: 'primary', kind: 'yesno', unit: '', target: 1,
-    schedule: { type: 'chore', every: 3 }, createdAt: weekAgoStr, reminder: true,
+    ...baseTodo, id: '3', name: 'Take out trash', colorKey: '#f59e0b', reminder: true,
+    schedule: { type: 'every', n: 3, unit: 'day', fromDone: true },
     completions: weekDates.length > 2 ? { [weekDates[weekDates.length - 3]]: 1 } : {},
+  },
+  {
+    ...baseTodo, id: '4', name: 'Finalize Q4 roadmap', colorKey: DEFAULT_COLOR,
+    schedule: { type: 'once' }, dueDate: todayStr, completions: {},
   },
 ];
 
-/** Validate/repair tasks saved by older versions of the app. */
-export function migrateTask(t: any): Task {
-  return {
-    id: typeof t?.id === 'string' && t.id ? t.id : crypto.randomUUID(),
-    title: typeof t?.title === 'string' ? t.title : 'Task',
-    category: typeof t?.category === 'string' && t.category ? t.category : 'General',
-    completed: !!t?.completed,
-    date: typeof t?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date) ? t.date : null,
-  };
+function migrateRepeat(s: any): Repeat {
+  switch (s?.type) {
+    case 'once':
+      return { type: 'once' };
+    case 'daily':
+      return { type: 'daily' };
+    case 'weekdays': {
+      const days = Array.isArray(s.days) ? s.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6) : [];
+      return { type: 'weekdays', days: days.length > 0 ? days : [1, 2, 3, 4, 5] };
+    }
+    // pre-unification shapes: interval = fixed cadence, chore = from last done
+    case 'interval':
+      return { type: 'every', n: s.every > 0 ? s.every : 1, unit: 'day', fromDone: false };
+    case 'chore':
+      return { type: 'every', n: s.every > 0 ? s.every : 1, unit: 'day', fromDone: true };
+    case 'every':
+      return {
+        type: 'every',
+        n: typeof s.n === 'number' && s.n > 0 ? s.n : 1,
+        unit: ['day', 'week', 'month'].includes(s.unit) ? s.unit : 'day',
+        fromDone: !!s.fromDone,
+      };
+    case 'timesPer':
+      return {
+        type: 'timesPer',
+        times: typeof s.times === 'number' && s.times > 0 ? s.times : 1,
+        per: s.per === 'month' ? 'month' : 'week',
+      };
+    default:
+      return { type: 'daily' };
+  }
 }
 
-/** Upgrade habits saved by older versions of the app to the current shape. */
-export function migrateHabit(h: any): Habit {
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Upgrade todos (or pre-unification habits) saved by older versions of the app. */
+export function migrateTodo(t: any): Todo {
   const completions: Record<string, number> = {};
-  for (const [d, v] of Object.entries(h.completions ?? {})) {
+  for (const [d, v] of Object.entries(t?.completions ?? {})) {
     if (typeof v === 'number') completions[d] = v;
     else if (v === true) completions[d] = 1;
   }
   const dates = Object.keys(completions).sort();
   return {
-    id: h.id ?? crypto.randomUUID(),
-    name: h.name ?? 'Habit',
-    colorKey: ['primary', 'secondary', 'tertiary'].includes(h.colorKey) ? h.colorKey : 'primary',
-    kind: h.kind === 'measurable' ? 'measurable' : 'yesno',
-    unit: typeof h.unit === 'string' ? h.unit : '',
-    target: typeof h.target === 'number' && h.target > 0 ? h.target : 1,
-    schedule: h.schedule?.type ? h.schedule : { type: 'daily' },
-    createdAt: h.createdAt ?? dates[0] ?? todayStr,
-    reminder: !!h.reminder,
+    id: typeof t?.id === 'string' && t.id ? t.id : crypto.randomUUID(),
+    name: t?.name ?? 'To-do',
+    colorKey: typeof t?.colorKey === 'string' && t.colorKey ? t.colorKey : DEFAULT_COLOR,
+    kind: t?.kind === 'measurable' ? 'measurable' : 'yesno',
+    unit: typeof t?.unit === 'string' ? t.unit : '',
+    target: typeof t?.target === 'number' && t.target > 0 ? t.target : 1,
+    schedule: migrateRepeat(t?.schedule),
+    dueDate: typeof t?.dueDate === 'string' && DATE_RE.test(t.dueDate) ? t.dueDate : null,
+    time: typeof t?.time === 'string' && /^\d{2}:\d{2}$/.test(t.time) ? t.time : null,
+    createdAt: t?.createdAt ?? dates[0] ?? todayStr,
+    reminder: !!t?.reminder,
     completions,
   };
 }
 
-export type NewHabit = Omit<Habit, 'id' | 'completions' | 'createdAt'>;
+/** Validate/repair tasks saved by pre-SQLite versions (still the shape import_legacy expects). */
+export function migrateLegacyTask(t: any): LegacyTask {
+  return {
+    id: typeof t?.id === 'string' && t.id ? t.id : crypto.randomUUID(),
+    title: typeof t?.title === 'string' ? t.title : 'Task',
+    category: typeof t?.category === 'string' && t.category ? t.category : 'General',
+    completed: !!t?.completed,
+    date: typeof t?.date === 'string' && DATE_RE.test(t.date) ? t.date : null,
+  };
+}
+
+/** Old standalone tasks are just once-todos now. */
+function taskToTodo(t: LegacyTask): Todo {
+  return {
+    id: t.id,
+    name: t.title,
+    colorKey: DEFAULT_COLOR,
+    kind: 'yesno',
+    unit: '',
+    target: 1,
+    schedule: { type: 'once' },
+    dueDate: t.date,
+    time: null,
+    createdAt: t.date ?? todayStr,
+    reminder: false,
+    completions: t.completed ? { [t.date ?? todayStr]: 1 } : {},
+  };
+}
+
+/** Old periods are just long all-day events now. */
+function periodToEvent(p: LegacyPeriod): CalendarEvent {
+  return {
+    id: p.id,
+    title: p.name,
+    description: p.notes ?? '',
+    colorKey: p.colorKey ?? DEFAULT_COLOR,
+    allDay: true,
+    startDate: p.startDate,
+    startTime: null,
+    endDate: p.endDate >= p.startDate ? p.endDate : p.startDate,
+    endTime: null,
+    recurrence: { type: 'none' },
+    reminders: [],
+  };
+}
+
+export type NewTodo = Omit<Todo, 'id' | 'completions' | 'createdAt'>;
 export type NewEvent = Omit<CalendarEvent, 'id'>;
-export type NewPeriod = Omit<Period, 'id'>;
+
+export type NewWeight = Omit<WeightEntry, 'id'>;
 
 interface AppContextType {
-  tasks: Task[];
-  habits: Habit[];
+  todos: Todo[];
   events: CalendarEvent[];
-  periods: Period[];
+  weights: WeightEntry[];
   loaded: boolean;
   selectedDate: string | null;
   currentMonth: Date;
@@ -90,31 +168,55 @@ interface AppContextType {
   setCurrentMonth: React.Dispatch<React.SetStateAction<Date>>;
   setActiveView: (view: ActiveView) => void;
   setCalendarMode: (mode: CalendarMode) => void;
-  addTask: (title: string, category: string, date: string | null) => void;
-  updateTask: (id: string, updates: Partial<Omit<Task, 'id'>>) => void;
-  toggleTask: (id: string) => void;
-  deleteTask: (id: string) => void;
-  addHabit: (habit: NewHabit) => void;
-  updateHabit: (id: string, updates: Partial<Omit<Habit, 'id' | 'completions'>>) => void;
-  deleteHabit: (id: string) => void;
+  addTodo: (todo: NewTodo) => void;
+  updateTodo: (id: string, updates: Partial<Omit<Todo, 'id' | 'completions'>>) => void;
+  deleteTodo: (id: string) => void;
   /** Yes/no: toggles done. Measurable: jumps to target, or back to 0 if already done. */
-  toggleHabit: (habitId: string, date: string) => void;
-  setHabitValue: (habitId: string, date: string, value: number) => void;
+  toggleTodo: (todoId: string, date: string) => void;
+  setTodoValue: (todoId: string, date: string, value: number) => void;
   addEvent: (event: NewEvent) => void;
   updateEvent: (id: string, updates: Partial<Omit<CalendarEvent, 'id'>>) => void;
   deleteEvent: (id: string) => void;
-  addPeriod: (period: NewPeriod) => void;
-  updatePeriod: (id: string, updates: Partial<Omit<Period, 'id'>>) => void;
-  deletePeriod: (id: string) => void;
+  /** Bulk upsert (by id), e.g. a Google Calendar import — re-importing updates in place. */
+  importEvents: (incoming: CalendarEvent[]) => void;
+  addWeight: (weight: NewWeight) => void;
+  deleteWeight: (id: string) => void;
+  /** Bulk upsert (by id) for a Wyze sync — re-syncing a range updates in place. */
+  importWeights: (incoming: WeightEntry[]) => void;
+  theme: ThemeName;
+  weightUnit: WeightUnit;
+  firstDayOfWeek: FirstDayOfWeek;
+  setSetting: (key: string, value: string) => void;
+}
+
+const THEMES: ThemeName[] = ['dark', 'light', 'grey-high', 'grey-low'];
+
+function readTheme(settings: Record<string, string>): ThemeName {
+  const t = settings.theme as ThemeName | undefined;
+  return t && THEMES.includes(t) ? t : 'dark';
+}
+
+/**
+ * Themes are also mirrored to localStorage by `applyTheme` so the inline script
+ * in index.html can paint the right colours before React mounts. SQLite stays
+ * the source of truth; the mirror is only a first-paint cache.
+ */
+export function applyTheme(theme: ThemeName): void {
+  document.documentElement.dataset.theme = theme;
+  try {
+    localStorage.setItem('albas-theme', theme);
+  } catch {
+    // private mode / quota — the theme still applies for this session
+  }
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [habits, setHabits] = useState<Habit[]>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [periods, setPeriods] = useState<Period[]>([]);
+  const [weights, setWeights] = useState<WeightEntry[]>([]);
+  const [settings, setSettings] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(todayStr);
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -129,108 +231,90 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         let state = await persistence.load();
+        setSettings(state.settings);
+        setWeights(state.weights);
+        applyTheme(readTheme(state.settings));
 
         if (inTauri() && state.needsLegacyImport) {
           const blob = readLocalBlob();
           if (blob) {
-            await persistence.importLegacy(blob.tasks.map(migrateTask), blob.habits.map(migrateHabit));
+            await persistence.importLegacy(blob.tasks.map(migrateLegacyTask), blob.habits.map(migrateTodo));
             state = await persistence.load();
           }
         }
 
         if (state.empty) {
           // first launch anywhere — seed the demo data through the store
-          initialTasks.forEach(t => persistence.saveTask(t));
-          initialHabits.forEach(h => {
-            persistence.saveHabit(h);
-            Object.entries(h.completions).forEach(([d, v]) => persistence.setCompletion(h.id, d, v));
+          initialTodos.forEach(t => {
+            persistence.saveTodo(t);
+            Object.entries(t.completions).forEach(([d, v]) => persistence.setCompletion(t.id, d, v));
           });
-          setTasks(initialTasks);
-          setHabits(initialHabits);
+          setTodos(initialTodos);
         } else {
-          setTasks(state.tasks.map(migrateTask));
-          setHabits(state.habits.map(migrateHabit));
-          setEvents(state.events);
-          setPeriods(state.periods);
+          const loadedTodos = state.todos.map(migrateTodo);
+          const loadedEvents = [...state.events];
+
+          // one-time unification: fold legacy tasks/periods into todos/events
+          for (const raw of state.legacyTasks) {
+            const todo = taskToTodo(migrateLegacyTask(raw));
+            loadedTodos.push(todo);
+            persistence.saveTodo(todo);
+            Object.entries(todo.completions).forEach(([d, v]) => persistence.setCompletion(todo.id, d, v));
+            persistence.deleteTask(raw.id);
+          }
+          for (const raw of state.legacyPeriods) {
+            const event = periodToEvent(raw);
+            loadedEvents.push(event);
+            persistence.saveEvent(event);
+            persistence.deletePeriod(raw.id);
+          }
+
+          setTodos(loadedTodos);
+          setEvents(loadedEvents);
         }
       } catch (err) {
         console.error('failed to load persisted data:', err);
-        setTasks(initialTasks);
-        setHabits(initialHabits);
+        setTodos(initialTodos);
       }
       setLoaded(true);
     })();
   }, []);
 
-  function addTask(title: string, category: string, date: string | null) {
-    const task: Task = { id: crypto.randomUUID(), title, category, completed: false, date };
-    setTasks(prev => [...prev, task]);
-    persistence.saveTask(task);
+  function addTodo(todo: NewTodo) {
+    const full: Todo = { ...todo, id: crypto.randomUUID(), createdAt: todayStr, completions: {} };
+    setTodos(prev => [...prev, full]);
+    persistence.saveTodo(full);
   }
 
-  function updateTask(id: string, updates: Partial<Omit<Task, 'id'>>) {
-    const current = tasks.find(t => t.id === id);
+  function updateTodo(id: string, updates: Partial<Omit<Todo, 'id' | 'completions'>>) {
+    const current = todos.find(t => t.id === id);
     if (!current) return;
     const next = { ...current, ...updates };
-    setTasks(prev => prev.map(t => (t.id === id ? next : t)));
-    persistence.saveTask(next);
+    setTodos(prev => prev.map(t => (t.id === id ? next : t)));
+    persistence.saveTodo(next);
   }
 
-  function toggleTask(id: string) {
-    const current = tasks.find(t => t.id === id);
-    if (!current) return;
-    const next = { ...current, completed: !current.completed };
-    setTasks(prev => prev.map(t => (t.id === id ? next : t)));
-    persistence.saveTask(next);
+  function deleteTodo(id: string) {
+    setTodos(prev => prev.filter(t => t.id !== id));
+    persistence.deleteTodo(id);
   }
 
-  function deleteTask(id: string) {
-    setTasks(prev => prev.filter(t => t.id !== id));
-    persistence.deleteTask(id);
-  }
-
-  function addHabit(habit: NewHabit) {
-    const full: Habit = { ...habit, id: crypto.randomUUID(), createdAt: todayStr, completions: {} };
-    setHabits(prev => [...prev, full]);
-    persistence.saveHabit(full);
-  }
-
-  function updateHabit(id: string, updates: Partial<Omit<Habit, 'id' | 'completions'>>) {
-    const current = habits.find(h => h.id === id);
-    if (!current) return;
-    const next = { ...current, ...updates };
-    setHabits(prev => prev.map(h => (h.id === id ? next : h)));
-    persistence.saveHabit(next);
-  }
-
-  function deleteHabit(id: string) {
-    setHabits(prev => prev.filter(h => h.id !== id));
-    // unlink from any periods that referenced it
-    const affected = periods.filter(p => p.habitIds.includes(id))
-      .map(p => ({ ...p, habitIds: p.habitIds.filter(hid => hid !== id) }));
-    if (affected.length > 0) {
-      setPeriods(prev => prev.map(p => affected.find(a => a.id === p.id) ?? p));
-      affected.forEach(p => persistence.savePeriod(p));
-    }
-    persistence.deleteHabit(id);
-  }
-
-  function setHabitValue(habitId: string, date: string, value: number) {
-    setHabits(prev => prev.map(h => {
-      if (h.id !== habitId) return h;
-      const completions = { ...h.completions };
+  function setTodoValue(todoId: string, date: string, value: number) {
+    setTodos(prev => prev.map(t => {
+      if (t.id !== todoId) return t;
+      const completions = { ...t.completions };
       if (value <= 0) delete completions[date];
       else completions[date] = value;
-      return { ...h, completions };
+      return { ...t, completions };
     }));
-    persistence.setCompletion(habitId, date, value);
+    persistence.setCompletion(todoId, date, value);
   }
 
-  function toggleHabit(habitId: string, date: string) {
-    const habit = habits.find(h => h.id === habitId);
-    if (!habit) return;
-    const current = habit.completions[date] ?? 0;
-    setHabitValue(habitId, date, current >= habit.target ? 0 : habit.target);
+  function toggleTodo(todoId: string, date: string) {
+    const todo = todos.find(t => t.id === todoId);
+    if (!todo) return;
+    const current = todo.completions[date] ?? 0;
+    setTodoValue(todoId, date, current >= todo.target ? 0 : todo.target);
   }
 
   function addEvent(event: NewEvent) {
@@ -252,34 +336,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     persistence.deleteEvent(id);
   }
 
-  function addPeriod(period: NewPeriod) {
-    const full: Period = { ...period, id: crypto.randomUUID() };
-    setPeriods(prev => [...prev, full]);
-    persistence.savePeriod(full);
+  function importEvents(incoming: CalendarEvent[]) {
+    setEvents(prev => {
+      const byId = new Map(prev.map(e => [e.id, e]));
+      for (const e of incoming) byId.set(e.id, e);
+      return [...byId.values()];
+    });
+    incoming.forEach(e => persistence.saveEvent(e));
   }
 
-  function updatePeriod(id: string, updates: Partial<Omit<Period, 'id'>>) {
-    const current = periods.find(p => p.id === id);
-    if (!current) return;
-    const next = { ...current, ...updates };
-    setPeriods(prev => prev.map(p => (p.id === id ? next : p)));
-    persistence.savePeriod(next);
+  function addWeight(weight: NewWeight) {
+    const full: WeightEntry = { ...weight, id: crypto.randomUUID() };
+    setWeights(prev => [...prev, full].sort((a, b) => a.ts - b.ts));
+    persistence.saveWeight(full);
   }
 
-  function deletePeriod(id: string) {
-    setPeriods(prev => prev.filter(p => p.id !== id));
-    persistence.deletePeriod(id);
+  function deleteWeight(id: string) {
+    setWeights(prev => prev.filter(w => w.id !== id));
+    persistence.deleteWeight(id);
+  }
+
+  function importWeights(incoming: WeightEntry[]) {
+    setWeights(prev => {
+      const byId = new Map(prev.map(w => [w.id, w]));
+      for (const w of incoming) byId.set(w.id, w);
+      return [...byId.values()].sort((a, b) => a.ts - b.ts);
+    });
+    incoming.forEach(w => persistence.saveWeight(w));
+  }
+
+  function setSetting(key: string, value: string) {
+    setSettings(prev => ({ ...prev, [key]: value }));
+    persistence.setSetting(key, value);
+    if (key === 'theme') applyTheme(value as ThemeName);
   }
 
   return (
     <AppContext.Provider value={{
-      tasks, habits, events, periods, loaded,
+      todos, events, weights, loaded,
       selectedDate, currentMonth, activeView, calendarMode,
       setSelectedDate, setCurrentMonth, setActiveView, setCalendarMode,
-      addTask, updateTask, toggleTask, deleteTask,
-      addHabit, updateHabit, deleteHabit, toggleHabit, setHabitValue,
-      addEvent, updateEvent, deleteEvent,
-      addPeriod, updatePeriod, deletePeriod,
+      addTodo, updateTodo, deleteTodo, toggleTodo, setTodoValue,
+      addEvent, updateEvent, deleteEvent, importEvents,
+      addWeight, deleteWeight, importWeights,
+      theme: readTheme(settings),
+      weightUnit: settings.weightUnit === 'kg' ? 'kg' : 'lb',
+      firstDayOfWeek: settings.firstDayOfWeek === '0' ? 0 : 1,
+      setSetting,
     }}>
       {children}
     </AppContext.Provider>
