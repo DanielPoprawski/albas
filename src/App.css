@@ -314,8 +314,11 @@ body {
   overflow: hidden;
 }
 
-.material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+/* lucide draws stroked SVGs at whatever the surrounding font-size implies
+   nothing about, so icons take an explicit `size`. These two defaults spare
+   every call site a `flex-shrink-0` and a stray text cursor. */
+svg.lucide {
+  flex-shrink: 0;
   user-select: none;
 }
 
@@ -349,4 +352,37 @@ body {
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Month swipe (phone). The new month enters from the side it came from — swipe
+   left and the next month follows your thumb in from the right — so the grid
+   reads as one continuous strip rather than a static grid whose numbers
+   changed. The travel is deliberately short (18%): a full-width slide at a
+   duration that still feels responsive looks like a jump-cut.
+
+   The duration comes from `SLIDE_MS` in MonthViewMobile as an inline style, so
+   these keyframes only own the shape. */
+@keyframes month-slide-next {
+  from { transform: translateX(18%); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes month-slide-prev {
+  from { transform: translateX(-18%); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+
+.month-slide-next {
+  animation: month-slide-next 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.month-slide-prev {
+  animation: month-slide-prev 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .month-slide-next,
+  .month-slide-prev {
+    animation: none;
+  }
 }

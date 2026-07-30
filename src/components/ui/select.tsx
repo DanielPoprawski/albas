@@ -1,31 +1,8 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "radix-ui"
+import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-
-/*
- * Material Symbols instead of lucide — see the note in dropdown-menu.tsx.
- * Two things this has to get right:
- *  - `block`: it replaces an SVG, and an inline span ignores width/height.
- *  - forwardRef: `SelectPrimitive.Icon asChild` hands its ref to this element,
- *    and a plain function component drops it with a React warning.
- */
-const Sym = React.forwardRef<
-  HTMLSpanElement,
-  { name: string; size: number; className?: string } & React.ComponentProps<"span">
->(function Sym({ name, size, className, ...props }, ref) {
-  return (
-    <span
-      ref={ref}
-      className={cn("material-symbols-outlined block", className)}
-      style={{ fontSize: size }}
-      aria-hidden
-      {...props}
-    >
-      {name}
-    </span>
-  )
-})
 
 function Select({
   ...props
@@ -65,7 +42,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <Sym name="arrow_drop_down" size={18} className="opacity-60" />
+        <ChevronDown size={16} className="opacity-60" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )
@@ -140,7 +117,7 @@ function SelectItem({
         className="absolute right-2 flex size-3.5 items-center justify-center"
       >
         <SelectPrimitive.ItemIndicator>
-          <Sym name="check" size={16} />
+          <Check size={16} />
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
@@ -174,7 +151,7 @@ function SelectScrollUpButton({
       )}
       {...props}
     >
-      <Sym name="keyboard_arrow_up" size={16} />
+      <ChevronUp size={16} />
     </SelectPrimitive.ScrollUpButton>
   )
 }
@@ -192,7 +169,7 @@ function SelectScrollDownButton({
       )}
       {...props}
     >
-      <Sym name="keyboard_arrow_down" size={16} />
+      <ChevronDown size={16} />
     </SelectPrimitive.ScrollDownButton>
   )
 }

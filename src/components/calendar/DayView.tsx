@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { CheckCircle2, Circle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { fmt, shortDate } from '../../dates';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
@@ -79,9 +80,7 @@ export default function DayView() {
                     opacity: done ? 1 : 0.7,
                   }}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: '12px', fontVariationSettings: done ? "'FILL' 1" : undefined }}>
-                    {done ? 'check_circle' : 'radio_button_unchecked'}
-                  </span>
+                  {done ? <CheckCircle2 size={12} /> : <Circle size={12} />}
                   {todo.name}
                 </button>
               );

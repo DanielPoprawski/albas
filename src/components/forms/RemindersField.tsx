@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Bell, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { inputClass, labelClass, Select } from './shared';
 
@@ -204,7 +205,7 @@ export default function RemindersField({ value, onChange }: {
           onClick={() => setEditing('new')}
           className="flex items-center gap-0.5 text-label-md font-semibold text-primary-fixed-dim hover:bg-fill-strong rounded px-xs py-0.5 transition-colors"
         >
-          <span className="material-symbols-outlined block" style={{ fontSize: 16 }}>add</span>
+          <Plus size={14} />
           Add
         </button>
       </div>
@@ -218,9 +219,7 @@ export default function RemindersField({ value, onChange }: {
               key={minutes}
               className="flex items-center gap-sm py-xs px-sm rounded-lg bg-fill"
             >
-              <span className="material-symbols-outlined block text-txt-faint flex-shrink-0" style={{ fontSize: 16 }}>
-                notifications
-              </span>
+              <Bell size={15} className="text-txt-faint flex-shrink-0" />
               <span className="text-body-sm text-txt flex-1 min-w-0 truncate">
                 {reminderLabel(minutes)}
               </span>
@@ -230,7 +229,7 @@ export default function RemindersField({ value, onChange }: {
                 onClick={() => setEditing(minutes)}
                 className="text-txt-muted hover:text-txt transition-colors flex-shrink-0"
               >
-                <span className="material-symbols-outlined block" style={{ fontSize: 16 }}>edit</span>
+                <Pencil size={14} />
               </button>
               <button
                 type="button"
@@ -238,7 +237,7 @@ export default function RemindersField({ value, onChange }: {
                 onClick={() => onChange(value.filter(m => m !== minutes))}
                 className="text-txt-muted hover:text-danger transition-colors flex-shrink-0"
               >
-                <span className="material-symbols-outlined block" style={{ fontSize: 16 }}>delete</span>
+                <Trash2 size={14} />
               </button>
             </div>
           ))}

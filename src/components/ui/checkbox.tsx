@@ -2,23 +2,9 @@
 
 import * as React from "react"
 import { Checkbox as CheckboxPrimitive } from "radix-ui"
+import { Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-
-/* Material Symbols instead of lucide — see the note in dropdown-menu.tsx. The
-   `block` is load-bearing: these replace SVGs, and an inline span ignores
-   width/height. */
-function Sym({ name, size, className }: { name: string; size: number; className?: string }) {
-  return (
-    <span
-      className={"material-symbols-outlined block " + (className ?? "")}
-      style={{ fontSize: size }}
-      aria-hidden
-    >
-      {name}
-    </span>
-  )
-}
 
 function Checkbox({
   className,
@@ -37,7 +23,7 @@ function Checkbox({
         data-slot="checkbox-indicator"
         className="grid place-content-center text-current transition-none"
       >
-        <Sym name="check" size={14} />
+        <Check size={14} strokeWidth={3} />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   )

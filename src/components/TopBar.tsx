@@ -1,3 +1,4 @@
+import { Menu } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import CalendarNav from './calendar/CalendarNav';
 import { calendarTitle, fmt } from '../dates';
@@ -43,7 +44,7 @@ export default function TopBar({ isMobile, onOpenDrawer }: Props) {
           aria-label="Open navigation"
           className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg text-txt-muted hover:bg-fill-strong active:scale-95 transition-all"
         >
-          <span className="material-symbols-outlined">menu</span>
+          <Menu size={22} />
         </button>
       )}
 

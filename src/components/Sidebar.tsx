@@ -1,3 +1,4 @@
+import { CalendarDays, ListChecks, Weight, Settings, type LucideIcon } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Sheet, SheetContent, SheetTitle } from './ui/sheet';
 import type { ActiveView } from '../types';
@@ -8,11 +9,11 @@ import type { ActiveView } from '../types';
  * it's the same content one scroll further down, and a second way in is what
  * produced duplicate lists last time.
  */
-const navItems: { icon: string; view: ActiveView; label: string; mobileLabel?: string; mobileOnly?: false; desktopOnly?: boolean }[] = [
-  { icon: 'calendar_today', view: 'calendar', label: 'Calendar', mobileLabel: 'Home' },
-  { icon: 'checklist', view: 'todos', label: 'To-Do', desktopOnly: true },
-  { icon: 'monitor_weight', view: 'weight', label: 'Weight' },
-  { icon: 'settings', view: 'settings', label: 'Settings' },
+const navItems: { Icon: LucideIcon; view: ActiveView; label: string; mobileLabel?: string; mobileOnly?: false; desktopOnly?: boolean }[] = [
+  { Icon: CalendarDays, view: 'calendar', label: 'Calendar', mobileLabel: 'Home' },
+  { Icon: ListChecks, view: 'todos', label: 'To-Do', desktopOnly: true },
+  { Icon: Weight, view: 'weight', label: 'Weight' },
+  { Icon: Settings, view: 'settings', label: 'Settings' },
 ];
 
 interface Props {
@@ -39,29 +40,24 @@ export default function Sidebar({ variant, open = false, onClose }: Props) {
 
   const nav = (
     <nav className={`flex flex-col gap-xs w-full ${isDrawer ? 'px-sm' : 'mt-4 px-base'}`}>
-      {items.map(({ icon, view, label: fullLabel, mobileLabel }) => {
+      {items.map(({ Icon, view, label: fullLabel, mobileLabel }) => {
         const label = isDrawer ? mobileLabel ?? fullLabel : fullLabel;
         return (
-        <button
-          key={view}
-          title={label}
-          onClick={() => go(view)}
-          className={`w-full flex items-center rounded-lg cursor-pointer transition-all duration-200 ${
-            isDrawer ? 'gap-sm px-sm py-sm' : 'justify-center p-sm hover:translate-x-0.5'
-          } ${
-            activeView === view
-              ? 'bg-primary text-on-primary shadow-lg'
-              : 'text-txt-muted hover:bg-fill-strong'
-          }`}
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{ fontVariationSettings: activeView === view ? "'FILL' 1" : "'FILL' 0" }}
+          <button
+            key={view}
+            title={label}
+            onClick={() => go(view)}
+            className={`w-full flex items-center rounded-lg cursor-pointer transition-all duration-200 ${isDrawer ? 'gap-sm px-sm py-sm' : 'justify-center p-sm hover:translate-x-0.5'
+              } ${activeView === view
+                ? 'bg-primary text-on-primary shadow-lg'
+                : 'text-txt-muted hover:bg-fill-strong'
+              }`}
           >
-            {icon}
-          </span>
-          {isDrawer && <span className="text-body-sm font-medium">{label}</span>}
-        </button>
+            {/* lucide is stroke-only, so the active state reads from the pill
+              behind it plus a heavier stroke rather than a filled glyph. */}
+            <Icon size={22} strokeWidth={activeView === view ? 2.4 : 1.8} />
+            {isDrawer && <span className="text-body-sm font-medium">{label}</span>}
+          </button>
         );
       })}
     </nav>

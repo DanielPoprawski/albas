@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import AddModal from '../AddModal';
 import MonthViewDesktop, { PILL_CAP as DESKTOP_PILL_CAP } from './MonthViewDesktop';
-import MonthViewMobile, { MIN_WEEKS as MOBILE_MIN_WEEKS, PILL_CAP as MOBILE_PILL_CAP } from './MonthViewMobile';
+import MonthViewMobile, { DUE_DOTS as MOBILE_DUE_DOTS, MIN_WEEKS as MOBILE_MIN_WEEKS, PILL_CAP as MOBILE_PILL_CAP } from './MonthViewMobile';
 import { useMonthModel } from './monthModel';
 import type { Occurrence } from '../../eventLogic';
 import type { CalendarEvent, Todo } from '../../types';
@@ -22,8 +22,9 @@ export default function MonthView({ isMobile = false }: { isMobile?: boolean }) 
   const [addDate, setAddDate] = useState<string | null>(null);
 
   const weeks = useMonthModel(
-    isMobile ? MOBILE_PILL_CAP : DESKTOP_PILL_CAP,
-    isMobile ? MOBILE_MIN_WEEKS : 0,
+    isMobile
+      ? { pillCap: MOBILE_PILL_CAP, minWeeks: MOBILE_MIN_WEEKS, dueDots: MOBILE_DUE_DOTS }
+      : { pillCap: DESKTOP_PILL_CAP },
   );
 
   const layoutProps = {

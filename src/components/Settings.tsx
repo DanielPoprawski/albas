@@ -69,7 +69,11 @@ export default function Settings() {
     <div className="h-full overflow-auto scrollbar-hide">
       <h3 className="text-label-md text-txt-muted mb-md uppercase tracking-wider">Settings</h3>
 
-      <div className="max-w-[34rem] space-y-md">
+      {/* Two columns from `lg` up. The cards are independent of one another, so
+          stacking them in one 34rem strip left most of a desktop window empty
+          and pushed Wyze below the fold. `items-start` keeps each card at its
+          own content height instead of stretching it to match its neighbour. */}
+      <div className="grid gap-md items-start grid-cols-1 lg:grid-cols-2 max-w-[72rem] pb-lg">
         <div className="p-md rounded-xl bg-fill">
           <h4 className="text-body-md font-semibold text-txt mb-xs">Appearance</h4>
           <p className="text-body-sm text-txt-muted mb-md">

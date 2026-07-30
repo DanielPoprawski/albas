@@ -5,9 +5,6 @@ import HabitsSection from './todo/HabitsSection';
 import TasksSection from './todo/TasksSection';
 import type { Todo } from '../types';
 
-/** How many habits the calendar gets to share the first screen with. */
-const HABIT_PREVIEW = 3;
-
 /**
  * The phone's only list surface: calendar, then habits, then tasks, in one
  * scroll. Merging Calendar and To-Do removes the drawer trip that used to sit
@@ -23,12 +20,12 @@ export default function HomeView() {
 
   return (
     <div className="h-full overflow-y-auto scrollbar-hide">
-      <div className="h-[46vh] min-h-[260px] flex flex-col">
+      <div className="h-[60vh] min-h-[260px] flex flex-col">
         <Calendar isMobile />
       </div>
 
-      <div className="px-sm pt-md pb-lg">
-        <HabitsSection onEdit={setEditing} limit={HABIT_PREVIEW} />
+      <div className="p-sm ">
+        <HabitsSection onEdit={setEditing} />
         <TasksSection onEdit={setEditing} />
       </div>
 

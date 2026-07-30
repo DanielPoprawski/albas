@@ -1,3 +1,4 @@
+import { Check, Star } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { fmt, shortDate } from '../../dates';
 import { shortTime } from '../../eventLogic';
@@ -54,12 +55,7 @@ function TaskRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
         style={{ borderColor: hex, backgroundColor: done ? hex : 'transparent' }}
       >
         {done && (
-          <span
-            className="material-symbols-outlined text-white"
-            style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1, 'wght' 700" }}
-          >
-            check
-          </span>
+          <Check size={14} strokeWidth={3.5} className="text-white" />
         )}
       </div>
 
@@ -75,12 +71,7 @@ function TaskRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
             : 'text-txt-faint opacity-0 group-hover:opacity-100 hover:text-txt'
         }`}
       >
-        <span
-          className="material-symbols-outlined block"
-          style={{ fontSize: 16, fontVariationSettings: todo.important ? "'FILL' 1" : "'FILL' 0" }}
-        >
-          star
-        </span>
+        <Star size={16} fill={todo.important ? 'currentColor' : 'none'} />
       </button>
 
       <span

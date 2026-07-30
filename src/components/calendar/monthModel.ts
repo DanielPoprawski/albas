@@ -100,13 +100,26 @@ function periodBackground(hexes: string[]): string | undefined {
   return `repeating-linear-gradient(135deg, ${stops})`;
 }
 
+/** The only things that differ between the two layouts; see each field. */
+export interface MonthModelOptions {
+  /** Chips a cell may show. A phone cell fits one legible one to a desktop's two. */
+  pillCap: number;
+  /** Floor on the row count, so the row height doesn't jump between months. */
+  minWeeks?: number;
+  /**
+   * Whether repeating to-dos leave a dot on the days they're due. The phone
+   * home page lists every habit directly under the calendar, so the dots were
+   * repeating information into the grid's tightest space.
+   */
+  dueDots?: boolean;
+}
+
 /**
  * Everything the month grid draws, derived once and shared by both layouts.
- * Only `pillCap` and `minWeeks` vary between them — a phone cell fits one
- * legible chip to a desktop cell's two, and the phone grid is always six rows
- * so a five-week month doesn't stretch its cells.
+ * All grid logic belongs here — a fix applied in one layout only is exactly
+ * what this split exists to prevent.
  */
-export function useMonthModel(pillCap: number, minWeeks = 0): WeekRow[] {
+export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthModelOptions): WeekRow[] {
   const { currentMonth, selectedDate, todos, events, firstDayOfWeek } = useApp();
 
   const todayStr = fmt(new Date());
@@ -144,10 +157,12 @@ export function useMonthModel(pillCap: number, minWeeks = 0): WeekRow[] {
         const dateStr = fmt(date);
 
         // One-time to-dos render as pills, so dots represent repeating ones only
-        const dots = repeatingTodos
-          .filter(t => isDueOn(t, dateStr, firstDayOfWeek) || isDoneOn(t, dateStr))
-          .map(t => ({ hex: colorHex(t.colorKey), done: isDoneOn(t, dateStr) }))
-          .slice(0, 4);
+        const dots = dueDots
+          ? repeatingTodos
+            .filter(t => isDueOn(t, dateStr, firstDayOfWeek) || isDoneOn(t, dateStr))
+            .map(t => ({ hex: colorHex(t.colorKey), done: isDoneOn(t, dateStr) }))
+            .slice(0, 4)
+          : [];
 
         const dayOnce = onceTodos.filter(t => isDueOn(t, dateStr, firstDayOfWeek));
         // timed single-day events + bars that overflowed the lane cap
@@ -189,5 +204,5 @@ export function useMonthModel(pillCap: number, minWeeks = 0): WeekRow[] {
     });
     // `days` is rebuilt each render from currentMonth, so key on that instead
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks]);
+  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks, dueDots]);
 }

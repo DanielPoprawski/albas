@@ -1,4 +1,5 @@
 import { useId, useRef } from 'react';
+import { Trash2 } from 'lucide-react';
 import { colorHex, GREY_RAMP, PALETTE, PALETTE_COMPACT, PALETTE_ROWS } from '../../colors';
 import { useIsMobile } from '../../useMedia';
 import { Checkbox } from '../ui/checkbox';
@@ -199,7 +200,7 @@ export function EditActions({ saveLabel, onDelete }: { saveLabel: string; onDele
         className="px-md py-sm rounded-lg font-semibold text-body-sm border text-danger hover:bg-tertiary-container/20 active:scale-95 transition-all flex items-center gap-xs flex-shrink-0"
         style={{ borderColor: 'color-mix(in srgb, var(--t-danger) 55%, transparent)' }}
       >
-        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+        <Trash2 size={15} />
         Delete
       </button>
       <SubmitButton label={saveLabel} />

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Star } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
 import { rotateWeek } from '../../dates';
@@ -128,10 +129,9 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
             }`}
           >
             <span
-              className="material-symbols-outlined"
-              style={{ fontSize: 20, fontVariationSettings: important ? "'FILL' 1" : "'FILL' 0" }}
+              className="block"
             >
-              star
+              <Star size={20} fill={important ? 'currentColor' : 'none'} />
             </span>
           </button>
         </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { remindDueEvents, remindDueTodos } from '../notifications';
 import TopBar from './TopBar';
 import Sidebar from './Sidebar';
@@ -24,7 +25,7 @@ function Fab({ onClick, className, style }: {
       style={style}
       className={`z-40 w-14 h-14 bg-primary text-on-primary rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all ${className ?? ''}`}
     >
-      <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>add</span>
+      <Plus size={28} strokeWidth={2.5} />
     </button>
   );
 }
@@ -90,8 +91,13 @@ export default function AppShell() {
               open lands somewhere real instead of on a blank screen. */}
           {(activeView === 'calendar' || (isMobile && activeView === 'todos')) &&
             (isMobile ? <HomeView /> : <Calendar />)}
+          {/* No habits here — this view is the to-dos, and the habit strips
+              live beside the calendar (see RightPanel). Capped rather than
+              full-bleed, too: without the panel beside it a to-do row would
+              stretch the width of the monitor, stranding its due label a foot
+              away from its name. */}
           {activeView === 'todos' && !isMobile && (
-            <div className="h-full overflow-auto scrollbar-hide">
+            <div className="h-full overflow-auto scrollbar-hide max-w-[46rem]">
               <TodoPanel />
             </div>
           )}
@@ -104,7 +110,10 @@ export default function AppShell() {
           {!isMobile && <Fab onClick={() => setShowModal(true)} className="absolute right-md bottom-md" />}
         </div>
 
-        {!isMobile && <RightPanel />}
+        {/* Calendar only. Everywhere else the panel was a second copy of a
+            list the main view already owns — or, in Settings and Weight, a
+            list with nothing to do with what's on screen. */}
+        {!isMobile && activeView === 'calendar' && <RightPanel />}
       </main>
 
       {/* On mobile it floats above the gesture bar. */}

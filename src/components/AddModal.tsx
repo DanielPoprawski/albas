@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import type { AddType, CalendarEvent, Todo } from '../types';
 import { SegmentedControl } from './forms/shared';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
@@ -42,7 +43,7 @@ export default function AddModal({ onClose, editTodo, editEvent, editEventDate, 
             {isEditing ? `Edit ${type === 'todo' ? 'To-Do' : 'Event'}` : 'Add New'}
           </DialogTitle>
           <DialogClose className="text-txt-muted hover:text-txt transition-colors">
-            <span className="material-symbols-outlined">close</span>
+            <X size={20} />
             <span className="sr-only">Close</span>
           </DialogClose>
         </div>

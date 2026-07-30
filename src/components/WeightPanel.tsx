@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { useApp, type NewWeight } from '../context/AppContext';
 import { fmt, rotateWeek, shortDate } from '../dates';
 import {
@@ -57,9 +58,7 @@ export default function WeightPanel() {
           className="w-8 h-8 flex items-center justify-center rounded-lg bg-fill-strong text-txt-muted hover:bg-primary hover:text-on-primary transition-colors"
           title={adding ? 'Cancel' : 'Add a reading'}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
-            {adding ? 'close' : 'add'}
-          </span>
+          {adding ? <X size={18} /> : <Plus size={18} />}
         </button>
       </div>
 
@@ -180,7 +179,7 @@ function RecentList({ unit, onDelete }: { unit: WeightUnit; onDelete: (id: strin
               title="Delete reading"
               className="opacity-0 group-hover:opacity-100 text-txt-muted hover:text-danger transition-opacity"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+              <Trash2 size={15} />
             </button>
           </div>
         ))}

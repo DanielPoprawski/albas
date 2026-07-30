@@ -1,3 +1,4 @@
+import { Check, Circle, Minus, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { fmt, rotateWeek, weekOf } from '../../dates';
 import { isDoneOn, isDueOn, isRepeating, repeatLabel, statusLabel, valueOn } from '../../todoLogic';
@@ -51,28 +52,15 @@ function RepeatingRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void 
 
           let content: React.ReactNode;
           if (done) {
-            content = (
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: '16px', color: hex, fontVariationSettings: "'FILL' 1, 'wght' 700" }}
-              >
-                check
-              </span>
-            );
+            content = <Check size={16} strokeWidth={3} style={{ color: hex }} />;
           } else if (todo.kind === 'measurable' && value > 0) {
             content = <span className="text-[10px] font-bold" style={{ color: hex }}>{value}</span>;
           } else if (!due || isFuture) {
-            content = (
-              <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--t-fill-stronger)' }}>
-                {due ? 'radio_button_unchecked' : 'remove'}
-              </span>
-            );
+            content = due
+              ? <Circle size={12} style={{ color: 'var(--t-fill-stronger)' }} />
+              : <Minus size={12} style={{ color: 'var(--t-fill-stronger)' }} />;
           } else {
-            content = (
-              <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--t-fill-stronger)' }}>
-                close
-              </span>
-            );
+            content = <X size={14} strokeWidth={2.5} style={{ color: 'var(--t-fill-stronger)' }} />;
           }
 
           return (
@@ -81,9 +69,8 @@ function RepeatingRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void 
               title={`${todo.name} – ${dayLabels[i]}${due ? '' : ' (not scheduled)'}`}
               disabled={isFuture}
               onClick={() => handleCellClick(date)}
-              className={`w-7 h-7 flex items-center justify-center rounded-full transition-all ${
-                isToday ? 'ring-1 ring-txt/30' : ''
-              } ${isFuture ? 'cursor-default' : 'hover:bg-fill-strong'}`}
+              className={`w-7 h-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'ring-1 ring-txt/30' : ''
+                } ${isFuture ? 'cursor-default' : 'hover:bg-fill-strong'}`}
             >
               {content}
             </button>
@@ -96,24 +83,21 @@ function RepeatingRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void 
 
 /**
  * Repeating to-dos (habits and chores) with their week strips.
- * `limit` caps the list — the mobile home page shows the first few so the
  * to-dos below it stay within reach of a thumb.
  */
-export default function HabitsSection({ onEdit, limit }: {
+export default function HabitsSection({ onEdit }: {
   onEdit: (t: Todo) => void;
-  limit?: number;
 }) {
   const { todos } = useApp();
 
-  const all = todos.filter(isRepeating);
-  const shown = limit == null ? all : all.slice(0, limit);
-  if (shown.length === 0) return null;
+  const habits = todos.filter(isRepeating);
+  if (habits.length === 0) return null;
 
   return (
     <div className="mb-md">
-      <h3 className="text-label-md text-txt-muted mb-md uppercase tracking-wider">Habits</h3>
+      <h3 className="text-label-md text-txt-muted mb-md uppercase tracking-widest font-bold">Habits</h3>
       <div className="space-y-md">
-        {shown.map(todo => (
+        {habits.map(todo => (
           <RepeatingRow key={todo.id} todo={todo} onEdit={onEdit} />
         ))}
       </div>
