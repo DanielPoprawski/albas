@@ -2,9 +2,15 @@ import { useApp } from '../context/AppContext';
 import { Sheet, SheetContent, SheetTitle } from './ui/sheet';
 import type { ActiveView } from '../types';
 
-const navItems: { icon: string; view: ActiveView; label: string }[] = [
-  { icon: 'calendar_today', view: 'calendar', label: 'Calendar' },
-  { icon: 'checklist', view: 'todos', label: 'To-Do' },
+/**
+ * `mobileLabel` renames Calendar to Home on a phone, where that destination
+ * carries the calendar *and* the lists. To-Do has no entry there at all —
+ * it's the same content one scroll further down, and a second way in is what
+ * produced duplicate lists last time.
+ */
+const navItems: { icon: string; view: ActiveView; label: string; mobileLabel?: string; mobileOnly?: false; desktopOnly?: boolean }[] = [
+  { icon: 'calendar_today', view: 'calendar', label: 'Calendar', mobileLabel: 'Home' },
+  { icon: 'checklist', view: 'todos', label: 'To-Do', desktopOnly: true },
   { icon: 'monitor_weight', view: 'weight', label: 'Weight' },
   { icon: 'settings', view: 'settings', label: 'Settings' },
 ];
@@ -28,9 +34,14 @@ export default function Sidebar({ variant, open = false, onClose }: Props) {
     onClose?.();
   }
 
+  // the drawer is the phone's nav, so it drops the desktop-only destinations
+  const items = navItems.filter(i => !(isDrawer && i.desktopOnly));
+
   const nav = (
     <nav className={`flex flex-col gap-xs w-full ${isDrawer ? 'px-sm' : 'mt-4 px-base'}`}>
-      {navItems.map(({ icon, view, label }) => (
+      {items.map(({ icon, view, label: fullLabel, mobileLabel }) => {
+        const label = isDrawer ? mobileLabel ?? fullLabel : fullLabel;
+        return (
         <button
           key={view}
           title={label}
@@ -51,7 +62,8 @@ export default function Sidebar({ variant, open = false, onClose }: Props) {
           </span>
           {isDrawer && <span className="text-body-sm font-medium">{label}</span>}
         </button>
-      ))}
+        );
+      })}
     </nav>
   );
 

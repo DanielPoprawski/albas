@@ -59,7 +59,7 @@ function byDay(entries: WeightEntry[]): Map<string, DayCell> {
  * to the current one — including blank weeks, so gaps stay visible rather than
  * silently collapsing.
  */
-export function weeklyRows(entries: WeightEntry[], firstDay: FirstDayOfWeek = 1): WeekRow[] {
+export function weeklyRows(entries: WeightEntry[], firstDay: FirstDayOfWeek = 0): WeekRow[] {
   if (entries.length === 0) return [];
   const days = byDay(entries);
 

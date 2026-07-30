@@ -17,7 +17,7 @@ function inTauri(): boolean {
  */
 export async function remindDueTodos(
   todos: Todo[],
-  firstDay: FirstDayOfWeek = 1,
+  firstDay: FirstDayOfWeek = 0,
 ): Promise<void> {
   if (!inTauri()) return;
 

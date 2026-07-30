@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS habits (
   reminder INTEGER NOT NULL DEFAULT 0,
   due_date TEXT,
   time TEXT,
+  category TEXT NOT NULL DEFAULT '',
+  important INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0
 );
@@ -101,21 +103,37 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    // SCHEMA is kept at the current shape, so a fresh database gets every
+    // column outright and the ALTERs below are only for upgrading an existing
+    // one. Running them on a fresh DB would fail with "duplicate column name".
     if version < 1 {
         conn.execute_batch(SCHEMA)?;
-    } else if version < 2 {
+    } else {
         // v2 (todo unification): habits became unified to-dos with an
         // optional due day (once to-dos) and time of day.
-        conn.execute_batch(
-            "ALTER TABLE habits ADD COLUMN due_date TEXT;
-             ALTER TABLE habits ADD COLUMN time TEXT;",
-        )?;
+        if version < 2 {
+            conn.execute_batch(
+                "ALTER TABLE habits ADD COLUMN due_date TEXT;
+                 ALTER TABLE habits ADD COLUMN time TEXT;",
+            )?;
+        }
+        // v4 (categorised to-dos), see the note on the version bump below.
+        if version < 4 {
+            conn.execute_batch(
+                "ALTER TABLE habits ADD COLUMN category TEXT NOT NULL DEFAULT '';
+                 ALTER TABLE habits ADD COLUMN important INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
     }
     // v3 (weight tracking). CREATE TABLE IF NOT EXISTS, so replaying is harmless.
     if version < 3 {
         conn.execute_batch(SCHEMA_V3)?;
         conn.pragma_update(None, "user_version", 3)?;
     }
+    // v4 (categorised to-dos): free-text category and an important flag. An
+    // empty category means uncategorised — no sentinel string, so the grouping
+    // in TodoPanel never has to special-case a magic name.
+    conn.pragma_update(None, "user_version", 4)?;
     Ok(conn)
 }
 
@@ -193,6 +211,11 @@ pub struct Habit {
     pub due_date: Option<String>,
     #[serde(default)]
     pub time: Option<String>,
+    /// Free-text grouping for to-dos; empty means uncategorised.
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub important: bool,
     #[serde(default)]
     pub completions: HashMap<String, f64>,
 }
@@ -296,7 +319,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         });
 
     let habits = conn
-        .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time FROM habits WHERE deleted = 0")
+        .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important FROM habits WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
             Ok(Habit {
@@ -311,6 +334,8 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
                 reminder: r.get::<_, i64>(8)? != 0,
                 due_date: r.get(9)?,
                 time: r.get(10)?,
+                category: r.get(11)?,
+                important: r.get::<_, i64>(12)? != 0,
                 completions: HashMap::new(),
             })
         })
@@ -441,13 +466,13 @@ fn upsert_task(conn: &Connection, t: &Task) -> rusqlite::Result<()> {
 
 fn upsert_habit(conn: &Connection, h: &Habit) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0)
-         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, kind=?4, unit=?5, target=?6, schedule=?7, created_at=?8, reminder=?9, due_date=?10, time=?11, updated_at=?12, deleted=0",
+        "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important, updated_at, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 0)
+         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, kind=?4, unit=?5, target=?6, schedule=?7, created_at=?8, reminder=?9, due_date=?10, time=?11, category=?12, important=?13, updated_at=?14, deleted=0",
         params![
             h.id, h.name, h.color_key, h.kind, h.unit, h.target,
             json_col(&h.schedule), h.created_at, h.reminder as i64,
-            h.due_date, h.time, now_ms()
+            h.due_date, h.time, h.category, h.important as i64, now_ms()
         ],
     )?;
     Ok(())

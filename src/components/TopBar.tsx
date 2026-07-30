@@ -16,7 +16,11 @@ interface Props {
 }
 
 export default function TopBar({ isMobile, onOpenDrawer }: Props) {
-  const { activeView, calendarMode, currentMonth, selectedDate, firstDayOfWeek } = useApp();
+  const { activeView: rawView, calendarMode, currentMonth, selectedDate, firstDayOfWeek } = useApp();
+
+  // Home absorbs the to-do view on a phone (see AppShell), so the title and the
+  // calendar nav have to follow it there.
+  const activeView = isMobile && rawView === 'todos' ? 'calendar' : rawView;
 
   // The rail and drawer already do navigation, so the bar carries only the
   // title — plus, on a phone, the calendar's own nav, which belongs beside the

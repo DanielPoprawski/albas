@@ -11,7 +11,7 @@ import type { FirstDayOfWeek, Todo } from '../../types';
 
 export function getCalendarDays(
   month: Date,
-  weekStart: FirstDayOfWeek = 1,
+  weekStart: FirstDayOfWeek = 0,
   minWeeks = 0,
 ): { date: Date; isCurrentMonth: boolean }[] {
   const year = month.getFullYear();

@@ -110,6 +110,10 @@
 
 :root,
 :root[data-theme='dark'] {
+  /* native date/time pickers and scrollbars follow this, so it has to be set
+     per theme — components used to hardcode `colorScheme: 'dark'` inline,
+     which left the light theme with black OS popups. */
+  color-scheme: dark;
   --t-app-bg: #0b1c30;
   --t-chrome: #0a121e;
   --t-elevated: #13233a;
@@ -147,6 +151,7 @@
 }
 
 :root[data-theme='light'] {
+  color-scheme: light;
   --t-app-bg: #eef1f6;
   --t-chrome: #ffffff;
   --t-elevated: #ffffff;
@@ -182,6 +187,7 @@
 }
 
 :root[data-theme='grey-high'] {
+  color-scheme: dark;
   --t-app-bg: #121212;
   --t-chrome: #000000;
   --t-elevated: #1e1e1e;
@@ -217,6 +223,7 @@
 }
 
 :root[data-theme='grey-low'] {
+  color-scheme: dark;
   --t-app-bg: #2b2e33;
   --t-chrome: #23262a;
   --t-elevated: #32363c;

@@ -35,6 +35,14 @@ export interface Todo {
   createdAt: string; // YYYY-MM-DD
   /** Notify on days it's due and not yet done. */
   reminder: boolean;
+  /**
+   * Free-text grouping, empty for uncategorised. Free text rather than a
+   * managed list: a category exists exactly as long as a to-do uses one, so
+   * there is nothing to rename, delete, or migrate.
+   */
+  category: string;
+  /** Starred. Sorts above everything else in its category. */
+  important: boolean;
   /** Progress per day. Yes/no to-dos store 1 when done. */
   completions: Record<string, number>;
 }

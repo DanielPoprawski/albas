@@ -19,6 +19,7 @@ const weekAgoStr = fmt(weekAgo);
 const baseTodo = {
   kind: 'yesno' as const, unit: '', target: 1,
   dueDate: null, time: null, createdAt: weekAgoStr, reminder: false,
+  category: '', important: false,
 };
 
 const initialTodos: Todo[] = [
@@ -100,6 +101,8 @@ export function migrateTodo(t: any): Todo {
     time: typeof t?.time === 'string' && /^\d{2}:\d{2}$/.test(t.time) ? t.time : null,
     createdAt: t?.createdAt ?? dates[0] ?? todayStr,
     reminder: !!t?.reminder,
+    category: typeof t?.category === 'string' ? t.category : '',
+    important: !!t?.important,
     completions,
   };
 }
@@ -129,6 +132,10 @@ function taskToTodo(t: LegacyTask): Todo {
     time: null,
     createdAt: t.date ?? todayStr,
     reminder: false,
+    // Legacy tasks all defaulted to 'General', so carrying that through would
+    // file every imported task under a category the user never chose.
+    category: t.category === 'General' ? '' : t.category,
+    important: false,
     completions: t.completed ? { [t.date ?? todayStr]: 1 } : {},
   };
 }
@@ -415,7 +422,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addWeight, deleteWeight, importWeights,
       theme: readTheme(settings),
       weightUnit: settings.weightUnit === 'kg' ? 'kg' : 'lb',
-      firstDayOfWeek: settings.firstDayOfWeek === '0' ? 0 : 1,
+      // Sunday by default as of v1.7; only an explicit '1' opts into Monday.
+      firstDayOfWeek: settings.firstDayOfWeek === '1' ? 1 : 0,
       setSetting,
       reloadFromStore,
     }}>

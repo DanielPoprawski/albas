@@ -65,6 +65,8 @@ const TABLES: &[Spec] = &[
             "reminder",
             "due_date",
             "time",
+            "category",
+            "important",
         ],
     },
     Spec {

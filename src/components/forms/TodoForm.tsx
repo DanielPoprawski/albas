@@ -30,10 +30,16 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
   defaultDate?: string | null;
   onDone: () => void;
 }) {
-  const { addTodo, updateTodo, deleteTodo, selectedDate, firstDayOfWeek } = useApp();
+  const { addTodo, updateTodo, deleteTodo, selectedDate, firstDayOfWeek, todos } = useApp();
   const sched = edit?.schedule;
 
+  // Autocomplete source: categories exist only because a to-do uses one, so
+  // the list is derived rather than stored.
+  const knownCategories = [...new Set(todos.map(t => t.category).filter(Boolean))].sort();
+
   const [name, setName] = useState(edit?.name ?? '');
+  const [category, setCategory] = useState(edit?.category ?? '');
+  const [important, setImportant] = useState(edit?.important ?? false);
   const [color, setColor] = useState(edit?.colorKey ?? DEFAULT_COLOR);
   const [kind, setKind] = useState<TodoKind>(edit?.kind ?? 'yesno');
   const [target, setTarget] = useState(edit && edit.kind === 'measurable' ? String(edit.target) : '');
@@ -88,6 +94,8 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
       dueDate: date || null,
       time: time || null,
       reminder,
+      category: category.trim(),
+      important,
     };
     if (edit) updateTodo(edit.id, fields);
     else addTodo(fields);
@@ -100,13 +108,49 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
     <form onSubmit={handleSubmit} className="space-y-md">
       <div>
         <label className={labelClass}>Name</label>
+        <div className="flex gap-sm items-center">
+          <input
+            className={inputClass}
+            placeholder="e.g. Client meeting prep, Pushups, Take out trash"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            autoFocus
+          />
+          {/* Star lives beside the name: it's a property of the to-do itself,
+              not a scheduling detail, and this keeps it one tap from the top. */}
+          <button
+            type="button"
+            onClick={() => setImportant(v => !v)}
+            title={important ? 'Not important' : 'Mark important'}
+            aria-pressed={important}
+            className={`flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
+              important ? 'text-amber-400 bg-fill-strong' : 'text-txt-faint hover:text-txt hover:bg-fill'
+            }`}
+          >
+            <span
+              className="material-symbols-outlined"
+              style={{ fontSize: 20, fontVariationSettings: important ? "'FILL' 1" : "'FILL' 0" }}
+            >
+              star
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Category</label>
+        {/* Native datalist: free text that suggests what you've already used,
+            with no list to manage and nothing to migrate when one goes unused. */}
         <input
           className={inputClass}
-          placeholder="e.g. Client meeting prep, Pushups, Take out trash"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          autoFocus
+          list="todo-categories"
+          placeholder="Optional — e.g. Work, Home"
+          value={category}
+          onChange={e => setCategory(e.target.value)}
         />
+        <datalist id="todo-categories">
+          {knownCategories.map(c => <option key={c} value={c} />)}
+        </datalist>
       </div>
 
       <div>
@@ -129,7 +173,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
               placeholder="e.g. 30"
               value={target}
               onChange={e => setTarget(e.target.value)}
-              style={{ colorScheme: 'dark' }}
+              
             />
           </div>
           <div className="flex-1">
@@ -152,7 +196,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
             className={inputClass}
             value={date}
             onChange={e => setDate(e.target.value)}
-            style={{ colorScheme: 'dark' }}
+            
           />
         </div>
         <div className="w-28">
@@ -162,7 +206,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
             className={inputClass}
             value={time}
             onChange={e => setTime(e.target.value)}
-            style={{ colorScheme: 'dark' }}
+            
           />
         </div>
       </div>
@@ -200,7 +244,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
                 className={`${inputClass} text-center`}
                 value={everyN}
                 onChange={e => setEveryN(e.target.value)}
-                style={{ colorScheme: 'dark', width: '4.5rem' }}
+                style={{ width: '4.5rem' }}
               />
               <Select
                 className="flex-1"
@@ -230,7 +274,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
               className={`${inputClass} text-center`}
               value={times}
               onChange={e => setTimes(e.target.value)}
-              style={{ colorScheme: 'dark', width: '4.5rem' }}
+              style={{ width: '4.5rem' }}
             />
             <span className="text-body-sm text-txt-muted">times per</span>
             <Select

@@ -58,6 +58,16 @@ Hot reload works normally after that; the dev build still points at the LAN dev 
 ## TODO LIST
 1. To-do reminders only fire on the due day; consider firing at the to-do's `time` when one is set.
 
+## Home, categories, and the event form (v1.7)
+- **On a phone, `calendar` is the home page.** `HomeView` stacks the calendar (bounded height, so the rest is reachable), the first three habits, and the tasks in one scroll. There is **no To-Do destination in the drawer** — `Sidebar` filters `desktopOnly` items out, and `AppShell`/`TopBar` both fold `activeView === 'todos'` into Home so narrowing a desktop window mid-view doesn't land on a blank screen.
+- **`TodoPanel` is now a composer**, not a list: `todo/HabitsSection` (takes `limit`) and `todo/TasksSection`. Home and the right panel both build from those two, which is why neither renders the other's markup.
+- **To-dos have `category` (free text) and `important`.** Categories are derived from what's in use — there is no managed list, nothing to rename, and nothing to migrate. Grouping/sorting lives in `todoLogic`: `groupTasks` (uncategorised first, then A–Z), `byImportanceThenDue`, `isOverdue`. **Completed is a section, not a category** — a finished to-do keeps its category and star, it just sorts to the bottom, and done-ness still derives from `completions` rather than a second flag that could disagree.
+- Schema **v4** adds `category`/`important` to `habits`. `SCHEMA` carries the current shape and the `ALTER`s only run for existing DBs (an `ALTER` on a fresh DB fails as a duplicate column) — and both columns are in `sync.rs` `TABLES`.
+- **The desktop month grid sizes itself.** It measures its own rows area and derives a width for 3:2 day cells, capped by `calc(100vw - 4rem - 48px - 280px)` so it can never starve the panel — it sits in a `flex-none` column, so nothing downstream can shrink it. `RightPanel` is a flex child (`flex-1 min-w-[280px]`) that absorbs the surplus. On a phone the grid is back to the month's natural 4–6 rows (`MIN_WEEKS = 0`).
+- **The event form is three date/time rows** — all-day, then start and end as date-left/time-right. All-day drops the time column outright. New events default to today, the current quarter hour, and +1 hour. Moving the start date drags the end with it.
+- **Reminders are a list you edit** (`forms/RemindersField`), with presets and a custom lead time, rather than four preset toggles.
+- `color-scheme` is set per theme in `App.css`. Components used to hardcode `colorScheme: 'dark'` inline, which left native date/time popups black in the light theme — **don't reintroduce that**; the theme handles it.
+
 ## Unified data model (v1.3)
 Three concepts:
 - **Todo** (`src/types.ts`) — anything that needs doing. Tasks, habits, and chores are all Todos distinguished only by their `schedule` (`Repeat`): `once` = task, fixed cadences (`daily`/`weekdays`/`every` with `fromDone: false`/`timesPer`) = habit, `every` with `fromDone: true` = chore (next due counts from the last completion). Stored in the SQLite `habits` table / `save_habit` commands for backward compatibility.

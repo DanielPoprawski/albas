@@ -51,10 +51,10 @@ export function longDate(dateStr: string): string {
 
 /**
  * The seven dates of the week containing `d`, starting on `firstDay`
- * (0 = Sunday, 1 = Monday). The default keeps every un-threaded caller on the
- * Monday behaviour this app shipped with.
+ * (0 = Sunday, 1 = Monday). As of v1.7 the default is Sunday, matching the
+ * default setting — a missing argument and an unconfigured app agree.
  */
-export function weekOf(d: Date, firstDay: FirstDayOfWeek = 1): string[] {
+export function weekOf(d: Date, firstDay: FirstDayOfWeek = 0): string[] {
   const start = new Date(d);
   start.setDate(d.getDate() - ((d.getDay() - firstDay + 7) % 7));
   return Array.from({ length: 7 }, (_, i) => {
@@ -91,7 +91,7 @@ export function calendarTitle(
   mode: CalendarMode,
   currentMonth: Date,
   anchor: string,
-  firstDay: FirstDayOfWeek = 1,
+  firstDay: FirstDayOfWeek = 0,
 ): string {
   const thisYear = new Date().getFullYear();
 

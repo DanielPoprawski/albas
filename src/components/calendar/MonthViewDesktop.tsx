@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek, weekdayAt } from '../../dates';
 import { isDone } from '../../todoLogic';
@@ -12,8 +13,32 @@ const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 /** A desktop cell has room for two chips and a bottom-pinned stack. */
 export const PILL_CAP = 2;
 
-const PILL_CLASS = 'text-[10px] font-bold px-xs py-0.5 rounded truncate hover:opacity-80';
-const PILL_BORDER = '3px';
+/*
+ * `overflow-hidden whitespace-nowrap` rather than `truncate`: truncate adds an
+ * ellipsis, which costs a character of an already narrow cell and tells you
+ * nothing you couldn't see from the clipped word. The colour now reads from the
+ * tinted background alone — the old 3px left tab spent horizontal space
+ * repeating information.
+ */
+const PILL_CLASS =
+  'text-[10px] font-bold px-xs py-0.5 rounded overflow-hidden whitespace-nowrap hover:opacity-80';
+
+/**
+ * A day cell wants to be 3 wide by 2 tall. Height is dictated by the window,
+ * so the grid derives its own *width* from the height it was given and lets
+ * whatever is beside it have the rest — rather than stretching to fill and
+ * leaving the cells over-wide.
+ */
+const CELL_ASPECT = 3 / 2;
+
+/**
+ * The grid sits in a `flex-none` column, so nothing downstream can shrink it —
+ * it has to refuse to starve the panel itself. The rail is `w-16`, which is
+ * rem-based and scales with the browser's root font size, so it has to be
+ * subtracted as 4rem and not a px guess; the column's padding (p-md) and the
+ * panel's floor are genuine pixels.
+ */
+const RESERVED = '4rem + 48px + 280px';
 
 export default function MonthViewDesktop({
   weeks,
@@ -23,8 +48,27 @@ export default function MonthViewDesktop({
 }: MonthLayoutProps) {
   const { firstDayOfWeek } = useApp();
 
+  // Measure the rows area, not the whole sheet: the weekday header's height
+  // isn't part of any cell. Width never feeds back into height (that comes from
+  // the flex parent), so this settles in one pass.
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const [rowsHeight, setRowsHeight] = useState(0);
+  useEffect(() => {
+    const el = rowsRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => setRowsHeight(entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const rows = Math.max(weeks.length, 1);
+  // 0 until the first measurement lands; full width is the sane starting point
+  const width = rowsHeight > 0 ? (rowsHeight / rows) * CELL_ASPECT * 7 : undefined;
+
   return (
-    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-sheet rounded-xl border shadow-2xl border-sheet-border">
+    <div
+      style={{ width, maxWidth: `calc(100vw - (${RESERVED}))` }}
+      className="flex-1 min-h-0 overflow-hidden flex flex-col bg-sheet rounded-xl border shadow-2xl border-sheet-border">
       {/* Weekday headers */}
       <div className="grid grid-cols-7 border-b flex-shrink-0 border-sheet-line bg-sheet-header">
         {rotateWeek(WEEKDAYS, firstDayOfWeek).map((day, i) => {
@@ -46,7 +90,7 @@ export default function MonthViewDesktop({
       </div>
 
       {/* Week rows */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
+      <div ref={rowsRef} className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
         {weeks.map(week => (
           <div key={week.key} className="flex-1 relative min-h-[92px]">
             {/* Day cells */}
@@ -94,7 +138,6 @@ export default function MonthViewDesktop({
                           className={PILL_CLASS}
                           style={{
                             backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                            borderLeft: `${PILL_BORDER} solid ${hex}`,
                             color: hex,
                           }}
                         >
@@ -114,7 +157,6 @@ export default function MonthViewDesktop({
                           className={`${PILL_CLASS} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
                           style={{
                             backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                            borderLeft: `${PILL_BORDER} solid ${hex}`,
                             color: hex,
                           }}
                         >

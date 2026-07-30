@@ -1,27 +1,26 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
-import { addDays, shortDate } from '../../dates';
+import { addDays, diffDays, fmt, shortDate } from '../../dates';
 import type { CalendarEvent, Recurrence } from '../../types';
-import { CheckboxRow, ColorPicker, EditActions, inputClass, labelClass, SegmentedControl, Select, SubmitButton } from './shared';
+import { CheckboxRow, ColorPicker, EditActions, inputClass, labelClass, SegmentedControl, SubmitButton } from './shared';
+import RemindersField from './RemindersField';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
 
 type RecType = Recurrence['type'];
 
-/** How the event ends: not at all (point/single day), later the same day, or on another day. */
-type EndMode = 'none' | 'time' | 'date';
+/** Now, rounded *down* to a quarter hour — the start you'd have typed anyway. */
+function nowFloor15(): string {
+  const d = new Date();
+  d.setMinutes(Math.floor(d.getMinutes() / 15), 0, 0);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
-const REMINDER_PRESETS: { minutes: number; label: string }[] = [
-  { minutes: 10, label: '10 min' },
-  { minutes: 60, label: '1 hour' },
-  { minutes: 1440, label: '1 day' },
-  { minutes: 10080, label: '1 week' },
-];
-
-function initialEndMode(edit?: CalendarEvent): EndMode {
-  if (!edit) return 'time';
-  if (edit.endDate !== edit.startDate) return 'date';
-  return edit.endTime ? 'time' : 'none';
+/** `hh:mm` plus N minutes, clamped to 23:59 so an evening start can't wrap. */
+function addMinutes(time: string, mins: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }: {
@@ -32,16 +31,20 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
   onDone: () => void;
 }) {
   const { addEvent, updateEvent, deleteEvent, selectedDate } = useApp();
-  const initialDate = edit?.startDate ?? defaultDate ?? selectedDate ?? '';
+  const initialDate = edit?.startDate ?? defaultDate ?? selectedDate ?? fmt(new Date());
+  // A new event defaults to "now for an hour": today, the current quarter hour,
+  // ending sixty minutes later. Nearly every event is entered near its own time,
+  // so that's fewer fields to touch than a fixed 09:00.
+  const initialStartTime = edit?.startTime ?? nowFloor15();
+
   const [title, setTitle] = useState(edit?.title ?? '');
   const [description, setDescription] = useState(edit?.description ?? '');
   const [color, setColor] = useState(edit?.colorKey ?? DEFAULT_COLOR);
   const [allDay, setAllDay] = useState(edit?.allDay ?? false);
   const [startDate, setStartDate] = useState(initialDate);
-  const [startTime, setStartTime] = useState(edit?.startTime ?? '09:00');
-  const [endMode, setEndMode] = useState<EndMode>(initialEndMode(edit));
-  const [endDate, setEndDate] = useState(edit && edit.endDate !== edit.startDate ? edit.endDate : '');
-  const [endTime, setEndTime] = useState(edit?.endTime ?? '10:00');
+  const [startTime, setStartTime] = useState(initialStartTime);
+  const [endDate, setEndDate] = useState(edit?.endDate ?? initialDate);
+  const [endTime, setEndTime] = useState(edit?.endTime ?? addMinutes(initialStartTime, 60));
   const [recType, setRecType] = useState<RecType>(edit?.recurrence.type ?? 'none');
   const [interval, setInterval_] = useState(
     edit && edit.recurrence.type !== 'none' ? String(edit.recurrence.interval) : '1'
@@ -53,48 +56,29 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // all-day events have no times, so "ends at a time" stops making sense
-  const endOptions: { value: EndMode; label: string }[] = allDay
-    ? [
-        { value: 'none', label: 'Same day' },
-        { value: 'date', label: 'On another day' },
-      ]
-    : [
-        { value: 'none', label: 'No end time' },
-        { value: 'time', label: 'At a time (same day)' },
-        { value: 'date', label: 'On another day' },
-      ];
-
-  function changeAllDay(v: boolean) {
-    setAllDay(v);
-    if (v && endMode === 'time') setEndMode('none');
-  }
-
-  function toggleReminder(minutes: number) {
-    setReminders(prev =>
-      prev.includes(minutes) ? prev.filter(m => m !== minutes) : [...prev, minutes].sort((a, b) => a - b)
-    );
+  // Moving the start drags the end with it, keeping the gap — otherwise
+  // rescheduling a meeting means editing both dates by hand.
+  function changeStartDate(next: string) {
+    if (next && startDate && endDate) {
+      const shift = diffDays(startDate, next);
+      if (shift !== 0) setEndDate(addDays(endDate, shift));
+    }
+    setStartDate(next);
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !startDate) return;
 
-    let effEndDate = startDate;
-    let effEndTime: string | null = null;
-    if (endMode === 'time') {
-      if (endTime <= startTime) {
-        setError('End time must be after the start time.');
-        return;
-      }
-      effEndTime = endTime;
-    } else if (endMode === 'date') {
-      if (!endDate || endDate < startDate) {
-        setError('End date must be on or after the start date.');
-        return;
-      }
-      effEndDate = endDate;
-      effEndTime = allDay ? null : endTime || null;
+    const effEndDate = endDate || startDate;
+    if (effEndDate < startDate) {
+      setError('End date must be on or after the start date.');
+      return;
+    }
+    const effEndTime = allDay ? null : endTime || null;
+    if (!allDay && effEndDate === startDate && endTime && endTime <= startTime) {
+      setError('End time must be after the start time.');
+      return;
     }
 
     const n = parseInt(interval, 10);
@@ -177,76 +161,64 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
       </div>
 
       <div>
-        <label className={labelClass}>Description (optional)</label>
-        <textarea
-          className={`${inputClass} resize-none`}
-          rows={2}
-          placeholder="Details, location, links…"
-          value={description}
-          onChange={e => setDescription(e.target.value)}
-        />
+        <label className={labelClass}>Color</label>
+        <ColorPicker value={color} onChange={setColor} />
       </div>
 
-      <div className="flex gap-sm">
-        <div className="flex-1">
-          <label className={labelClass}>Day</label>
-          <input
-            type="date"
-            className={inputClass}
-            value={startDate}
-            onChange={e => setStartDate(e.target.value)}
-            style={{ colorScheme: 'dark' }}
-          />
-        </div>
-        {!allDay && (
-          <div className="w-28">
-            <label className={labelClass}>Time</label>
+      {/*
+        Three rows: the all-day switch, then start and end, each as date on the
+        left and time on the right. The old version had a "how does this end?"
+        dropdown that you had to answer before you could type an end at all;
+        every event has an end, so it just shows one. Checking all-day drops the
+        whole time column rather than disabling it.
+      */}
+      <div className="space-y-sm">
+        <CheckboxRow checked={allDay} onChange={setAllDay} label="All-day" />
+
+        <div className="flex gap-sm">
+          <div className="flex-1 min-w-0">
+            <label className={labelClass}>Starts</label>
             <input
-              type="time"
+              type="date"
               className={inputClass}
-              value={startTime}
-              onChange={e => setStartTime(e.target.value)}
-              style={{ colorScheme: 'dark' }}
+              value={startDate}
+              onChange={e => changeStartDate(e.target.value)}
             />
           </div>
-        )}
-      </div>
-
-      <CheckboxRow checked={allDay} onChange={changeAllDay} label="All-day" />
-
-      <div>
-        <label className={labelClass}>Ends</label>
-        <div className="flex gap-sm">
-          <Select className="flex-1" options={endOptions} value={endMode} onChange={setEndMode} />
-          {endMode === 'time' && (
-            <input
-              type="time"
-              className={`${inputClass} w-28`}
-              value={endTime}
-              onChange={e => setEndTime(e.target.value)}
-              style={{ colorScheme: 'dark', width: '7rem' }}
-            />
-          )}
-          {endMode === 'date' && (
-            <>
+          {!allDay && (
+            <div className="w-32 flex-shrink-0">
+              <label className={labelClass}>Time</label>
               <input
-                type="date"
-                className={`${inputClass} w-36`}
-                value={endDate}
-                min={startDate || undefined}
-                onChange={e => setEndDate(e.target.value)}
-                style={{ colorScheme: 'dark', width: '9.5rem' }}
+                type="time"
+                className={inputClass}
+                value={startTime}
+                onChange={e => setStartTime(e.target.value)}
               />
-              {!allDay && (
-                <input
-                  type="time"
-                  className={`${inputClass} w-24`}
-                  value={endTime}
-                  onChange={e => setEndTime(e.target.value)}
-                  style={{ colorScheme: 'dark', width: '6.5rem' }}
-                />
-              )}
-            </>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-sm">
+          <div className="flex-1 min-w-0">
+            <label className={labelClass}>Ends</label>
+            <input
+              type="date"
+              className={inputClass}
+              value={endDate}
+              min={startDate || undefined}
+              onChange={e => setEndDate(e.target.value)}
+            />
+          </div>
+          {!allDay && (
+            <div className="w-32 flex-shrink-0">
+              <label className={labelClass}>Time</label>
+              <input
+                type="time"
+                className={inputClass}
+                value={endTime}
+                onChange={e => setEndTime(e.target.value)}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -272,7 +244,7 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
               className={`${inputClass} text-center`}
               value={interval}
               onChange={e => setInterval_(e.target.value)}
-              style={{ colorScheme: 'dark', width: '4rem' }}
+              style={{ width: '4rem' }}
             />
             <span className="text-body-sm text-txt-muted">
               {recType === 'daily' ? 'day(s)' : recType === 'weekly' ? 'week(s)' : 'month(s)'}
@@ -283,36 +255,23 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
               className={inputClass}
               value={until}
               onChange={e => setUntil(e.target.value)}
-              style={{ colorScheme: 'dark', width: '10rem' }}
+              style={{ width: '10rem' }}
             />
           </div>
         )}
       </div>
 
-      <div>
-        <label className={labelClass}>Notifications</label>
-        <div className="flex gap-xs">
-          {REMINDER_PRESETS.map(({ minutes, label }) => (
-            <button
-              key={minutes}
-              type="button"
-              onClick={() => toggleReminder(minutes)}
-              className={`flex-1 py-xs rounded-lg text-label-md font-semibold transition-all ${
-                reminders.includes(minutes)
-                  ? 'bg-primary text-on-primary'
-                  : 'bg-fill-strong text-txt-muted hover:bg-fill-stronger'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <p className="text-[11px] text-txt-muted mt-xs">Pick any combination — e.g. 1 week and 1 day before.</p>
-      </div>
+      <RemindersField value={reminders} onChange={setReminders} />
 
       <div>
-        <label className={labelClass}>Color</label>
-        <ColorPicker value={color} onChange={setColor} />
+        <label className={labelClass}>Description (optional)</label>
+        <textarea
+          className={`${inputClass} resize-none`}
+          rows={2}
+          placeholder="Details, location, links…"
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+        />
       </div>
 
       {error && <p className="text-body-sm text-danger">{error}</p>}

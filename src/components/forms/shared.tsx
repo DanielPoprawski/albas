@@ -1,5 +1,6 @@
 import { useId, useRef } from 'react';
-import { colorHex, PALETTE } from '../../colors';
+import { colorHex, GREY_RAMP, PALETTE, PALETTE_COMPACT, PALETTE_ROWS } from '../../colors';
+import { useIsMobile } from '../../useMedia';
 import { Checkbox } from '../ui/checkbox';
 import {
   Select as SelectRoot,
@@ -63,54 +64,86 @@ export function Select<T extends string>({ options, value, onChange, className }
   );
 }
 
-/** Swatch palette plus a rainbow "wheel" swatch that opens the native color picker. */
+/**
+ * Colour picker. Two shapes for two amounts of room:
+ *  - phone: a single row of seven hues plus the wheel, because a second row
+ *    pushes the rest of the form off screen;
+ *  - desktop: a 12x4 grid — three shade rows, then black→white, with the wheel
+ *    occupying the last cell so the grid stays rectangular.
+ *
+ * The wheel opens the OS colour picker via a hidden `input[type=color]`, so any
+ * hex is reachable; the swatches are just the fast path.
+ */
 export function ColorPicker({ value, onChange }: {
   value: string;
   onChange: (hex: string) => void;
 }) {
   const customRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
   const hex = colorHex(value);
   const isCustom = !PALETTE.includes(hex);
 
+  const swatch = (c: string) => (
+    <button
+      key={c}
+      type="button"
+      title={c}
+      onClick={() => onChange(c)}
+      className={`aspect-square rounded-full transition-all ${
+        hex.toLowerCase() === c.toLowerCase()
+          ? 'ring-2 ring-txt/70 ring-offset-1 ring-offset-transparent scale-110'
+          : 'opacity-70 hover:opacity-100 hover:scale-110'
+      }`}
+      style={{ backgroundColor: c }}
+    />
+  );
+
+  const wheel = (
+    <button
+      type="button"
+      title="Custom colour"
+      onClick={() => customRef.current?.click()}
+      className={`aspect-square rounded-full relative transition-all ${
+        isCustom ? 'ring-2 ring-txt/70 scale-110' : 'opacity-90 hover:opacity-100 hover:scale-110'
+      }`}
+      style={{
+        background: isCustom
+          ? hex
+          : 'conic-gradient(#ef4444, #f59e0b, #84cc16, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)',
+      }}
+    >
+      {/* punched-out centre marks it as "pick anything", not a colour itself */}
+      {!isCustom && <span className="absolute inset-[30%] rounded-full bg-elevated" />}
+    </button>
+  );
+
+  const hidden = (
+    <input
+      ref={customRef}
+      type="color"
+      className="sr-only"
+      value={hex}
+      onChange={e => onChange(e.target.value)}
+      tabIndex={-1}
+    />
+  );
+
+  if (isMobile) {
+    return (
+      <div className="grid grid-cols-8 gap-xs items-center">
+        {PALETTE_COMPACT.map(swatch)}
+        {wheel}
+        {hidden}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-wrap gap-xs items-center">
-      {PALETTE.map(c => (
-        <button
-          key={c}
-          type="button"
-          title={c}
-          onClick={() => onChange(c)}
-          className={`w-7 h-7 rounded-full transition-all ${
-            hex === c ? 'ring-2 ring-txt/70 ring-offset-2 ring-offset-transparent scale-110' : 'opacity-60 hover:opacity-100 hover:scale-105'
-          }`}
-          style={{ backgroundColor: c }}
-        />
-      ))}
-      <button
-        type="button"
-        title="Custom color"
-        onClick={() => customRef.current?.click()}
-        className={`w-7 h-7 rounded-full relative transition-all ${
-          isCustom ? 'ring-2 ring-txt/70 scale-110' : 'opacity-80 hover:opacity-100 hover:scale-105'
-        }`}
-        style={{
-          background: isCustom
-            ? hex
-            : 'conic-gradient(#ef4444, #f59e0b, #84cc16, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)',
-        }}
-      >
-        {!isCustom && (
-          <span className="absolute inset-[9px] rounded-full bg-elevated" />
-        )}
-      </button>
-      <input
-        ref={customRef}
-        type="color"
-        className="sr-only"
-        value={hex}
-        onChange={e => onChange(e.target.value)}
-        tabIndex={-1}
-      />
+    <div className="grid grid-cols-12 gap-1 items-center max-w-[22rem]">
+      {PALETTE_ROWS.flat().map(swatch)}
+      {GREY_RAMP.map(swatch)}
+      {wheel}
+      {hidden}
     </div>
   );
 }

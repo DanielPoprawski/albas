@@ -58,7 +58,7 @@ export function doneCountIn(
   todo: Todo,
   dateStr: string,
   per: 'week' | 'month',
-  firstDay: FirstDayOfWeek = 1,
+  firstDay: FirstDayOfWeek = 0,
 ): number {
   if (per === 'week') {
     return weekOf(parse(dateStr), firstDay).filter(d => isDoneOn(todo, d)).length;
@@ -67,7 +67,7 @@ export function doneCountIn(
   return Object.entries(todo.completions).filter(([d, v]) => d.startsWith(prefix) && v >= todo.target).length;
 }
 
-export function isDueOn(todo: Todo, dateStr: string, firstDay: FirstDayOfWeek = 1): boolean {
+export function isDueOn(todo: Todo, dateStr: string, firstDay: FirstDayOfWeek = 0): boolean {
   const s = todo.schedule;
   if (s.type === 'once') return !!todo.dueDate && dateStr === todo.dueDate;
 
@@ -120,7 +120,7 @@ export function nextDue(todo: Todo, todayStr: string): string | null {
  * break it; non-due days are skipped). Quota rules: consecutive weeks/months
  * meeting the quota, with the same grace for the current one.
  */
-export function streakOf(todo: Todo, firstDay: FirstDayOfWeek = 1): number {
+export function streakOf(todo: Todo, firstDay: FirstDayOfWeek = 0): number {
   const s = todo.schedule;
   if (s.type === 'once') return 0;
 
@@ -165,7 +165,7 @@ const UNIT_WORD: Record<'day' | 'week' | 'month', [string, string]> = {
 };
 
 /** Human-readable repeat summary, e.g. "every 3 days after last done". */
-export function repeatLabel(repeat: Repeat, firstDay: FirstDayOfWeek = 1): string {
+export function repeatLabel(repeat: Repeat, firstDay: FirstDayOfWeek = 0): string {
   switch (repeat.type) {
     case 'once': return 'one-time';
     case 'daily': return 'daily';
@@ -182,7 +182,7 @@ export function repeatLabel(repeat: Repeat, firstDay: FirstDayOfWeek = 1): strin
 }
 
 /** Short status shown next to a repeating to-do's name in lists. */
-export function statusLabel(todo: Todo, todayStr: string, firstDay: FirstDayOfWeek = 1): string {
+export function statusLabel(todo: Todo, todayStr: string, firstDay: FirstDayOfWeek = 0): string {
   const s = todo.schedule;
   if (s.type === 'timesPer') {
     const done = doneCountIn(todo, todayStr, s.per, firstDay);
@@ -194,4 +194,70 @@ export function statusLabel(todo: Todo, todayStr: string, firstDay: FirstDayOfWe
   }
   const streak = streakOf(todo, firstDay);
   return streak > 0 ? `${streak} day streak` : repeatLabel(s, firstDay);
+}
+
+/** Uncategorised to-dos group under this heading, and it always sorts first. */
+export const UNCATEGORIZED = 'Uncategorized';
+
+/**
+ * Sort key for a to-do's due moment. Undated to-dos sort last (there is no
+ * deadline to be late for), and a dated one with no time sorts after the timed
+ * ones on the same day.
+ */
+export function dueSortKey(todo: Todo): string {
+  if (!todo.dueDate) return '￿';
+  return `${todo.dueDate}T${todo.time ?? '99:99'}`;
+}
+
+/** Current wall-clock as 'HH:MM', for comparing against a to-do's `time`. */
+function hhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Past its moment and still not done. A to-do due today counts as overdue only
+ * once its time has passed; one with no time has all day to be finished.
+ */
+export function isOverdue(todo: Todo, now: Date = new Date()): boolean {
+  if (!todo.dueDate || isDone(todo)) return false;
+  const todayStr = fmt(now);
+  if (todo.dueDate !== todayStr) return todo.dueDate < todayStr;
+  return todo.time != null && todo.time < hhmm(now);
+}
+
+/** Starred first, then by due moment, then by name so the order is stable. */
+export function byImportanceThenDue(a: Todo, b: Todo): number {
+  if (a.important !== b.important) return a.important ? -1 : 1;
+  const key = dueSortKey(a).localeCompare(dueSortKey(b));
+  return key !== 0 ? key : a.name.localeCompare(b.name);
+}
+
+export interface TaskGroup {
+  category: string;
+  todos: Todo[];
+}
+
+/**
+ * One-time to-dos grouped by category for display: uncategorised first (it's
+ * where anything typed in a hurry lands, so it shouldn't be buried), then the
+ * named categories alphabetically. Each group is sorted by
+ * `byImportanceThenDue`. Completed to-dos are excluded — they collect in their
+ * own section at the bottom of the list rather than inside their category.
+ */
+export function groupTasks(tasks: Todo[]): TaskGroup[] {
+  const groups = new Map<string, Todo[]>();
+  for (const t of tasks) {
+    const key = t.category.trim() || UNCATEGORIZED;
+    const list = groups.get(key);
+    if (list) list.push(t);
+    else groups.set(key, [t]);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => {
+      if (a === b) return 0;
+      if (a === UNCATEGORIZED) return -1;
+      if (b === UNCATEGORIZED) return 1;
+      return a.localeCompare(b);
+    })
+    .map(([category, todos]) => ({ category, todos: todos.sort(byImportanceThenDue) }));
 }

@@ -13,14 +13,16 @@ const WEEKDAYS_NARROW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 export const PILL_CAP = 1;
 
 /**
- * Always six rows. A five-week month spread over the full height gives cells
- * far taller than their content, and the row height jumping month to month
- * makes the grid feel unstable while swiping through it.
+ * The month's natural week count (5 for most months, 6 when it genuinely spans
+ * six). v1.6 forced six rows so the height never changed between months; v1.7
+ * trades that stability back for shorter rows, since a padded sixth row of
+ * greyed-out next-month days was costing height the calendar didn't need.
  */
-export const MIN_WEEKS = 6;
+export const MIN_WEEKS = 0;
 
-const PILL_CLASS = 'text-[9px] font-bold px-0.5 rounded-sm truncate hover:opacity-80';
-const PILL_BORDER = '2px';
+/* See the note in MonthViewDesktop: no ellipsis, no left colour tab. */
+const PILL_CLASS =
+  'text-[9px] font-bold px-0.5 rounded-sm overflow-hidden whitespace-nowrap hover:opacity-80';
 
 export default function MonthViewMobile({
   weeks,
@@ -97,7 +99,6 @@ export default function MonthViewMobile({
                           className={PILL_CLASS}
                           style={{
                             backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                            borderLeft: `${PILL_BORDER} solid ${hex}`,
                             color: hex,
                           }}
                         >
@@ -115,7 +116,6 @@ export default function MonthViewMobile({
                           className={`${PILL_CLASS} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
                           style={{
                             backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                            borderLeft: `${PILL_BORDER} solid ${hex}`,
                             color: hex,
                           }}
                         >

@@ -3,6 +3,7 @@ import { remindDueEvents, remindDueTodos } from '../notifications';
 import TopBar from './TopBar';
 import Sidebar from './Sidebar';
 import Calendar from './Calendar';
+import HomeView from './HomeView';
 import RightPanel from './RightPanel';
 import AddModal from './AddModal';
 import TodoPanel from './TodoPanel';
@@ -11,11 +12,31 @@ import Settings from './Settings';
 import { useApp } from '../context/AppContext';
 import { useIsMobile } from '../useMedia';
 
+function Fab({ onClick, className, style }: {
+  onClick: () => void;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Add"
+      style={style}
+      className={`z-40 w-14 h-14 bg-primary text-on-primary rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all ${className ?? ''}`}
+    >
+      <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>add</span>
+    </button>
+  );
+}
+
 export default function AppShell() {
   const [showModal, setShowModal] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useIsMobile();
-  const { activeView, todos, events, loaded, firstDayOfWeek } = useApp();
+  const { activeView, calendarMode, todos, events, loaded, firstDayOfWeek } = useApp();
+
+  // Only the desktop month grid sizes itself; week/day fill the space as before
+  const monthGridDesktop = !isMobile && activeView === 'calendar' && calendarMode === 'month';
 
   // Remind about due to-dos and upcoming events on launch, then re-check
   // periodically. 5-minute cadence so short event offsets (10 min) can't
@@ -42,44 +63,58 @@ export default function AppShell() {
         onClose={() => setDrawerOpen(false)}
       />
 
-      {/* Desktop keeps the three-pane frame; mobile drops the rail offset and
-          the right panel, whose two sections become drawer destinations. */}
+      {/* Desktop is a flex row so the right panel can absorb whatever the
+          calendar doesn't need; mobile drops the rail offset and the panel
+          entirely, since Home already carries both lists. */}
       <main
-        className={`pt-16 h-screen overflow-hidden ${isMobile ? '' : 'ml-16 mr-[280px]'}`}
+        className={`pt-16 h-screen overflow-hidden ${isMobile ? '' : 'ml-16 flex'}`}
       >
         {/* The calendar goes edge-to-edge on phones; the list views keep their
-            own padding now that the glass-card wrappers are gone. */}
+            own padding now that the glass-card wrappers are gone.
+
+            `flex-none` for the desktop month grid is load-bearing: that grid
+            sets its own width from its height to keep 3:2 day cells, and a
+            flex-1 column would stretch past it and strand the leftover space
+            instead of handing it to the panel. */}
         <div
           className={`h-full ${
-            isMobile ? (activeView === 'calendar' ? 'p-0' : 'p-sm') : 'p-md'
+            isMobile
+              ? (activeView === 'calendar' ? 'p-0' : 'p-sm')
+              : `relative p-md min-w-0 ${monthGridDesktop ? 'flex-none' : 'flex-1'}`
           }`}
         >
-          {activeView === 'calendar' && <Calendar isMobile={isMobile} />}
-          {activeView === 'todos' && (
+          {/* On a phone 'calendar' is the home page: the calendar with habits
+              and tasks stacked under it. There is no separate to-do
+              destination there — one list surface, as on desktop. Home also
+              absorbs 'todos', so narrowing a desktop window while that view is
+              open lands somewhere real instead of on a blank screen. */}
+          {(activeView === 'calendar' || (isMobile && activeView === 'todos')) &&
+            (isMobile ? <HomeView /> : <Calendar />)}
+          {activeView === 'todos' && !isMobile && (
             <div className="h-full overflow-auto scrollbar-hide">
               <TodoPanel />
             </div>
           )}
           {activeView === 'weight' && <WeightPanel />}
           {activeView === 'settings' && <Settings />}
+
+          {/* Desktop FAB sits inside the content column, so it follows the
+              calendar's edge instead of a hardcoded offset — the right panel's
+              width is no longer fixed. */}
+          {!isMobile && <Fab onClick={() => setShowModal(true)} className="absolute right-md bottom-md" />}
         </div>
+
+        {!isMobile && <RightPanel />}
       </main>
 
-      {!isMobile && <RightPanel />}
-
-      {/* Floating Action Button. On desktop it clears the 280px right panel;
-          on mobile it sits above the gesture bar. */}
-      <button
-        onClick={() => setShowModal(true)}
-        className="fixed z-50 w-14 h-14 bg-primary text-on-primary rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all"
-        style={
-          isMobile
-            ? { right: 20, bottom: 'calc(20px + env(safe-area-inset-bottom))' }
-            : { right: 300, bottom: 24 }
-        }
-      >
-        <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>add</span>
-      </button>
+      {/* On mobile it floats above the gesture bar. */}
+      {isMobile && (
+        <Fab
+          onClick={() => setShowModal(true)}
+          className="fixed z-50"
+          style={{ right: 20, bottom: 'calc(20px + env(safe-area-inset-bottom))' }}
+        />
+      )}
 
       {showModal && (
         <AddModal
