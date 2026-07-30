@@ -54,6 +54,16 @@ The theme is mirrored to `localStorage['albas-theme']` purely so the inline scri
 
 Below the breakpoint: the icon rail becomes an off-canvas drawer (hamburger in `TopBar`), `RightPanel` is dropped, and tapping a month tile drills into that day's Day view instead of opening the add modal. The calendar view gets `p-0` from `AppShell` so the month grid goes edge-to-edge; the nav row carries its own `px-sm`.
 
+**The month grid is split by layout, not by platform.** It diverged far enough that in-line `isMobile` ternaries were most of the component's complexity, so it's now four files in `src/components/calendar/`:
+- `monthModel.ts` — `getCalendarDays` plus `useMonthModel(pillCap)`, which derives *everything* both layouts draw (week buckets, bar lanes and the `MAX_BAR_LANES` overflow-to-pills fallback, period washes, due dots, per-cell pill selection and `hiddenCount`). `pillCap` is the only input that differs. **All grid logic belongs here** — a fix applied to one layout only is the failure mode this split exists to prevent.
+- `monthParts.tsx` — pieces that render identically in both: `PeriodCorners`, `DueDots`, `PeriodTitles`, `BarsOverlay` (parameterised by `top`, which clears the shorter day-number row on a phone).
+- `MonthViewDesktop.tsx` / `MonthViewMobile.tsx` — presentational only, no state and no `isMobile`. Each exports its own `PILL_CAP`.
+- `MonthView.tsx` — the shell: derives the model, owns the three `AddModal` states, picks a layout. It returns a fragment, so the layout root keeps `flex-1 min-h-0` as a direct flex child of `Calendar`.
+
+**There is no "today" marker in the month grid.** Elapsed cells are struck through with `PastX` instead, so today reads as the first day that isn't crossed. The strike uses `--t-past-x` (per theme, like `--t-grid-line`) rather than literal black, which would be invisible on the three themes whose sheet is dark. Week view still marks today in its column header.
+
+`AppShell`'s remaining `isMobile` branches are deliberate — a layout shell choosing rail-vs-drawer is not the same problem.
+
 ## One list, one title (v1.4)
 - **There is no Agenda panel.** `DayPanel` was deleted and the day's events live only on the calendar (Day view). `TodoPanel` is the single list surface — habits then to-dos under `HABITS` / `TO-DO` headings — used both as the main view and as the whole of `RightPanel`. Re-adding a second list is what caused a habit to render twice.
 - **The title lives in `TopBar`**, built by `calendarTitle()` in `src/dates.ts`; `Calendar` renders navigation only. Month view omits the year in the current year. Don't reintroduce an `<h2>` in `Calendar` — the month name would render twice.
@@ -70,6 +80,16 @@ Two rules that are easy to get wrong:
 Known behavioural consequence: `timesPer: 'week'` to-dos bucket completions with `weekOf`, so flipping the setting re-partitions past completions and a "3× per week" habit's streak/quota can change value. Settings says so inline.
 
 **`min-h-0` is load-bearing** on every `flex flex-col` ancestor of `HourGrid` — flex items default to `min-height: auto`, which lets the 1152px hour body dictate the container height and silently defeats `overflow-y-auto`. This is what broke Week/Day view before v1.3.
+
+## Device sync (v1.5)
+Optional, off until configured in Settings → Sync. SQLite stays the source of truth and the app stays fully offline-capable; the server only reconciles devices.
+
+- **Client**: `src-tauri/src/sync.rs`. `TABLES` lists each synced table's PK and columns — **adding a column to the schema means adding it there too**, or it silently won't sync (`table_specs_match_the_schema` catches a typo'd name, not an omitted column).
+- **Server**: `sync-server/` — a standalone Axum binary storing opaque `(table, pk) -> payload` rows. It never parses app data, so it needs no redeploy when the app schema changes. `sync-server/README.md` has the protocol and deployment.
+- **Two clocks, deliberately**: `updated_at` (device clock) decides *who wins* via last-write-wins; `seq` (server-assigned, monotonic) decides *what a device hasn't seen*. Clients resume from `seq`, so a skewed device clock can never make another device skip a row. Don't collapse these into one.
+- Conflict resolution is **per row, not per field** — two offline edits to different fields of one to-do keep only the later row wholesale.
+- **Settings are not synced.** On Android the Wyze credentials live in `meta` under `setting:__wyze_credentials` (no keyring backend), so syncing settings wholesale would upload a plaintext password. The `__` prefix marks keys that must stay local; `__sync_url`/`__sync_token` use it too.
+- Syncs once per launch (an effect in `AppContext` keyed on `loaded`) plus the manual button. A pull writes to SQLite from Rust, bypassing React, so anything that syncs must call `reloadFromStore()` afterwards.
 
 ## Wyze scale sync
 `src-tauri/src/wyze.rs` ports the community `shauntarves/wyze-sdk` request shapes (Wyze has no public API). Login needs email + password + an API Key/Key ID from developer-api-console.wyze.com — the API key acts as the second factor, so it works with 2FA on. Requests carry a `signature2` header: HMAC-MD5 of the body (for GET, query params joined **sorted by key**) keyed by `md5(access_token + salt)`. Both the sort order and the exact body bytes are load-bearing; a mismatch surfaces as a 403. `cargo test --lib` pins the hashes against the Python reference — check those first if sync breaks.

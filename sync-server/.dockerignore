@@ -1,0 +1,8 @@
+# Without this the 370MB target/ dir is sent to the daemon as build context.
+target/
+.env
+*.db
+*.db-wal
+*.db-shm
+README.md
+docker-compose.yml

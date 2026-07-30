@@ -38,6 +38,9 @@
   --color-sheet-txt: var(--t-sheet-txt);
   --color-sheet-txt-muted: var(--t-sheet-txt-muted);
   --color-sheet-txt-faint: var(--t-sheet-txt-faint);
+  /* Strike-through on elapsed day cells. Follows the sheet like --t-grid-line:
+     literal black is invisible on the three themes whose sheet is dark. */
+  --color-past-x: var(--t-past-x);
 
   /* Accent. Aliased onto the original M3 names so every existing
      bg-primary / text-primary-fixed-dim call site follows the theme. */
@@ -82,6 +85,7 @@
   --t-sheet-txt: #eaf1ff;
   --t-sheet-txt-muted: #c3c6d7;
   --t-sheet-txt-faint: #8b90a3;
+  --t-past-x: rgb(195 198 215 / 0.45);
 }
 
 :root[data-theme='light'] {
@@ -116,6 +120,7 @@
   --t-sheet-txt: #0b1c30;
   --t-sheet-txt-muted: #434655;
   --t-sheet-txt-faint: #737686;
+  --t-past-x: rgb(11 28 48 / 0.55);
 }
 
 :root[data-theme='grey-high'] {
@@ -150,6 +155,7 @@
   --t-sheet-txt: #ffffff;
   --t-sheet-txt-muted: #d4d4d4;
   --t-sheet-txt-faint: #9a9a9a;
+  --t-past-x: rgb(255 255 255 / 0.55);
 }
 
 :root[data-theme='grey-low'] {
@@ -184,6 +190,7 @@
   --t-sheet-txt: #d7dade;
   --t-sheet-txt-muted: #a2a7ae;
   --t-sheet-txt-faint: #7d828a;
+  --t-past-x: rgb(255 255 255 / 0.38);
 }
 
 @theme {

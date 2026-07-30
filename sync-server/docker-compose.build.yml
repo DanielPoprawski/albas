@@ -1,0 +1,8 @@
+# Overlay for building locally instead of pulling the published image:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# Deploying from the registry needs only docker-compose.yml.
+services:
+  albas-sync:
+    build: .

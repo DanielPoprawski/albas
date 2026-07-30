@@ -91,6 +91,12 @@ CREATE TABLE IF NOT EXISTS weights (
 );
 ";
 
+/// The full current schema, for tests that need a throwaway in-memory DB.
+#[cfg(test)]
+pub fn test_schema() -> String {
+    format!("{SCHEMA}{SCHEMA_V3}")
+}
+
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -117,22 +123,31 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
 /// internal bookkeeping keys like `legacy_import_done`.
 const SETTING_PREFIX: &str = "setting:";
 
-pub fn read_setting(conn: &Connection, key: &str) -> Option<String> {
-    conn.query_row(
-        "SELECT value FROM meta WHERE key = ?1",
-        params![format!("{SETTING_PREFIX}{key}")],
-        |r| r.get::<_, String>(0),
-    )
+/// Unprefixed `meta` access, for bookkeeping the frontend never sees —
+/// `legacy_import_done`, the sync watermarks. Settings go through the
+/// prefixed pair below.
+pub fn read_meta(conn: &Connection, key: &str) -> Option<String> {
+    conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+        r.get::<_, String>(0)
+    })
     .ok()
 }
 
-pub fn write_setting(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+pub fn write_meta(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO meta (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = ?2",
-        params![format!("{SETTING_PREFIX}{key}"), value],
+        params![key, value],
     )?;
     Ok(())
+}
+
+pub fn read_setting(conn: &Connection, key: &str) -> Option<String> {
+    read_meta(conn, &format!("{SETTING_PREFIX}{key}"))
+}
+
+pub fn write_setting(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+    write_meta(conn, &format!("{SETTING_PREFIX}{key}"), value)
 }
 
 #[tauri::command]

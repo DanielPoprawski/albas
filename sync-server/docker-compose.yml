@@ -1,0 +1,16 @@
+services:
+  albas-sync:
+    image: ghcr.io/danielpoprawski/albas-sync:latest
+    restart: unless-stopped
+    # Bound to localhost: put a TLS-terminating reverse proxy in front rather
+    # than exposing the container directly. The bearer token is the only
+    # credential, so it must never travel over plain HTTP.
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      ALBAS_SYNC_TOKEN: ${ALBAS_SYNC_TOKEN:?set ALBAS_SYNC_TOKEN in .env}
+    volumes:
+      - albas-sync-data:/data
+
+volumes:
+  albas-sync-data:

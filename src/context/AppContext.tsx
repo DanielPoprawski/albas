@@ -187,6 +187,11 @@ interface AppContextType {
   weightUnit: WeightUnit;
   firstDayOfWeek: FirstDayOfWeek;
   setSetting: (key: string, value: string) => void;
+  /**
+   * Re-reads everything from the store. Needed after a server sync, which
+   * writes straight to SQLite from Rust and so bypasses React state.
+   */
+  reloadFromStore: () => Promise<void>;
 }
 
 const THEMES: ThemeName[] = ['dark', 'light', 'grey-high', 'grey-low'];
@@ -223,6 +228,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeView, setActiveView] = useState<ActiveView>('calendar');
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('month');
   const initStarted = useRef(false);
+  const syncStarted = useRef(false); // StrictMode double-mount guard
 
   useEffect(() => {
     if (initStarted.current) return; // StrictMode double-mount guard
@@ -279,6 +285,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setLoaded(true);
     })();
   }, []);
+
+  // One sync per launch, once the local data is on screen. Deliberately not
+  // awaited by the load above: a slow or unreachable server must never delay
+  // startup, and a failure here just means the app stays local until the next
+  // manual sync from Settings.
+  useEffect(() => {
+    if (!loaded || !inTauri() || syncStarted.current) return;
+    syncStarted.current = true;
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const status = await invoke<{ configured: boolean }>('sync_status');
+        if (!status.configured) return;
+        const out = await invoke<{ pulled: number }>('sync_now');
+        if (out.pulled > 0) await reloadFromStore();
+      } catch (err) {
+        console.warn('startup sync failed:', err);
+      }
+    })();
+  }, [loaded]);
 
   function addTodo(todo: NewTodo) {
     const full: Todo = { ...todo, id: crypto.randomUUID(), createdAt: todayStr, completions: {} };
@@ -371,6 +397,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (key === 'theme') applyTheme(value as ThemeName);
   }
 
+  async function reloadFromStore() {
+    const state = await persistence.load();
+    setTodos(state.todos.map(migrateTodo));
+    setEvents([...state.events]);
+    setWeights(state.weights);
+    setSettings(state.settings);
+  }
+
   return (
     <AppContext.Provider value={{
       todos, events, weights, loaded,
@@ -383,6 +417,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       weightUnit: settings.weightUnit === 'kg' ? 'kg' : 'lb',
       firstDayOfWeek: settings.firstDayOfWeek === '0' ? 0 : 1,
       setSetting,
+      reloadFromStore,
     }}>
       {children}
     </AppContext.Provider>

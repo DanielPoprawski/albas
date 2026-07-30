@@ -208,8 +208,193 @@ export default function Settings() {
           )}
         </div>
 
+        <SyncCard />
+
         <WyzeCard />
       </div>
+    </div>
+  );
+}
+
+/** Mirrors the `SyncStatus` struct returned by the `sync_status` command. */
+interface SyncStatusInfo {
+  configured: boolean;
+  url: string | null;
+  lastSync: string | null;
+}
+
+/** Mirrors `SyncOutcome` from `sync_now`. */
+interface SyncOutcome {
+  pushed: number;
+  pulled: number;
+  skipped: number;
+  lastSync: string | null;
+}
+
+type SyncState =
+  | { kind: 'idle' }
+  | { kind: 'busy'; what: string }
+  | { kind: 'ok'; message: string }
+  | { kind: 'error'; message: string };
+
+function SyncCard() {
+  const { setSetting, reloadFromStore } = useApp();
+  const [status, setStatus] = useState<SyncStatusInfo | null>(null);
+  const [state, setState] = useState<SyncState>({ kind: 'idle' });
+  const [form, setForm] = useState({ url: '', token: '' });
+
+  const available = inTauri();
+
+  useEffect(() => {
+    if (!available) return;
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const s = await invoke<SyncStatusInfo>('sync_status');
+        setStatus(s);
+        setForm(f => ({ ...f, url: s.url ?? '' }));
+      } catch {
+        // backend not ready — the card still renders in its unconfigured state
+      }
+    })();
+  }, [available]);
+
+  async function connect() {
+    setState({ kind: 'busy', what: 'Saving…' });
+    try {
+      // Written through setSetting so React state and SQLite agree. The `__`
+      // prefix keeps both keys out of the synced payload — the token must
+      // never be uploaded to the server it authenticates against.
+      setSetting('__sync_url', form.url.trim());
+      setSetting('__sync_token', form.token.trim());
+      const { invoke } = await import('@tauri-apps/api/core');
+      setStatus(await invoke<SyncStatusInfo>('sync_status'));
+      setState({ kind: 'idle' });
+      await sync();
+    } catch (err) {
+      setState({ kind: 'error', message: String(err) });
+    }
+  }
+
+  async function sync() {
+    setState({ kind: 'busy', what: 'Syncing…' });
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const out = await invoke<SyncOutcome>('sync_now');
+      // Rust merged straight into SQLite, so pull the rows back into React.
+      if (out.pulled > 0) await reloadFromStore();
+      setStatus(await invoke<SyncStatusInfo>('sync_status'));
+      const parts = [`sent ${out.pushed}`, `received ${out.pulled}`];
+      if (out.skipped > 0) parts.push(`${out.skipped} skipped`);
+      setState({
+        kind: out.skipped > 0 ? 'error' : 'ok',
+        message:
+          out.skipped > 0
+            ? `Synced (${parts.join(', ')}). Skipped rows come from a newer version of Albas — update this device.`
+            : `Synced — ${parts.join(', ')}.`,
+      });
+    } catch (err) {
+      setState({ kind: 'error', message: String(err) });
+    }
+  }
+
+  async function disconnect() {
+    try {
+      setSetting('__sync_url', '');
+      setSetting('__sync_token', '');
+      const { invoke } = await import('@tauri-apps/api/core');
+      setStatus(await invoke<SyncStatusInfo>('sync_status'));
+      setForm({ url: '', token: '' });
+      setState({ kind: 'idle' });
+    } catch (err) {
+      setState({ kind: 'error', message: String(err) });
+    }
+  }
+
+  const canConnect = form.url.trim() !== '' && form.token.trim() !== '';
+
+  return (
+    <div className="p-md rounded-xl bg-fill">
+      <h4 className="text-body-md font-semibold text-txt mb-xs">Sync</h4>
+      <p className="text-body-sm text-txt-muted mb-md">
+        Keeps your to-dos, events and weights in step across devices via your own
+        server. Albas stays fully offline-capable — edits are made locally and
+        reconciled on the next sync, with the most recent edit winning.
+      </p>
+
+      {!available ? (
+        <p className="text-[11px] text-txt-muted">Sync needs the desktop or Android app.</p>
+      ) : status?.configured ? (
+        <>
+          <p className="text-body-sm text-txt mb-md">
+            Syncing with <span className="font-semibold">{status.url}</span>
+            {status.lastSync && (
+              <span className="text-txt-muted">
+                {' · last synced '}
+                {new Date(Number(status.lastSync)).toLocaleString()}
+              </span>
+            )}
+          </p>
+          <div className="flex gap-sm">
+            <button
+              onClick={sync}
+              disabled={state.kind === 'busy'}
+              className="px-md py-xs bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none"
+            >
+              Sync now
+            </button>
+            <button
+              onClick={disconnect}
+              className="px-md py-xs rounded-lg font-semibold text-body-sm text-txt-muted border border-line hover:bg-fill-strong transition-colors"
+            >
+              Disconnect
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-sm">
+            <div>
+              <label className={labelClass}>Server URL</label>
+              <input
+                className={inputClass}
+                autoComplete="off"
+                placeholder="https://sync.example.com/sync"
+                value={form.url}
+                onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Sync token</label>
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="off"
+                value={form.token}
+                onChange={e => setForm(f => ({ ...f, token: e.target.value }))}
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-txt-muted mt-sm">
+            Point this at your <span className="font-semibold">albas-sync</span> server's{' '}
+            <code>/sync</code> endpoint — see <code>sync-server/README.md</code>. The token is
+            whatever <code>ALBAS_SYNC_TOKEN</code> is set to on the server, and must match on
+            every device. Only https:// is accepted (http:// works for localhost while testing),
+            since the token is the only credential.
+          </p>
+          <button
+            onClick={connect}
+            disabled={!canConnect || state.kind === 'busy'}
+            className="mt-md px-md py-xs bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none"
+          >
+            Connect
+          </button>
+        </>
+      )}
+
+      {state.kind === 'busy' && <p className="text-body-sm text-txt-muted mt-md">{state.what}</p>}
+      {state.kind === 'ok' && <p className="text-body-sm text-success mt-md">{state.message}</p>}
+      {state.kind === 'error' && <p className="text-body-sm text-danger mt-md">{state.message}</p>}
     </div>
   );
 }

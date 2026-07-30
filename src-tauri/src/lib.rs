@@ -1,4 +1,5 @@
 mod db;
+mod sync;
 mod wyze;
 
 use std::sync::Mutex;
@@ -55,6 +56,8 @@ pub fn run() {
             wyze::wyze_clear_credentials,
             wyze::wyze_status,
             wyze::wyze_sync,
+            sync::sync_now,
+            sync::sync_status,
             fetch_ics,
         ])
         .run(tauri::generate_context!())

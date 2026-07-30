@@ -1,0 +1,6 @@
+target/
+# Holds ALBAS_SYNC_TOKEN — the only credential the sync server has.
+.env
+*.db
+*.db-wal
+*.db-shm

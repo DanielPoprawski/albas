@@ -24,7 +24,9 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
-ureq = "2"
+# "json" powers the sync client's request/response bodies; serde_json was
+# already in the tree, so this pulls in no new crates.
+ureq = { version = "2", features = ["json"] }
 # Wyze request signing: md5(md5(md5(pw))) for login, HMAC-MD5 for signature2.
 md-5 = "0.10"
 hmac = "0.12"
