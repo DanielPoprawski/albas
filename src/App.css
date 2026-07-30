@@ -258,7 +258,24 @@
   --t-past-x: rgb(255 255 255 / 0.38);
 }
 
+/* Slabo 27px — the title face. Bundled from public/ rather than fetched, so
+   an offline Android build renders its headings on the first paint. It ships a
+   single weight (400), which is why `font-title` call sites drop `font-bold`:
+   the browser would otherwise synthesise a smeared faux-bold serif. */
+@font-face {
+  font-family: 'Slabo 27px';
+  src: url('/Slabo27px-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
+  /* Titles only — body text and the small uppercase eyebrow labels stay Inter.
+     Slabo is drawn for one optical size (27px) and falls apart under
+     letter-spacing at 10px. */
+  --font-title: 'Slabo 27px', Georgia, serif;
+
   /* Fixed accents — these read acceptably on both surface worlds, so they
      don't participate in theming. */
   --color-on-primary-container: #eeefff;
@@ -304,8 +321,14 @@
   --text-label-md--font-weight: 600;
 }
 
-* {
-  font-family: 'Inter', sans-serif;
+/* Inter is the default for everything, including form controls, which don't
+   inherit a font on their own. This must stay inside `@layer base`: unlayered
+   rules outrank *every* layered one regardless of specificity, so an unlayered
+   `*` would beat the `font-title` utility and no heading could opt out. */
+@layer base {
+  * {
+    font-family: 'Inter', sans-serif;
+  }
 }
 
 body {

@@ -49,7 +49,7 @@ export default function TopBar({ isMobile, onOpenDrawer }: Props) {
       )}
 
       <h1
-        className={`font-bold text-txt truncate min-w-0 ${
+        className={`font-title font-normal text-txt truncate min-w-0 ${
           isMobile ? 'text-headline-lg-mobile' : 'text-headline-lg ml-16'
         }`}
       >

@@ -82,7 +82,7 @@ function ModeModal({ mode, onPick, onToday }: {
           aria-describedby={undefined}
           className="block rounded-2xl p-md w-full max-w-[min(22rem,calc(100%-2rem))] border-line shadow-2xl"
         >
-          <DialogTitle className="text-headline-lg-mobile font-bold text-txt mb-md">
+          <DialogTitle className="text-headline-lg-mobile font-title font-normal text-txt mb-md">
             View
           </DialogTitle>
 

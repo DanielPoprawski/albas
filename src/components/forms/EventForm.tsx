@@ -290,7 +290,7 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
             showCloseButton={false}
             className="block rounded-2xl p-md w-full max-w-[min(20rem,calc(100%-2rem))] shadow-2xl border-line"
           >
-            <DialogTitle className="text-body-md font-bold text-txt mb-xs">
+            <DialogTitle className="text-body-md font-title font-normal text-txt mb-xs">
               Delete recurring event
             </DialogTitle>
             <DialogDescription className="text-body-sm text-txt-muted mb-md">

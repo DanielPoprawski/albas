@@ -85,7 +85,7 @@ function ReminderDialog({ initial, taken, onSave, onClose }: {
         aria-describedby={undefined}
         className="block rounded-2xl p-md w-full max-w-[min(22rem,calc(100%-2rem))] max-h-[80vh] overflow-y-auto scrollbar-hide border-line shadow-2xl"
       >
-        <DialogTitle className="text-body-md font-bold text-txt mb-md">
+        <DialogTitle className="text-body-md font-title font-normal text-txt mb-md">
           {initial == null ? 'Add notification' : 'Edit notification'}
         </DialogTitle>
 

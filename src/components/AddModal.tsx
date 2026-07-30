@@ -39,7 +39,7 @@ export default function AddModal({ onClose, editTodo, editEvent, editEventDate, 
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-md">
-          <DialogTitle className="text-headline-lg-mobile font-bold text-txt">
+          <DialogTitle className="text-headline-lg-mobile font-title font-normal text-txt">
             {isEditing ? `Edit ${type === 'todo' ? 'To-Do' : 'Event'}` : 'Add New'}
           </DialogTitle>
           <DialogClose className="text-txt-muted hover:text-txt transition-colors">

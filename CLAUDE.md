@@ -58,6 +58,15 @@ Hot reload works normally after that; the dev build still points at the LAN dev 
 ## TODO LIST
 1. To-do reminders only fire on the due day; consider firing at the to-do's `time` when one is set.
 
+## Typography and the app mark
+**Titles are Slabo 27px, everything else is Inter.** The `@font-face` in `App.css` bundles `public/Slabo27px-Regular.ttf` (self-hosted, so an offline Android build has its headings on first paint); `--font-title` in the `@theme` block exposes it as the `font-title` utility. It is on the `TopBar` `<h1>` and the four `DialogTitle`s — *not* on the small uppercase eyebrow labels, which are drawn at 10–12px with letter-spacing and would fall apart in a face cut for one optical size.
+
+Two things are load-bearing:
+- **The `* { font-family: Inter }` rule must stay inside `@layer base`.** Unlayered declarations outrank *every* layered one regardless of specificity, so as a bare `*` it beat `.font-title` and no heading could opt out.
+- **The TTF ships one weight (400), so `font-title` call sites also pass `font-normal`** — otherwise `font-bold`, or the `--text-headline-*--font-weight` baked into the size utility, makes the browser synthesise a smeared faux-bold serif.
+
+`public/icon.svg` is the app mark; the stock `vite.svg`/`tauri.svg` are deleted. It's the favicon in `index.html` and the source for every platform icon — regenerate with `npm run tauri icon public/icon.svg`, which rewrites `src-tauri/icons/` *and* the Android `mipmap-*` launchers (it also emits an unused `icons/ios/` set).
+
 ## Icons — lucide (v1.7.1)
 **Every icon in the app is a lucide-react component.** The Material Symbols webfont is gone: the `<link>` is out of `index.html`, `.material-symbols-outlined` is out of `App.css`, and there is no `Sym` helper left in `components/ui/`. Reintroducing a glyph-name string anywhere is a regression.
 
