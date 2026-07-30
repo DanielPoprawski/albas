@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* Supplies the animate-in / fade-in-0 / zoom-in-95 utilities that generated
+   shadcn components reference. Tailwind v4 dropped tailwindcss-animate, and
+   without this those classes silently compile to nothing. */
+@import "tw-animate-css";
 
 /*
  * Theme layer.
@@ -48,6 +52,60 @@
   --color-primary-container: var(--t-accent-hi);
   --color-primary-fixed-dim: var(--t-accent-text);
   --color-on-primary: var(--t-accent-fg);
+
+  /*
+   * shadcn/ui bridge.
+   *
+   * shadcn components are written against a fixed vocabulary of colour names.
+   * Rather than let them bring their own palette (which would be a second
+   * source of truth that no theme swap reaches), alias that vocabulary onto
+   * the same --t-* variables. A generated component then inherits all four
+   * themes without being touched.
+   *
+   * ⚠ `accent` is a false friend: in shadcn it means the *hover surface* of a
+   * menu item, not the brand colour. The brand is --t-accent → `primary`.
+   * Reaching for `bg-accent` expecting blue is the mistake this note exists
+   * to prevent.
+   */
+  --color-background: var(--t-app-bg);
+  --color-foreground: var(--t-txt);
+  --color-card: var(--t-chrome);
+  --color-card-foreground: var(--t-txt);
+  --color-popover: var(--t-elevated);
+  --color-popover-foreground: var(--t-txt);
+  --color-primary-foreground: var(--t-accent-fg);
+  --color-secondary: var(--t-fill-strong);
+  --color-secondary-foreground: var(--t-txt);
+  --color-muted: var(--t-fill);
+  --color-muted-foreground: var(--t-txt-muted);
+  --color-accent: var(--t-fill-strong);
+  --color-accent-foreground: var(--t-txt);
+  --color-destructive: var(--t-danger);
+  --color-destructive-foreground: var(--t-accent-fg);
+  --color-border: var(--t-line);
+  --color-input: var(--t-line);
+  --color-ring: var(--t-accent);
+}
+
+/* shadcn's components read --radius directly (not through @theme), so it lives
+   outside the block. 0.5rem is the rounded-lg this app already uses. */
+:root {
+  --radius: 0.5rem;
+}
+
+/*
+ * Tailwind v4 defaults border-color to `currentColor`, while generated shadcn
+ * components write a bare `border` and expect a themed default (their v3
+ * template installed one). Without this a menu's border draws in the *text*
+ * colour. The two existing bare-`border` call sites set borderColor inline,
+ * which still wins, so nothing that already looked right changes.
+ */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--t-line);
+  }
 }
 
 :root,

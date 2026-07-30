@@ -8,6 +8,10 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    /* `@/` is what generated shadcn components import through. Vite needs the
+       matching resolve.alias — it does not read these paths. */
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,

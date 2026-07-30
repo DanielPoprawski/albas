@@ -83,8 +83,9 @@ export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'Jun
 
 /**
  * The calendar's header label, shared by `Calendar` and the top bar so the
- * month name isn't rendered twice. Month view drops the year in the current
- * year — it's the common case and the space is worth more on a phone.
+ * month name isn't rendered twice. The year is dropped in the current year —
+ * it's the common case, and on a phone the title now shares its row with the
+ * calendar nav, so a week range that keeps it truncates.
  */
 export function calendarTitle(
   mode: CalendarMode,
@@ -92,13 +93,17 @@ export function calendarTitle(
   anchor: string,
   firstDay: FirstDayOfWeek = 1,
 ): string {
+  const thisYear = new Date().getFullYear();
+
   if (mode === 'week') {
     const weekDays = weekOf(parse(anchor), firstDay);
-    return `${shortDate(weekDays[0])} – ${shortDate(weekDays[6])}, ${parse(weekDays[6]).getFullYear()}`;
+    const endYear = parse(weekDays[6]).getFullYear();
+    const range = `${shortDate(weekDays[0])} – ${shortDate(weekDays[6])}`;
+    return endYear === thisYear ? range : `${range}, ${endYear}`;
   }
   if (mode === 'day') return longDate(anchor);
 
   const name = MONTH_NAMES[currentMonth.getMonth()];
   const year = currentMonth.getFullYear();
-  return year === new Date().getFullYear() ? name : `${name} ${year}`;
+  return year === thisYear ? name : `${name} ${year}`;
 }

@@ -1,4 +1,5 @@
 import { useApp } from '../context/AppContext';
+import CalendarNav from './calendar/CalendarNav';
 import { calendarTitle, fmt } from '../dates';
 import type { ActiveView } from '../types';
 
@@ -18,7 +19,8 @@ export default function TopBar({ isMobile, onOpenDrawer }: Props) {
   const { activeView, calendarMode, currentMonth, selectedDate, firstDayOfWeek } = useApp();
 
   // The rail and drawer already do navigation, so the bar carries only the
-  // title — that's the ~60px of chrome the calendar gets back.
+  // title — plus, on a phone, the calendar's own nav, which belongs beside the
+  // period it steps and costs the grid nothing here.
   const title = activeView === 'calendar'
     ? calendarTitle(calendarMode, currentMonth, selectedDate ?? fmt(new Date()), firstDayOfWeek)
     : VIEW_TITLES[activeView];
@@ -26,7 +28,9 @@ export default function TopBar({ isMobile, onOpenDrawer }: Props) {
   return (
     <header
       className={`fixed top-0 left-0 right-0 h-16 z-40 border-b border-line bg-chrome flex items-center ${
-        isMobile ? 'px-sm gap-sm' : 'px-margin'
+        // tight gap on a phone: the title and the nav are competing for the
+        // same row, and a long day title is the first thing to truncate
+        isMobile ? 'px-sm gap-xs' : 'px-margin'
       }`}
     >
       {isMobile && (
@@ -46,6 +50,12 @@ export default function TopBar({ isMobile, onOpenDrawer }: Props) {
       >
         {title}
       </h1>
+
+      {isMobile && activeView === 'calendar' && (
+        <div className="ml-auto flex-shrink-0">
+          <CalendarNav compact />
+        </div>
+      )}
     </header>
   );
 }

@@ -4,6 +4,7 @@ import { DEFAULT_COLOR } from '../../colors';
 import { addDays, shortDate } from '../../dates';
 import type { CalendarEvent, Recurrence } from '../../types';
 import { CheckboxRow, ColorPicker, EditActions, inputClass, labelClass, SegmentedControl, Select, SubmitButton } from './shared';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
 
 type RecType = Recurrence['type'];
 
@@ -322,20 +323,20 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
         <SubmitButton label="Add Event" />
       )}
 
-      {confirmDelete && edit && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim"
-          style={{ backdropFilter: 'blur(2px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(false); }}
-        >
-          <div
-            className="rounded-2xl p-md w-full max-w-[20rem] mx-md shadow-2xl border border-line bg-elevated"
-            
+      {/* Nested inside the AddModal dialog. Radix stacks them: Escape closes
+          only this one, and focus is trapped here until it goes away. */}
+      {edit && (
+        <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+          <DialogContent
+            showCloseButton={false}
+            className="block rounded-2xl p-md w-full max-w-[min(20rem,calc(100%-2rem))] shadow-2xl border-line"
           >
-            <h3 className="text-body-md font-bold text-txt mb-xs">Delete recurring event</h3>
-            <p className="text-body-sm text-txt-muted mb-md">
+            <DialogTitle className="text-body-md font-bold text-txt mb-xs">
+              Delete recurring event
+            </DialogTitle>
+            <DialogDescription className="text-body-sm text-txt-muted mb-md">
               “{edit.title}” repeats. What should be deleted?
-            </p>
+            </DialogDescription>
             <div className="space-y-xs">
               {occurrenceDate && (
                 <>
@@ -371,8 +372,8 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </form>
   );

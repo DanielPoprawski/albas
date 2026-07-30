@@ -1,4 +1,5 @@
 import { useApp } from '../context/AppContext';
+import { Sheet, SheetContent, SheetTitle } from './ui/sheet';
 import type { ActiveView } from '../types';
 
 const navItems: { icon: string; view: ActiveView; label: string }[] = [
@@ -63,23 +64,21 @@ export default function Sidebar({ variant, open = false, onClose }: Props) {
   }
 
   return (
-    <>
-      {/* Scrim stays mounted but click-through when closed, so the drawer can
-          animate out instead of vanishing with it. */}
-      <div
-        onClick={onClose}
-        aria-hidden={!open}
-        className={`fixed inset-0 z-[55] bg-scrim transition-opacity duration-200 ${
-          open ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
-      />
-      <aside
-        className={`fixed left-0 top-0 h-full w-64 z-[56] border-r border-line bg-chrome flex flex-col pt-20 pb-base transition-transform duration-200 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
+    // Radix keeps the drawer mounted through its exit animation, so the
+    // hand-held scrim-that-stays-click-through trick is no longer needed; it
+    // also traps focus inside the drawer, which the old markup did not.
+    <Sheet open={open} onOpenChange={next => { if (!next) onClose?.(); }}>
+      <SheetContent
+        side="left"
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="w-64 border-r border-line pt-20 pb-base gap-xs"
       >
+        {/* The drawer shows only icons and labels; the title is for screen
+            readers, which Radix requires anyway. */}
+        <SheetTitle className="sr-only">Navigation</SheetTitle>
         {nav}
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }

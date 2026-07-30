@@ -12,6 +12,7 @@ import type { FirstDayOfWeek, Todo } from '../../types';
 export function getCalendarDays(
   month: Date,
   weekStart: FirstDayOfWeek = 1,
+  minWeeks = 0,
 ): { date: Date; isCurrentMonth: boolean }[] {
   const year = month.getFullYear();
   const m = month.getMonth();
@@ -30,7 +31,9 @@ export function getCalendarDays(
 
   const days: { date: Date; isCurrentMonth: boolean }[] = [];
   const cur = new Date(start);
-  while (cur <= end) {
+  // a month covers 4–6 weeks; `minWeeks` keeps trailing days coming so the row
+  // count — and therefore the row height — doesn't jump between months
+  while (cur <= end || days.length < minWeeks * 7) {
     days.push({ date: new Date(cur), isCurrentMonth: cur.getMonth() === m });
     cur.setDate(cur.getDate() + 1);
   }
@@ -99,14 +102,15 @@ function periodBackground(hexes: string[]): string | undefined {
 
 /**
  * Everything the month grid draws, derived once and shared by both layouts.
- * Only `pillCap` varies between them — a phone cell fits one legible chip,
- * a desktop cell two.
+ * Only `pillCap` and `minWeeks` vary between them — a phone cell fits one
+ * legible chip to a desktop cell's two, and the phone grid is always six rows
+ * so a five-week month doesn't stretch its cells.
  */
-export function useMonthModel(pillCap: number): WeekRow[] {
+export function useMonthModel(pillCap: number, minWeeks = 0): WeekRow[] {
   const { currentMonth, selectedDate, todos, events, firstDayOfWeek } = useApp();
 
   const todayStr = fmt(new Date());
-  const days = getCalendarDays(currentMonth, firstDayOfWeek);
+  const days = getCalendarDays(currentMonth, firstDayOfWeek, minWeeks);
 
   const rangeStart = fmt(days[0].date);
   const rangeEnd = fmt(days[days.length - 1].date);
@@ -185,5 +189,5 @@ export function useMonthModel(pillCap: number): WeekRow[] {
     });
     // `days` is rebuilt each render from currentMonth, so key on that instead
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap]);
+  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks]);
 }

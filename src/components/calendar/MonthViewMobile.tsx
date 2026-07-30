@@ -3,6 +3,7 @@ import { rotateWeek } from '../../dates';
 import { isDone } from '../../todoLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
 import { BarsOverlay, DueDots, PastX, PeriodCorners, PeriodTitles } from './monthParts';
+import { useMonthSwipe } from './useMonthSwipe';
 import type { MonthLayoutProps } from './monthModel';
 
 /** A phone column is ~50px — three letters plus padding is wider than that. */
@@ -10,6 +11,13 @@ const WEEKDAYS_NARROW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /** A phone cell fits one legible chip; two only truncate each other away. */
 export const PILL_CAP = 1;
+
+/**
+ * Always six rows. A five-week month spread over the full height gives cells
+ * far taller than their content, and the row height jumping month to month
+ * makes the grid feel unstable while swiping through it.
+ */
+export const MIN_WEEKS = 6;
 
 const PILL_CLASS = 'text-[9px] font-bold px-0.5 rounded-sm truncate hover:opacity-80';
 const PILL_BORDER = '2px';
@@ -21,10 +29,11 @@ export default function MonthViewMobile({
   onDayClick,
 }: MonthLayoutProps) {
   const { firstDayOfWeek } = useApp();
+  const swipe = useMonthSwipe();
 
   return (
     // full bleed — the grid meets both screen edges, so no rounding or border
-    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-sheet">
+    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-sheet" {...swipe}>
       {/* Weekday headers. Single letters are too cramped to also carry the
           weekend emphasis the desktop header uses. */}
       <div className="grid grid-cols-7 border-b flex-shrink-0 border-sheet-line bg-sheet-header">
@@ -38,7 +47,9 @@ export default function MonthViewMobile({
       {/* Week rows */}
       <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
         {weeks.map(week => (
-          <div key={week.key} className="flex-1 relative min-h-[76px]">
+          // floor is a date row plus one chip — six of these still fit a short
+          // viewport without the grid starting to scroll
+          <div key={week.key} className="flex-1 relative min-h-[62px]">
             {/* Day cells */}
             <div className="grid grid-cols-7 h-full">
               {week.days.map(cell => (

@@ -1,0 +1,13 @@
+<resources>
+    <!--
+      Debug-only overrides of the names in src/main/res. With applicationIdSuffix
+      ".dev" the debug build installs beside the real app, and two identical
+      "albas" icons in the launcher would be impossible to tell apart.
+
+      This lives in a debug source set rather than using resValue() in
+      build.gradle.kts, which would collide with the same names in main and fail
+      the build as a duplicate resource.
+    -->
+    <string name="app_name">albas dev</string>
+    <string name="main_activity_title">albas dev</string>
+</resources>

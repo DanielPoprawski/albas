@@ -1,5 +1,13 @@
-import { useRef } from 'react';
+import { useId, useRef } from 'react';
 import { colorHex, PALETTE } from '../../colors';
+import { Checkbox } from '../ui/checkbox';
+import {
+  Select as SelectRoot,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 
 export const inputClass = 'w-full bg-fill-strong border border-fill-stronger rounded-lg px-sm py-xs text-body-sm text-txt placeholder-txt-muted/60 focus:outline-none focus:border-primary-fixed-dim transition-colors';
 export const labelClass = 'block text-[10px] font-bold uppercase tracking-wider text-txt-muted mb-xs';
@@ -27,6 +35,12 @@ export function SegmentedControl<T extends string>({ options, value, onChange }:
   );
 }
 
+/**
+ * Same props as the native `<select>` this used to render, so no call site
+ * changed. The swap fixes a real bug: the old one hardcoded
+ * `colorScheme: 'dark'`, which forced a dark OS dropdown even under the light
+ * theme. The Radix listbox is styled from the theme tokens instead.
+ */
 export function Select<T extends string>({ options, value, onChange, className }: {
   options: { value: T; label: string }[];
   value: T;
@@ -34,16 +48,18 @@ export function Select<T extends string>({ options, value, onChange, className }
   className?: string;
 }) {
   return (
-    <select
-      className={`${inputClass} cursor-pointer ${className ?? ''}`}
-      style={{ colorScheme: 'dark' }}
-      value={value}
-      onChange={e => onChange(e.target.value as T)}
-    >
-      {options.map(opt => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
+    <SelectRoot value={value} onValueChange={v => onChange(v as T)}>
+      <SelectTrigger className={`${inputClass} cursor-pointer h-auto ${className ?? ''}`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(opt => (
+          <SelectItem key={opt.value} value={opt.value} className="text-body-sm">
+            {opt.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </SelectRoot>
   );
 }
 
@@ -105,13 +121,21 @@ export function CheckboxRow({ checked, onChange, label, hint }: {
   label: string;
   hint?: string;
 }) {
+  // htmlFor works here because a <button> is a labelable element, so the whole
+  // row still toggles the box the way the native input did
+  const id = useId();
+
   return (
-    <label className="flex items-start gap-sm cursor-pointer p-sm rounded-lg bg-fill hover:bg-fill-strong transition-colors">
-      <input
-        type="checkbox"
+    <label
+      htmlFor={id}
+      className="flex items-start gap-sm cursor-pointer p-sm rounded-lg bg-fill hover:bg-fill-strong transition-colors"
+    >
+      {/* was `accent-blue-600` — a literal blue that ignored the theme accent */}
+      <Checkbox
+        id={id}
         checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        className="mt-0.5 accent-blue-600"
+        onCheckedChange={v => onChange(v === true)}
+        className="mt-0.5"
       />
       <span>
         <span className="block text-body-sm text-txt font-medium">{label}</span>

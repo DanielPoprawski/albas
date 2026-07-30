@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AddType, CalendarEvent, Todo } from '../types';
 import { SegmentedControl } from './forms/shared';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
 import TodoForm from './forms/TodoForm';
 import EventForm from './forms/EventForm';
 
@@ -22,27 +23,28 @@ export default function AddModal({ onClose, editTodo, editEvent, editEventDate, 
   );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim"
-      style={{ backdropFilter: 'blur(4px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="rounded-2xl p-md w-full max-w-[28rem] mx-md shadow-2xl max-h-[88vh] overflow-y-auto scrollbar-hide border border-line bg-elevated"
-        
+    // Always open: the parent mounts this component to open it, so closing is
+    // purely "tell the parent". Radix supplies the scrim, focus trap, Escape
+    // and scroll lock that this file used to approximate.
+    <Dialog open onOpenChange={next => { if (!next) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        // no description element; without this Radix logs a missing-describedby warning
+        aria-describedby={undefined}
+        // one max-width, not `max-w-[28rem]` plus a margin: the content is
+        // centred with a transform, so a margin wouldn't hold it off the edges
+        // of a phone, and a second max-w- utility would just override this one
+        className="block rounded-2xl p-md w-full max-w-[min(28rem,calc(100%-2rem))] max-h-[88vh] overflow-y-auto scrollbar-hide border-line shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-md">
-          <h2 className="text-headline-lg-mobile font-bold text-txt">
+          <DialogTitle className="text-headline-lg-mobile font-bold text-txt">
             {isEditing ? `Edit ${type === 'todo' ? 'To-Do' : 'Event'}` : 'Add New'}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-txt-muted hover:text-txt transition-colors"
-          >
+          </DialogTitle>
+          <DialogClose className="text-txt-muted hover:text-txt transition-colors">
             <span className="material-symbols-outlined">close</span>
-          </button>
+            <span className="sr-only">Close</span>
+          </DialogClose>
         </div>
 
         {/* Event = something that's just there; Task = something to do (create only) */}
@@ -58,7 +60,7 @@ export default function AddModal({ onClose, editTodo, editEvent, editEventDate, 
 
         {type === 'todo' && <TodoForm edit={editTodo} defaultDate={defaultDate} onDone={onClose} />}
         {type === 'event' && <EventForm edit={editEvent} occurrenceDate={editEventDate} defaultDate={defaultDate} onDone={onClose} />}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
