@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { rotateWeek } from '../../dates';
 import { isDone } from '../../todoLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import { BarsOverlay, PastX, PeriodCorners, PeriodTitles } from './monthParts';
 import { useMonthSwipe } from './useMonthSwipe';
 import type { MonthLayoutProps } from './monthModel';
@@ -142,14 +143,16 @@ export default function MonthViewMobile({
                           <div
                             key={o.key}
                             onClick={e => { e.stopPropagation(); onEditEvent(o); }}
+                            title={sharedTitleAttr(o.event)}
                             className={PILL_CLASS}
                             style={{
                               backgroundColor: `${hex}${PILL_BG_ALPHA}`,
                               color: hex,
+                              opacity: sharedOpacity(o.event),
                             }}
                           >
                             {/* no time prefix — it eats the whole chip at this width */}
-                            {o.event.title}
+                            {eventTitle(o.event)}
                           </div>
                         );
                       })}

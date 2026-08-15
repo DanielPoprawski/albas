@@ -4,6 +4,7 @@ import { fmt, parse, rotateWeek, weekOf } from '../../dates';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
 import { isDone, isDueOn, isRepeating } from '../../todoLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import AddModal from '../AddModal';
 import HourGrid, { GUTTER_W } from './HourGrid';
 import { assignLanes, weekSegments } from './spans';
@@ -13,9 +14,14 @@ import type { CalendarEvent, Todo } from '../../types';
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 export default function WeekView() {
-  const { selectedDate, setSelectedDate, todos, events, firstDayOfWeek } = useApp();
+  const { selectedDate, setSelectedDate, todos, events, sharedEvents, firstDayOfWeek } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [editTodo, setEditTodo] = useState<Todo | null>(null);
+  // Shared events are read-only — every edit path funnels through here.
+  const openEvent = (event: CalendarEvent, date: string) => {
+    if (event.sharedBy) return;
+    setEditEvent({ event, date });
+  };
 
   const todayStr = fmt(new Date());
   const anchor = selectedDate ?? todayStr;
@@ -25,8 +31,8 @@ export default function WeekView() {
   const dayLabels = rotateWeek(DAY_NAMES, firstDayOfWeek);
 
   const occurrences = useMemo(
-    () => expandEvents(events, weekStart, weekEnd),
-    [events, weekStart, weekEnd]
+    () => expandEvents([...events, ...sharedEvents], weekStart, weekEnd),
+    [events, sharedEvents, weekStart, weekEnd]
   );
   const longOccs = occurrences.filter(isLongOccurrence);
   const barOccs = occurrences.filter(o => isBarOccurrence(o) && !isLongOccurrence(o));
@@ -93,8 +99,8 @@ export default function WeekView() {
               return (
                 <div
                   key={`l-${seg.item.key}`}
-                  title={seg.item.event.title}
-                  onClick={() => setEditEvent({ event: seg.item.event, date: seg.item.startDate })}
+                  title={sharedTitleAttr(seg.item.event) ?? seg.item.event.title}
+                  onClick={() => openEvent(seg.item.event, seg.item.startDate)}
                   className="cursor-pointer"
                   style={{
                     gridColumn: `${seg.startCol} / span ${seg.span}`,
@@ -117,7 +123,8 @@ export default function WeekView() {
               return (
                 <div
                   key={seg.item.key}
-                  onClick={() => setEditEvent({ event: seg.item.event, date: seg.item.startDate })}
+                  onClick={() => openEvent(seg.item.event, seg.item.startDate)}
+                  title={sharedTitleAttr(seg.item.event)}
                   className="cursor-pointer text-[10px] font-bold px-xs truncate hover:opacity-90"
                   style={{
                     gridColumn: `${seg.startCol} / span ${seg.span}`,
@@ -132,9 +139,10 @@ export default function WeekView() {
                       : seg.endsHere ? '0 6px 6px 0' : 0,
                     backgroundColor: `${hex}cc`,
                     color: '#fff',
+                    opacity: sharedOpacity(seg.item.event),
                   }}
                 >
-                  {seg.startsHere ? seg.item.event.title : '…'}
+                  {seg.startsHere ? eventTitle(seg.item.event) : '…'}
                 </div>
               );
             })}
@@ -178,7 +186,7 @@ export default function WeekView() {
       <HourGrid
         days={weekDays}
         occurrences={timedOccs}
-        onEditEvent={(event, date) => setEditEvent({ event, date })}
+        onEditEvent={openEvent}
         onSelectDate={setSelectedDate}
       />
 

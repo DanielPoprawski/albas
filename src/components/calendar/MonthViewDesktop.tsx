@@ -4,6 +4,7 @@ import { rotateWeek, weekdayAt } from '../../dates';
 import { isDone } from '../../todoLogic';
 import { shortTime } from '../../eventLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import { BarsOverlay, DueDots, PastX, PeriodCorners, PeriodTitles } from './monthParts';
 import type { MonthLayoutProps } from './monthModel';
 
@@ -135,16 +136,18 @@ export default function MonthViewDesktop({
                         <div
                           key={o.key}
                           onClick={e => { e.stopPropagation(); onEditEvent(o); }}
+                          title={sharedTitleAttr(o.event)}
                           className={PILL_CLASS}
                           style={{
                             backgroundColor: `${hex}${PILL_BG_ALPHA}`,
                             color: hex,
+                            opacity: sharedOpacity(o.event),
                           }}
                         >
                           {o.event.startTime && !o.event.allDay && (
                             <span className="font-normal opacity-70">{shortTime(o.event.startTime)} </span>
                           )}
-                          {o.event.title}
+                          {eventTitle(o.event)}
                         </div>
                       );
                     })}

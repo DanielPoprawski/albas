@@ -1,3 +1,4 @@
+mod account;
 mod db;
 mod sync;
 mod wyze;
@@ -29,12 +30,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_webauthn::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join("albas.db"))?;
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(wyze::WyzeSession::default());
+            app.manage(account::AuthFlow::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -58,6 +61,14 @@ pub fn run() {
             wyze::wyze_sync,
             sync::sync_now,
             sync::sync_status,
+            db::load_shared,
+            account::auth_register_start,
+            account::auth_register_finish,
+            account::auth_login_start,
+            account::auth_login_finish,
+            account::shares_list,
+            account::shares_set,
+            account::sync_sign_out,
             fetch_ics,
         ])
         .run(tauri::generate_context!())

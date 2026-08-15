@@ -120,16 +120,18 @@ export interface MonthModelOptions {
  * what this split exists to prevent.
  */
 export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthModelOptions): WeekRow[] {
-  const { currentMonth, selectedDate, todos, events, firstDayOfWeek } = useApp();
+  const { currentMonth, selectedDate, todos, events, sharedEvents, firstDayOfWeek } = useApp();
 
   const todayStr = fmt(new Date());
   const days = getCalendarDays(currentMonth, firstDayOfWeek, minWeeks);
 
   const rangeStart = fmt(days[0].date);
   const rangeEnd = fmt(days[days.length - 1].date);
+  // Shared events ride the same pipeline (lanes, pills, washes, overflow);
+  // each carries `sharedBy`, which the render sites use to dim and de-click.
   const occurrences = useMemo(
-    () => expandEvents(events, rangeStart, rangeEnd),
-    [events, rangeStart, rangeEnd]
+    () => expandEvents([...events, ...sharedEvents], rangeStart, rangeEnd),
+    [events, sharedEvents, rangeStart, rangeEnd]
   );
 
   return useMemo(() => {

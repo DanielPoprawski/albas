@@ -5,20 +5,26 @@ import { fmt, shortDate } from '../../dates';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
 import { isDoneOn, isDueOn, valueOn } from '../../todoLogic';
 import { colorHex } from '../../colors';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import AddModal from '../AddModal';
 import HourGrid from './HourGrid';
 import type { CalendarEvent } from '../../types';
 
 export default function DayView() {
-  const { selectedDate, setSelectedDate, todos, events, toggleTodo, firstDayOfWeek } = useApp();
+  const { selectedDate, setSelectedDate, todos, events, sharedEvents, toggleTodo, firstDayOfWeek } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
+  // Shared events are read-only — every edit path funnels through here.
+  const openEvent = (event: CalendarEvent, date: string) => {
+    if (event.sharedBy) return;
+    setEditEvent({ event, date });
+  };
 
   const todayStr = fmt(new Date());
   const dateStr = selectedDate ?? todayStr;
 
   const occurrences = useMemo(
-    () => expandEvents(events, dateStr, dateStr),
-    [events, dateStr]
+    () => expandEvents([...events, ...sharedEvents], dateStr, dateStr),
+    [events, sharedEvents, dateStr]
   );
   const longOccs = occurrences.filter(isLongOccurrence);
   const barOccs = occurrences.filter(o => isBarOccurrence(o) && !isLongOccurrence(o));
@@ -38,11 +44,13 @@ export default function DayView() {
             return (
               <button
                 key={o.key}
-                onClick={() => setEditEvent({ event: o.event, date: o.startDate })}
+                onClick={() => openEvent(o.event, o.startDate)}
+                title={sharedTitleAttr(o.event)}
                 className="flex items-center gap-sm cursor-pointer text-left hover:opacity-80"
+                style={{ opacity: sharedOpacity(o.event) }}
               >
                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: hex }} />
-                <span className="text-body-sm font-semibold text-sheet-txt">{o.event.title}</span>
+                <span className="text-body-sm font-semibold text-sheet-txt">{eventTitle(o.event)}</span>
                 <span className="text-[10px] text-sheet-txt-faint">
                   {shortDate(o.startDate)} – {shortDate(o.endDate)}
                 </span>
@@ -56,11 +64,12 @@ export default function DayView() {
               return (
                 <button
                   key={o.key}
-                  onClick={() => setEditEvent({ event: o.event, date: o.startDate })}
+                  onClick={() => openEvent(o.event, o.startDate)}
+                  title={sharedTitleAttr(o.event)}
                   className="text-[11px] font-bold px-sm py-0.5 rounded-full cursor-pointer hover:opacity-90"
-                  style={{ backgroundColor: `${hex}cc`, color: '#fff' }}
+                  style={{ backgroundColor: `${hex}cc`, color: '#fff', opacity: sharedOpacity(o.event) }}
                 >
-                  {o.event.title}
+                  {eventTitle(o.event)}
                 </button>
               );
             })}
@@ -92,7 +101,7 @@ export default function DayView() {
       <HourGrid
         days={[dateStr]}
         occurrences={timedOccs}
-        onEditEvent={(event, date) => setEditEvent({ event, date })}
+        onEditEvent={openEvent}
         onSelectDate={setSelectedDate}
       />
 

@@ -1,10 +1,14 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  ActiveView, CalendarEvent, CalendarMode, FirstDayOfWeek, Repeat, ThemeName, Todo, WeightEntry, WeightUnit,
+  ActiveView, CalendarEvent, CalendarMode, FirstDayOfWeek, SharedGroup, ThemeName, Todo, WeightEntry, WeightUnit,
 } from '../types';
 import { fmt, parse, weekOf } from '../dates';
-import { inTauri, persistence, readLocalBlob, type LegacyPeriod, type LegacyTask } from '../persistence';
+import { inTauri, persistence, readLocalBlob } from '../persistence';
 import { DEFAULT_COLOR } from '../colors';
+import { migrateLegacyTask, migrateTodo, periodToEvent, taskToTodo } from '../migrations';
+import { mapSharedRows } from '../sharedLogic';
+
+export { migrateLegacyTask, migrateTodo } from '../migrations';
 
 const today = new Date();
 const todayStr = fmt(today);
@@ -45,117 +49,6 @@ const initialTodos: Todo[] = [
     schedule: { type: 'once' }, dueDate: todayStr, completions: {},
   },
 ];
-
-function migrateRepeat(s: any): Repeat {
-  switch (s?.type) {
-    case 'once':
-      return { type: 'once' };
-    case 'daily':
-      return { type: 'daily' };
-    case 'weekdays': {
-      const days = Array.isArray(s.days) ? s.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6) : [];
-      return { type: 'weekdays', days: days.length > 0 ? days : [1, 2, 3, 4, 5] };
-    }
-    // pre-unification shapes: interval = fixed cadence, chore = from last done
-    case 'interval':
-      return { type: 'every', n: s.every > 0 ? s.every : 1, unit: 'day', fromDone: false };
-    case 'chore':
-      return { type: 'every', n: s.every > 0 ? s.every : 1, unit: 'day', fromDone: true };
-    case 'every':
-      return {
-        type: 'every',
-        n: typeof s.n === 'number' && s.n > 0 ? s.n : 1,
-        unit: ['day', 'week', 'month'].includes(s.unit) ? s.unit : 'day',
-        fromDone: !!s.fromDone,
-      };
-    case 'timesPer':
-      return {
-        type: 'timesPer',
-        times: typeof s.times === 'number' && s.times > 0 ? s.times : 1,
-        per: s.per === 'month' ? 'month' : 'week',
-      };
-    default:
-      return { type: 'daily' };
-  }
-}
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Upgrade todos (or pre-unification habits) saved by older versions of the app. */
-export function migrateTodo(t: any): Todo {
-  const completions: Record<string, number> = {};
-  for (const [d, v] of Object.entries(t?.completions ?? {})) {
-    if (typeof v === 'number') completions[d] = v;
-    else if (v === true) completions[d] = 1;
-  }
-  const dates = Object.keys(completions).sort();
-  return {
-    id: typeof t?.id === 'string' && t.id ? t.id : crypto.randomUUID(),
-    name: t?.name ?? 'To-do',
-    colorKey: typeof t?.colorKey === 'string' && t.colorKey ? t.colorKey : DEFAULT_COLOR,
-    kind: t?.kind === 'measurable' ? 'measurable' : 'yesno',
-    unit: typeof t?.unit === 'string' ? t.unit : '',
-    target: typeof t?.target === 'number' && t.target > 0 ? t.target : 1,
-    schedule: migrateRepeat(t?.schedule),
-    dueDate: typeof t?.dueDate === 'string' && DATE_RE.test(t.dueDate) ? t.dueDate : null,
-    time: typeof t?.time === 'string' && /^\d{2}:\d{2}$/.test(t.time) ? t.time : null,
-    createdAt: t?.createdAt ?? dates[0] ?? todayStr,
-    reminder: !!t?.reminder,
-    category: typeof t?.category === 'string' ? t.category : '',
-    important: !!t?.important,
-    completions,
-  };
-}
-
-/** Validate/repair tasks saved by pre-SQLite versions (still the shape import_legacy expects). */
-export function migrateLegacyTask(t: any): LegacyTask {
-  return {
-    id: typeof t?.id === 'string' && t.id ? t.id : crypto.randomUUID(),
-    title: typeof t?.title === 'string' ? t.title : 'Task',
-    category: typeof t?.category === 'string' && t.category ? t.category : 'General',
-    completed: !!t?.completed,
-    date: typeof t?.date === 'string' && DATE_RE.test(t.date) ? t.date : null,
-  };
-}
-
-/** Old standalone tasks are just once-todos now. */
-function taskToTodo(t: LegacyTask): Todo {
-  return {
-    id: t.id,
-    name: t.title,
-    colorKey: DEFAULT_COLOR,
-    kind: 'yesno',
-    unit: '',
-    target: 1,
-    schedule: { type: 'once' },
-    dueDate: t.date,
-    time: null,
-    createdAt: t.date ?? todayStr,
-    reminder: false,
-    // Legacy tasks all defaulted to 'General', so carrying that through would
-    // file every imported task under a category the user never chose.
-    category: t.category === 'General' ? '' : t.category,
-    important: false,
-    completions: t.completed ? { [t.date ?? todayStr]: 1 } : {},
-  };
-}
-
-/** Old periods are just long all-day events now. */
-function periodToEvent(p: LegacyPeriod): CalendarEvent {
-  return {
-    id: p.id,
-    title: p.name,
-    description: p.notes ?? '',
-    colorKey: p.colorKey ?? DEFAULT_COLOR,
-    allDay: true,
-    startDate: p.startDate,
-    startTime: null,
-    endDate: p.endDate >= p.startDate ? p.endDate : p.startDate,
-    endTime: null,
-    recurrence: { type: 'none' },
-    reminders: [],
-  };
-}
 
 export type NewTodo = Omit<Todo, 'id' | 'completions' | 'createdAt'>;
 export type NewEvent = Omit<CalendarEvent, 'id'>;
@@ -199,6 +92,21 @@ interface AppContextType {
    * writes straight to SQLite from Rust and so bypasses React state.
    */
   reloadFromStore: () => Promise<void>;
+  /** Everything other accounts share with this one, hidden owners included. */
+  shared: SharedGroup[];
+  /** `shared` minus locally hidden owners — what the panels should render. */
+  visibleShared: SharedGroup[];
+  /** Visible shared events flattened, each carrying `sharedBy` — merged into the calendar. */
+  sharedEvents: CalendarEvent[];
+  /** Owners hidden on this device (local preference, never synced). */
+  hiddenOwners: string[];
+  toggleOwnerHidden: (owner: string) => void;
+  /** True when sync credentials exist (passkey login or a pasted token). */
+  signedIn: boolean;
+  /** Account name from passkey login; null for token-only setups. */
+  syncAccount: string | null;
+  /** Welcome screen dismissed (or made moot by being signed in). */
+  welcomeDone: boolean;
 }
 
 const THEMES: ThemeName[] = ['dark', 'light', 'grey-high', 'grey-low'];
@@ -228,6 +136,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [weights, setWeights] = useState<WeightEntry[]>([]);
+  const [shared, setShared] = useState<SharedGroup[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(todayStr);
@@ -285,6 +194,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setTodos(loadedTodos);
           setEvents(loadedEvents);
         }
+        await refreshShared();
       } catch (err) {
         console.error('failed to load persisted data:', err);
         setTodos(initialTodos);
@@ -305,8 +215,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const { invoke } = await import('@tauri-apps/api/core');
         const status = await invoke<{ configured: boolean }>('sync_status');
         if (!status.configured) return;
-        const out = await invoke<{ pulled: number }>('sync_now');
-        if (out.pulled > 0) await reloadFromStore();
+        const out = await invoke<{ pulled: number; sharedChanged: boolean }>('sync_now');
+        if (out.pulled > 0 || out.sharedChanged) await reloadFromStore();
       } catch (err) {
         console.warn('startup sync failed:', err);
       }
@@ -404,13 +314,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (key === 'theme') applyTheme(value as ThemeName);
   }
 
+  /** Re-reads the shared cache. Tauri-only — the browser dev server has no sync. */
+  async function refreshShared() {
+    if (!inTauri()) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const rows = await invoke<Parameters<typeof mapSharedRows>[0]>('load_shared');
+      setShared(mapSharedRows(rows));
+    } catch (err) {
+      console.warn('failed to load shared data:', err);
+    }
+  }
+
   async function reloadFromStore() {
     const state = await persistence.load();
     setTodos(state.todos.map(migrateTodo));
     setEvents([...state.events]);
     setWeights(state.weights);
     setSettings(state.settings);
+    await refreshShared();
   }
+
+  const hiddenOwners = useMemo<string[]>(() => {
+    try {
+      const parsed = JSON.parse(settings.__shared_hidden ?? '[]');
+      return Array.isArray(parsed) ? parsed.filter((o): o is string => typeof o === 'string') : [];
+    } catch {
+      return [];
+    }
+  }, [settings.__shared_hidden]);
+  const visibleShared = useMemo(
+    () => shared.filter(g => !hiddenOwners.includes(g.owner)),
+    [shared, hiddenOwners]
+  );
+  const sharedEvents = useMemo(() => visibleShared.flatMap(g => g.events), [visibleShared]);
+
+  function toggleOwnerHidden(owner: string) {
+    const next = hiddenOwners.includes(owner)
+      ? hiddenOwners.filter(o => o !== owner)
+      : [...hiddenOwners, owner];
+    setSetting('__shared_hidden', JSON.stringify(next));
+  }
+
+  const signedIn = !!settings.__sync_token?.trim();
 
   return (
     <AppContext.Provider value={{
@@ -426,6 +372,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       firstDayOfWeek: settings.firstDayOfWeek === '1' ? 1 : 0,
       setSetting,
       reloadFromStore,
+      shared,
+      visibleShared,
+      sharedEvents,
+      hiddenOwners,
+      toggleOwnerHidden,
+      signedIn,
+      syncAccount: settings.__sync_account?.trim() || null,
+      welcomeDone: !!settings.__welcome_done || signedIn,
     }}>
       {children}
     </AppContext.Provider>

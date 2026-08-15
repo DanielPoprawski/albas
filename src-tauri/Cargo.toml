@@ -21,6 +21,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
+# In-app passkey ceremonies (Linux CTAP2 USB keys, Android Credential Manager).
+# v0.2.0 does not compile against webauthn-rs-proto >= 0.5.2 (CredProps.rk became
+# Option<bool>), so Cargo.lock pins webauthn-authenticator-rs/-proto to 0.5.1 —
+# a plain `cargo update` will break the build until the plugin releases a fix.
+tauri-plugin-webauthn = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }

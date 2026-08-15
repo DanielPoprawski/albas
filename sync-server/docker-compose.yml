@@ -8,7 +8,23 @@ services:
     ports:
       - "127.0.0.1:8787:8787"
     environment:
-      ALBAS_SYNC_TOKEN: ${ALBAS_SYNC_TOKEN:?set ALBAS_SYNC_TOKEN in .env}
+      # The owner's personal sync token — creates (or re-keys) the 'owner'
+      # account's env credential. Optional once other accounts exist.
+      ALBAS_SYNC_TOKEN: ${ALBAS_SYNC_TOKEN:-}
+      # Enables the admin endpoints (/accounts, /invites).
+      ALBAS_SYNC_ADMIN_TOKEN: ${ALBAS_SYNC_ADMIN_TOKEN:-}
+      # Public https URL of this server (e.g. https://sync.example.com).
+      # Required for passkey registration/login; unset disables them.
+      ALBAS_SYNC_ORIGIN: ${ALBAS_SYNC_ORIGIN:-}
+      # 'open' (default) lets anyone with the URL create an account with a
+      # passkey; 'invite' requires an admin-minted invite code.
+      ALBAS_SYNC_SIGNUPS: ${ALBAS_SYNC_SIGNUPS:-open}
+      # Extra WebAuthn origin asserted by Android's Credential Manager,
+      # e.g. android:apk-key-hash:<base64url-of-signing-cert-sha256>
+      ALBAS_SYNC_ANDROID_ORIGIN: ${ALBAS_SYNC_ANDROID_ORIGIN:-}
+      # Raw JSON served at /.well-known/assetlinks.json (Android Digital
+      # Asset Links, binds the app's signing cert to this domain).
+      ALBAS_SYNC_ASSETLINKS: ${ALBAS_SYNC_ASSETLINKS:-}
     volumes:
       - albas-sync-data:/data
 

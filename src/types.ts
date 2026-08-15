@@ -75,6 +75,12 @@ export interface CalendarEvent {
   recurrence: Recurrence;
   /** Reminder lead times in minutes before start (e.g. 10, 60, 1440 = 1d, 10080 = 1w). */
   reminders: number[];
+  /**
+   * Present only on events belonging to another account that shared them
+   * (their account name). Shared events are read-only: every edit path checks
+   * this before opening a form, and they are never persisted locally.
+   */
+  sharedBy?: string;
 }
 
 /**
@@ -99,6 +105,29 @@ export type ThemeName = 'dark' | 'light' | 'grey-high' | 'grey-low';
 export type WeightUnit = 'kg' | 'lb';
 /** Which weekday grids start on, as a JS `getDay()` value: 0 = Sunday, 1 = Monday. */
 export type FirstDayOfWeek = 0 | 1;
+
+/** One raw row another account shared with us, as loaded from `shared_rows`. */
+export interface RawSharedRow {
+  owner: string;
+  tbl: string;
+  pk: string;
+  /** Column-name → value object; snake_case keys matching the sync TABLES. */
+  payload: Record<string, unknown> | null;
+}
+
+/** Everything one account shares with us, mapped to app types (read-only). */
+export interface SharedGroup {
+  owner: string;
+  events: CalendarEvent[];
+  todos: Todo[];
+}
+
+/** One sharing grant as the server reports it. */
+export interface ShareGrant {
+  name: string;
+  calendar: boolean;
+  todos: boolean;
+}
 
 export type ActiveView = 'calendar' | 'todos' | 'weight' | 'settings';
 export type AddType = 'todo' | 'event';

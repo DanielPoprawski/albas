@@ -93,10 +93,28 @@ CREATE TABLE IF NOT EXISTS weights (
 );
 ";
 
+/// v5 addition (device sync sharing): a read-only cache of rows other accounts
+/// shared with this one. Filled by `sync.rs` from the server's `shared` stream,
+/// never pushed (deliberately absent from `sync::TABLES`), and parsed into
+/// typed objects on the frontend (`sharedLogic.ts`). `owner` is the sharing
+/// account's name; `pk` is the server's opaque key (composite keys joined with
+/// U+0001, as in `sync.rs`).
+const SCHEMA_V5: &str = "
+CREATE TABLE IF NOT EXISTS shared_rows (
+  owner TEXT NOT NULL,
+  tbl TEXT NOT NULL,
+  pk TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (owner, tbl, pk)
+);
+";
+
 /// The full current schema, for tests that need a throwaway in-memory DB.
 #[cfg(test)]
 pub fn test_schema() -> String {
-    format!("{SCHEMA}{SCHEMA_V3}")
+    format!("{SCHEMA}{SCHEMA_V3}{SCHEMA_V5}")
 }
 
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
@@ -130,10 +148,15 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
         conn.execute_batch(SCHEMA_V3)?;
         conn.pragma_update(None, "user_version", 3)?;
     }
+    // v5 (shared rows cache). CREATE TABLE IF NOT EXISTS, so replaying is
+    // harmless — same pattern as v3.
+    if version < 5 {
+        conn.execute_batch(SCHEMA_V5)?;
+    }
     // v4 (categorised to-dos): free-text category and an important flag. An
     // empty category means uncategorised — no sentinel string, so the grouping
     // in TodoPanel never has to special-case a magic name.
-    conn.pragma_update(None, "user_version", 4)?;
+    conn.pragma_update(None, "user_version", 5)?;
     Ok(conn)
 }
 
@@ -596,4 +619,38 @@ pub fn import_legacy(db: tauri::State<Db>, tasks: Vec<Task>, habits: Vec<Habit>)
         .map_err(err)?;
     }
     tx.commit().map_err(err)
+}
+
+/// One raw row another account shared with this one. The payload is the
+/// column-name → value object the server relayed; the frontend
+/// (`sharedLogic.ts`) turns it into typed events/todos.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedRow {
+    pub owner: String,
+    pub tbl: String,
+    pub pk: String,
+    pub payload: serde_json::Value,
+}
+
+#[tauri::command]
+pub fn load_shared(db: tauri::State<Db>) -> Result<Vec<SharedRow>, String> {
+    let conn = db.0.lock().map_err(err)?;
+    let mut stmt = conn
+        .prepare("SELECT owner, tbl, pk, payload FROM shared_rows WHERE deleted = 0")
+        .map_err(err)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(SharedRow {
+                owner: r.get(0)?,
+                tbl: r.get(1)?,
+                pk: r.get(2)?,
+                payload: serde_json::from_str(&r.get::<_, String>(3)?)
+                    .unwrap_or(serde_json::Value::Null),
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(err)?;
+    Ok(rows)
 }

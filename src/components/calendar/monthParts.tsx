@@ -1,4 +1,5 @@
 import { colorHex } from '../../colors';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import type { Occurrence } from '../../eventLogic';
 import type { DayCell, WeekRow } from './monthModel';
 
@@ -95,10 +96,11 @@ export function PeriodTitles({
         <div
           key={`t-${o.key}`}
           onClick={e => { e.stopPropagation(); onEditEvent(o); }}
+          title={sharedTitleAttr(o.event)}
           className="text-[9px] font-bold uppercase tracking-wide truncate hover:opacity-70"
-          style={{ color: colorHex(o.event.colorKey) }}
+          style={{ color: colorHex(o.event.colorKey), opacity: sharedOpacity(o.event) }}
         >
-          {o.event.title}
+          {eventTitle(o.event)}
         </div>
       ))}
     </>
@@ -130,6 +132,7 @@ export function BarsOverlay({
           <div
             key={seg.item.key}
             onClick={e => { e.stopPropagation(); onEditEvent(seg.item); }}
+            title={sharedTitleAttr(seg.item.event)}
             className="pointer-events-auto cursor-pointer text-[10px] font-bold px-xs truncate hover:opacity-90"
             style={{
               gridColumn: `${seg.startCol} / span ${seg.span}`,
@@ -144,9 +147,10 @@ export function BarsOverlay({
                 : seg.endsHere ? '0 6px 6px 0' : 0,
               backgroundColor: `${hex}cc`,
               color: '#fff',
+              opacity: sharedOpacity(seg.item.event),
             }}
           >
-            {seg.startsHere ? seg.item.event.title : '…'}
+            {seg.startsHere ? eventTitle(seg.item.event) : '…'}
           </div>
         );
       })}

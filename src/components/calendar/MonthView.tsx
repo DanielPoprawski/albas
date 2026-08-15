@@ -29,7 +29,11 @@ export default function MonthView({ isMobile = false }: { isMobile?: boolean }) 
 
   const layoutProps = {
     weeks,
-    onEditEvent: (o: Occurrence) => setEditEvent({ event: o.event, date: o.startDate }),
+    // Shared events are read-only: clicking one opens nothing.
+    onEditEvent: (o: Occurrence) => {
+      if (o.event.sharedBy) return;
+      setEditEvent({ event: o.event, date: o.startDate });
+    },
     onEditTodo: setEditTodo,
     // A phone tile is too small to be a useful agenda, so tapping drills into
     // that day. Desktop has the room, so clicking goes straight to "add here".

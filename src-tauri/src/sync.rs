@@ -31,11 +31,16 @@ const PK_SEP: char = '\u{1}';
 const META_PULL_SEQ: &str = "sync_pull_seq";
 const META_PUSH_AT: &str = "sync_push_at";
 const META_LAST_AT: &str = "sync_last_at";
+pub(crate) const META_SHARED_SEQ: &str = "sync_shared_seq";
+pub(crate) const META_GRANT_REV: &str = "sync_grant_rev";
 
 /// Settings keys holding the endpoint. Named with the `__` prefix to match
 /// `__wyze_credentials`: secret-ish, and never synced.
-const URL_SETTING: &str = "__sync_url";
-const TOKEN_SETTING: &str = "__sync_token";
+pub(crate) const URL_SETTING: &str = "__sync_url";
+pub(crate) const TOKEN_SETTING: &str = "__sync_token";
+/// Display name of the signed-in account (set by passkey login, cleared on
+/// sign-out). Purely informational — the token is the actual identity.
+pub(crate) const ACCOUNT_SETTING: &str = "__sync_account";
 
 struct Spec {
     tbl: &'static str,
@@ -126,6 +131,23 @@ struct Change {
 struct SyncReq {
     since: i64,
     changes: Vec<Change>,
+    /// Watermark and grant revision for the shared stream; an old server
+    /// simply ignores them.
+    shared_since: i64,
+    grant_rev: i64,
+}
+
+/// A row another account shared with this one, cached verbatim in
+/// `shared_rows` — never merged into the own tables, never pushed back.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedChange {
+    from: String,
+    tbl: String,
+    pk: String,
+    payload: serde_json::Value,
+    updated_at: i64,
+    deleted: bool,
 }
 
 #[derive(Deserialize)]
@@ -133,6 +155,14 @@ struct SyncReq {
 struct SyncRes {
     seq: i64,
     changes: Vec<Change>,
+    /// Defaults keep a pre-sharing server working: absent fields mean "no
+    /// shared data, revision 0", which applies as a no-op.
+    #[serde(default)]
+    shared: Vec<SharedChange>,
+    #[serde(default)]
+    shared_seq: i64,
+    #[serde(default)]
+    grant_rev: i64,
 }
 
 #[derive(Serialize)]
@@ -144,6 +174,10 @@ pub struct SyncOutcome {
     /// not know about. Surfaced rather than swallowed so a version mismatch
     /// between devices is visible instead of silently losing data.
     pub skipped: usize,
+    /// True when the shared cache changed in any way (rows applied, removed,
+    /// or wiped by a grant change) — the frontend refreshes its shared state
+    /// on this, not just on `pulled`.
+    pub shared_changed: bool,
     pub last_sync: Option<String>,
 }
 
@@ -152,6 +186,7 @@ pub struct SyncOutcome {
 pub struct SyncStatus {
     pub configured: bool,
     pub url: Option<String>,
+    pub account: Option<String>,
     pub last_sync: Option<String>,
 }
 
@@ -194,7 +229,7 @@ fn json_to_sql(v: &serde_json::Value) -> SqlValue {
 
 /// `https://` always; plain `http://` only against loopback, so the bearer
 /// token can't leave the machine in cleartext by accident.
-fn check_url(url: &str) -> Result<(), String> {
+pub(crate) fn check_url(url: &str) -> Result<(), String> {
     if url.starts_with("https://") {
         return Ok(());
     }
@@ -299,6 +334,44 @@ fn apply_one(conn: &Connection, spec: &Spec, c: &Change) -> rusqlite::Result<boo
     Ok(true)
 }
 
+/// Applies the shared stream to the `shared_rows` cache. A grant-revision
+/// change means shares were granted/changed/revoked since our snapshot, so the
+/// cache is wiped first and the server's full snapshot rebuilds it. Returns
+/// true when anything changed. Weights can never legitimately appear here; a
+/// row claiming to be one is dropped rather than cached.
+fn apply_shared(
+    conn: &Connection,
+    shared: &[SharedChange],
+    new_rev: i64,
+    stored_rev: i64,
+) -> rusqlite::Result<bool> {
+    let mut changed = false;
+    if new_rev != stored_rev {
+        changed |= conn.execute("DELETE FROM shared_rows", [])? > 0;
+    }
+    for c in shared {
+        if c.tbl == "weights" {
+            continue;
+        }
+        if c.deleted {
+            changed |= conn.execute(
+                "DELETE FROM shared_rows WHERE owner = ?1 AND tbl = ?2 AND pk = ?3",
+                rusqlite::params![c.from, c.tbl, c.pk],
+            )? > 0;
+        } else {
+            conn.execute(
+                "INSERT INTO shared_rows (owner, tbl, pk, payload, updated_at, deleted)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0)
+                 ON CONFLICT(owner, tbl, pk) DO UPDATE SET
+                   payload = excluded.payload, updated_at = excluded.updated_at, deleted = 0",
+                rusqlite::params![c.from, c.tbl, c.pk, c.payload.to_string(), c.updated_at],
+            )?;
+            changed = true;
+        }
+    }
+    Ok(changed)
+}
+
 fn post(url: &str, token: &str, req: &SyncReq) -> Result<SyncRes, String> {
     let resp = ureq::post(url)
         .set("Authorization", &format!("Bearer {token}"))
@@ -316,7 +389,7 @@ fn post(url: &str, token: &str, req: &SyncReq) -> Result<SyncRes, String> {
 }
 
 fn run(db: &Db) -> Result<SyncOutcome, String> {
-    let (url, token, since, push_at) = {
+    let (url, token, since, push_at, shared_since, grant_rev) = {
         let conn = db.0.lock().map_err(err)?;
         let url = db::read_setting(&conn, URL_SETTING)
             .filter(|s| !s.trim().is_empty())
@@ -324,13 +397,17 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
         let token = db::read_setting(&conn, TOKEN_SETTING)
             .filter(|s| !s.trim().is_empty())
             .ok_or("No sync token configured.")?;
-        let since = db::read_meta(&conn, META_PULL_SEQ)
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0i64);
-        let push_at = db::read_meta(&conn, META_PUSH_AT)
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0i64);
-        (url.trim().to_string(), token.trim().to_string(), since, push_at)
+        let meta_i64 = |key: &str| {
+            db::read_meta(&conn, key).and_then(|v| v.parse().ok()).unwrap_or(0i64)
+        };
+        (
+            url.trim().to_string(),
+            token.trim().to_string(),
+            meta_i64(META_PULL_SEQ),
+            meta_i64(META_PUSH_AT),
+            meta_i64(META_SHARED_SEQ),
+            meta_i64(META_GRANT_REV),
+        )
     };
     check_url(&url)?;
 
@@ -344,10 +421,11 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
     let pushed = changes.len();
 
     // The lock is released across the network call so the UI keeps working.
-    let res = post(&url, &token, &SyncReq { since, changes })?;
+    let res = post(&url, &token, &SyncReq { since, changes, shared_since, grant_rev })?;
 
     let mut applied = 0usize;
     let mut skipped = 0usize;
+    let shared_changed;
     let stamp = now_ms();
     {
         let mut guard = db.0.lock().map_err(err)?;
@@ -364,8 +442,11 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
                 None => skipped += 1,
             }
         }
+        shared_changed = apply_shared(&tx, &res.shared, res.grant_rev, grant_rev).map_err(err)?;
         db::write_meta(&tx, META_PULL_SEQ, &res.seq.to_string()).map_err(err)?;
         db::write_meta(&tx, META_PUSH_AT, &cutoff.to_string()).map_err(err)?;
+        db::write_meta(&tx, META_SHARED_SEQ, &res.shared_seq.to_string()).map_err(err)?;
+        db::write_meta(&tx, META_GRANT_REV, &res.grant_rev.to_string()).map_err(err)?;
         db::write_meta(&tx, META_LAST_AT, &stamp.to_string()).map_err(err)?;
         tx.commit().map_err(err)?;
     }
@@ -374,6 +455,7 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
         pushed,
         pulled: applied,
         skipped,
+        shared_changed,
         last_sync: Some(stamp.to_string()),
     })
 }
@@ -398,6 +480,7 @@ pub fn sync_status(db: tauri::State<Db>) -> Result<SyncStatus, String> {
     Ok(SyncStatus {
         configured: url.is_some() && token.is_some(),
         url,
+        account: db::read_setting(&conn, ACCOUNT_SETTING).filter(|s| !s.trim().is_empty()),
         last_sync: db::read_meta(&conn, META_LAST_AT),
     })
 }
@@ -672,6 +755,77 @@ mod tests {
                 .unwrap();
             assert_eq!(deleted, 1, "deletion should have propagated to B");
         }
+    }
+
+    /// The shared cache is pull-only: listing it in TABLES would push other
+    /// people's rows back to the server under our account.
+    #[test]
+    fn shared_rows_is_never_pushed() {
+        assert!(TABLES.iter().all(|s| s.tbl != "shared_rows"));
+    }
+
+    fn shared_change(tbl: &str, pk: &str, deleted: bool) -> SharedChange {
+        SharedChange {
+            from: "sarah".into(),
+            tbl: tbl.into(),
+            pk: pk.into(),
+            payload: serde_json::json!({ "title": "x" }),
+            updated_at: 1,
+            deleted,
+        }
+    }
+
+    fn shared_pks(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn.prepare("SELECT pk FROM shared_rows ORDER BY pk").unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<String>>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn shared_stream_applies_tombstones_and_rejects_weights() {
+        let d = db();
+        let conn = d.0.lock().unwrap();
+        let changed = apply_shared(
+            &conn,
+            &[
+                shared_change("events", "e1", false),
+                shared_change("habits", "h1", false),
+                shared_change("weights", "w1", false),
+            ],
+            1,
+            1,
+        )
+        .unwrap();
+        assert!(changed);
+        assert_eq!(shared_pks(&conn), vec!["e1", "h1"], "weights must never be cached");
+
+        let changed = apply_shared(&conn, &[shared_change("events", "e1", true)], 1, 1).unwrap();
+        assert!(changed);
+        assert_eq!(shared_pks(&conn), vec!["h1"]);
+
+        let changed = apply_shared(&conn, &[], 1, 1).unwrap();
+        assert!(!changed, "an empty incremental pull must not trigger a UI refresh");
+    }
+
+    /// A grant-revision change wipes the cache before applying the snapshot,
+    /// so revoked rows can't linger.
+    #[test]
+    fn grant_rev_change_wipes_the_cache() {
+        let d = db();
+        let conn = d.0.lock().unwrap();
+        apply_shared(&conn, &[shared_change("events", "e1", false)], 1, 1).unwrap();
+        let changed =
+            apply_shared(&conn, &[shared_change("events", "e2", false)], 2, 1).unwrap();
+        assert!(changed);
+        assert_eq!(shared_pks(&conn), vec!["e2"], "e1 was revoked with the old grant");
+
+        // Full revoke: rev bumps, snapshot is empty, cache must drain and the
+        // change must still be reported so the UI refreshes.
+        let changed = apply_shared(&conn, &[], 3, 2).unwrap();
+        assert!(changed);
+        assert!(shared_pks(&conn).is_empty());
     }
 
     /// A row from a build with an extra column is reported, not half-applied.

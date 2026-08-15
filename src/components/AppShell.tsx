@@ -10,7 +10,9 @@ import AddModal from './AddModal';
 import TodoPanel from './TodoPanel';
 import WeightPanel from './WeightPanel';
 import Settings from './Settings';
+import Welcome from './Welcome';
 import { useApp } from '../context/AppContext';
+import { inTauri } from '../persistence';
 import { useIsMobile } from '../useMedia';
 
 function Fab({ onClick, className, style }: {
@@ -34,7 +36,7 @@ export default function AppShell() {
   const [showModal, setShowModal] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useIsMobile();
-  const { activeView, calendarMode, todos, events, loaded, firstDayOfWeek } = useApp();
+  const { activeView, calendarMode, todos, events, loaded, welcomeDone, firstDayOfWeek } = useApp();
 
   // Only the desktop month grid sizes itself; week/day fill the space as before
   const monthGridDesktop = !isMobile && activeView === 'calendar' && calendarMode === 'month';
@@ -54,6 +56,9 @@ export default function AppShell() {
   }, [todos, events, loaded, firstDayOfWeek]);
 
   if (!loaded) return null; // load is a few ms; avoids seed/empty flicker
+  // Accounts are a Tauri-only feature (the browser dev server has no sync), so
+  // the gate never appears there. Dismissing it or signing in flips welcomeDone.
+  if (inTauri() && !welcomeDone) return <Welcome />;
 
   return (
     <div className="h-screen overflow-hidden bg-app-bg">

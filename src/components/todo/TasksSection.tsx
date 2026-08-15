@@ -36,7 +36,11 @@ function DueLabel({ todo }: { todo: Todo }) {
 }
 
 /** One-time to-do: checkbox, star, name, due moment. */
-function TaskRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
+function TaskRow({ todo, onEdit, readOnly = false }: {
+  todo: Todo;
+  onEdit: (t: Todo) => void;
+  readOnly?: boolean;
+}) {
   const { toggleTodo, updateTodo } = useApp();
   const hex = colorHex(todo.colorKey);
   const todayStr = fmt(new Date());
@@ -47,8 +51,10 @@ function TaskRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
 
   return (
     <div
-      onClick={() => toggleTodo(todo.id, toggleDate)}
-      className="group flex items-center gap-sm p-xs rounded-lg hover:bg-fill transition-all cursor-pointer"
+      onClick={readOnly ? undefined : () => toggleTodo(todo.id, toggleDate)}
+      className={`group flex items-center gap-sm p-xs rounded-lg transition-all ${
+        readOnly ? '' : 'hover:bg-fill cursor-pointer'
+      }`}
     >
       <div
         className="h-5 w-5 flex-shrink-0 rounded border-2 flex items-center justify-center transition-all"
@@ -60,19 +66,24 @@ function TaskRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
       </div>
 
       {/* Starring is one click from the list — it's the field most likely to
-          change after a to-do already exists. */}
-      <button
-        title={todo.important ? 'Not important' : 'Mark important'}
-        aria-pressed={todo.important}
-        onClick={e => { e.stopPropagation(); updateTodo(todo.id, { important: !todo.important }); }}
-        className={`flex-shrink-0 transition-colors ${
-          todo.important
-            ? 'text-amber-400'
-            : 'text-txt-faint opacity-0 group-hover:opacity-100 hover:text-txt'
-        }`}
-      >
-        <Star size={16} fill={todo.important ? 'currentColor' : 'none'} />
-      </button>
+          change after a to-do already exists. A shared row keeps the star only
+          as a marker (when the owner starred it). */}
+      {readOnly ? (
+        todo.important && <Star size={16} className="flex-shrink-0 text-amber-400" fill="currentColor" />
+      ) : (
+        <button
+          title={todo.important ? 'Not important' : 'Mark important'}
+          aria-pressed={todo.important}
+          onClick={e => { e.stopPropagation(); updateTodo(todo.id, { important: !todo.important }); }}
+          className={`flex-shrink-0 transition-colors ${
+            todo.important
+              ? 'text-amber-400'
+              : 'text-txt-faint opacity-0 group-hover:opacity-100 hover:text-txt'
+          }`}
+        >
+          <Star size={16} fill={todo.important ? 'currentColor' : 'none'} />
+        </button>
+      )}
 
       <span
         className={`text-body-sm min-w-0 flex-1 truncate transition-all ${
@@ -83,7 +94,7 @@ function TaskRow({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
       </span>
 
       <DueLabel todo={todo} />
-      <RowActions todo={todo} onEdit={onEdit} />
+      {!readOnly && <RowActions todo={todo} onEdit={onEdit} />}
     </div>
   );
 }
@@ -96,10 +107,14 @@ const HEADING = 'text-label-md text-txt-muted uppercase tracking-wider';
  * finishing a to-do shouldn't move it out of the group it belongs to, so it
  * keeps its category and star and simply stops competing for attention.
  */
-export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) {
-  const { todos } = useApp();
+export default function TasksSection({ onEdit, todos: override, readOnly = false }: {
+  onEdit: (t: Todo) => void;
+  todos?: Todo[];
+  readOnly?: boolean;
+}) {
+  const { todos: own } = useApp();
 
-  const tasks = todos.filter(t => t.schedule.type === 'once');
+  const tasks = (override ?? own).filter(t => t.schedule.type === 'once');
   const groups = groupTasks(tasks.filter(t => !isDone(t)));
   const completed = tasks.filter(isDone).sort(byImportanceThenDue);
 
@@ -112,7 +127,7 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
           <h3 className={`${HEADING} mb-xs`}>{category}</h3>
           <div className="space-y-0.5">
             {rows.map(todo => (
-              <TaskRow key={todo.id} todo={todo} onEdit={onEdit} />
+              <TaskRow key={todo.id} todo={todo} onEdit={onEdit} readOnly={readOnly} />
             ))}
           </div>
         </div>
@@ -126,7 +141,7 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
           </h3>
           <div className="space-y-0.5 opacity-70">
             {completed.map(todo => (
-              <TaskRow key={todo.id} todo={todo} onEdit={onEdit} />
+              <TaskRow key={todo.id} todo={todo} onEdit={onEdit} readOnly={readOnly} />
             ))}
           </div>
         </div>

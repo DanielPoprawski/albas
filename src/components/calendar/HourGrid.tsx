@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { fmt } from '../../dates';
 import { shortTime, timeToMinutes, type Occurrence } from '../../eventLogic';
 import { colorHex } from '../../colors';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import type { CalendarEvent } from '../../types';
 
 export const HOUR_H = 48; // px per hour
@@ -132,6 +133,7 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
                   <div
                     key={occ.key}
                     onClick={e => { e.stopPropagation(); onEditEvent(occ.event, occ.startDate); }}
+                    title={sharedTitleAttr(occ.event)}
                     className="absolute rounded px-xs py-0.5 cursor-pointer overflow-hidden hover:opacity-90"
                     style={{
                       top: (startMin / 60) * HOUR_H,
@@ -140,10 +142,11 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
                       width: `calc(${(1 / lanes) * 100}% - 4px)`,
                       backgroundColor: `${hex}26`,
                       borderLeft: `3px solid ${hex}`,
+                      opacity: sharedOpacity(occ.event),
                     }}
                   >
                     <div className="text-[10px] font-bold truncate" style={{ color: hex }}>
-                      {occ.event.title}
+                      {eventTitle(occ.event)}
                     </div>
                     {height >= 34 && (
                       <div className="text-[9px] opacity-70 truncate" style={{ color: hex }}>
