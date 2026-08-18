@@ -1,0 +1,51 @@
+name: sync-server image
+
+# Publishes ghcr.io/<owner>/albas-sync so the server can be deployed with
+# `docker compose pull` instead of a clone and a local Rust build.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sync-server/**'
+      - '.github/workflows/sync-server.yml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 is emulated, which is slow for a Rust build — but it means the
+      # image runs on a Raspberry Pi or other ARM home server without surprises.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # metadata-action lowercases the owner; GHCR rejects uppercase paths.
+          images: ghcr.io/${{ github.repository_owner }}/albas-sync
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./sync-server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
