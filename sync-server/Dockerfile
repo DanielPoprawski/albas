@@ -1,7 +1,8 @@
 FROM rust:1-slim AS build
 WORKDIR /build
 # rusqlite's "bundled" feature compiles SQLite from source, so cc is required.
-RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
+# webauthn-rs pulls in openssl-sys, which needs pkg-config and the OpenSSL headers.
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 # Cargo.lock is copied and --locked enforced so your friend's build resolves the
 # same dependency versions that were tested here.
@@ -10,7 +11,7 @@ COPY src ./src
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 albas \
     && mkdir -p /data && chown albas /data
