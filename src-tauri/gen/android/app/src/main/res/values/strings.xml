@@ -1,11 +1,11 @@
 <resources>
     <string name="app_name">albas</string>
     <string name="main_activity_title">albas</string>
-    <!-- Passkeys: replace sync.example.com with the real sync server domain.
+    <!-- Passkeys: the sync server domain below must match ALBAS_SYNC_ORIGIN.
          The server serves this file when ALBAS_SYNC_ASSETLINKS is set. -->
     <string name="asset_statements" translatable="false">
         [{
-            \"include\": \"https://sync.example.com/.well-known/assetlinks.json\"
+            \"include\": \"https://albas-api.danni-dev.com/.well-known/assetlinks.json\"
         }]
     </string>
 </resources>

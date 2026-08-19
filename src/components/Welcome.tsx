@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { inputClass, labelClass } from './forms/shared';
 import { usePasskeyAuth } from './auth/usePasskeyAuth';
 import PinDialog from './auth/PinDialog';
+import { DEFAULT_SYNC_URL } from '../syncServer';
 
 type Mode = 'menu' | 'signin' | 'create';
 
@@ -23,7 +24,7 @@ export default function Welcome() {
   const { setSetting } = useApp();
   const auth = usePasskeyAuth();
   const [mode, setMode] = useState<Mode>('menu');
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(DEFAULT_SYNC_URL);
   const [name, setName] = useState('');
   const [invite, setInvite] = useState('');
 

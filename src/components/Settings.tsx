@@ -7,6 +7,7 @@ import { inputClass, labelClass } from './forms/shared';
 import { Switch } from './ui/switch';
 import { usePasskeyAuth } from './auth/usePasskeyAuth';
 import PinDialog from './auth/PinDialog';
+import { DEFAULT_SYNC_URL, syncEndpoint } from '../syncServer';
 import type { FirstDayOfWeek, ShareGrant, ThemeName, WeightEntry, WeightUnit } from '../types';
 
 const PRIMARY_BTN =
@@ -265,7 +266,7 @@ function AccountCard() {
   const auth = usePasskeyAuth();
   const [status, setStatus] = useState<SyncStatusInfo | null>(null);
   const [state, setState] = useState<SyncState>({ kind: 'idle' });
-  const [form, setForm] = useState({ url: '', token: '' });
+  const [form, setForm] = useState({ url: DEFAULT_SYNC_URL, token: '' });
   const [mode, setMode] = useState<'signin' | 'create'>('signin');
   const [name, setName] = useState('');
   const [invite, setInvite] = useState('');
@@ -286,7 +287,7 @@ function AccountCard() {
         const { invoke } = await import('@tauri-apps/api/core');
         const s = await invoke<SyncStatusInfo>('sync_status');
         setStatus(s);
-        setForm(f => ({ ...f, url: s.url ?? '' }));
+        setForm(f => ({ ...f, url: s.url ?? DEFAULT_SYNC_URL }));
       } catch {
         // backend not ready — the card still renders in its unconfigured state
       }
@@ -300,7 +301,7 @@ function AccountCard() {
       // Written through setSetting so React state and SQLite agree. The `__`
       // prefix keeps both keys out of the synced payload — the token must
       // never be uploaded to the server it authenticates against.
-      setSetting('__sync_url', form.url.trim());
+      setSetting('__sync_url', syncEndpoint(form.url));
       setSetting('__sync_token', form.token.trim());
       setSetting('__sync_account', '');
       setSetting('__welcome_done', '1');
@@ -393,7 +394,7 @@ function AccountCard() {
               <input
                 className={inputClass}
                 autoComplete="off"
-                placeholder="https://sync.example.com"
+                placeholder={DEFAULT_SYNC_URL}
                 value={form.url}
                 onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
                 disabled={busy}

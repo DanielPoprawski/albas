@@ -14,7 +14,8 @@
 
 use crate::db::{self, Db};
 use crate::sync::{
-    check_url, ACCOUNT_SETTING, META_GRANT_REV, META_SHARED_SEQ, TOKEN_SETTING, URL_SETTING,
+    check_url, ACCOUNT_SETTING, DEFAULT_URL, META_GRANT_REV, META_SHARED_SEQ, TOKEN_SETTING,
+    URL_SETTING,
 };
 use rusqlite::Connection;
 use serde::Deserialize;
@@ -92,7 +93,7 @@ fn friendly(e: ureq::Error) -> String {
 fn stored_base_and_token(conn: &Connection) -> Result<(String, String), String> {
     let url = db::read_setting(conn, URL_SETTING)
         .filter(|s| !s.trim().is_empty())
-        .ok_or("Not signed in.")?;
+        .unwrap_or_else(|| DEFAULT_URL.to_string());
     let token = db::read_setting(conn, TOKEN_SETTING)
         .filter(|s| !s.trim().is_empty())
         .ok_or("Not signed in.")?;

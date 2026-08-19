@@ -1,0 +1,31 @@
+# Overlay putting nginx + Let's Encrypt in front of albas-sync:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d
+#
+# nginx reaches the server over the compose network as http://albas-sync:8787,
+# so the base file's 127.0.0.1:8787 publish stays local-only.
+services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot-etc:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on:
+      - albas-sync
+
+  # Not started by `up` — invoked on demand with `docker compose run --rm certbot ...`
+  certbot:
+    image: certbot/certbot
+    profiles: ["tools"]
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+
+volumes:
+  certbot-etc:
+  certbot-www:

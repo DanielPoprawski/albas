@@ -37,6 +37,12 @@ pub(crate) const META_GRANT_REV: &str = "sync_grant_rev";
 /// Settings keys holding the endpoint. Named with the `__` prefix to match
 /// `__wyze_credentials`: secret-ish, and never synced.
 pub(crate) const URL_SETTING: &str = "__sync_url";
+/// Endpoint this build defaults to when `__sync_url` was never written — a
+/// fresh install can sync the moment it has a token, without anyone typing a
+/// URL. A stored setting always wins, so pointing a device at a different
+/// server still works. Mirrors `DEFAULT_SYNC_URL` in `src/syncServer.ts`;
+/// note this form carries the `/sync` path, because `run` POSTs to it as-is.
+pub(crate) const DEFAULT_URL: &str = "https://albas-api.danni-dev.com/sync";
 pub(crate) const TOKEN_SETTING: &str = "__sync_token";
 /// Display name of the signed-in account (set by passkey login, cleared on
 /// sign-out). Purely informational — the token is the actual identity.
@@ -393,7 +399,7 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
         let conn = db.0.lock().map_err(err)?;
         let url = db::read_setting(&conn, URL_SETTING)
             .filter(|s| !s.trim().is_empty())
-            .ok_or("No sync server configured.")?;
+            .unwrap_or_else(|| DEFAULT_URL.to_string());
         let token = db::read_setting(&conn, TOKEN_SETTING)
             .filter(|s| !s.trim().is_empty())
             .ok_or("No sync token configured.")?;
@@ -475,7 +481,9 @@ pub async fn sync_now(app: tauri::AppHandle) -> Result<SyncOutcome, String> {
 #[tauri::command]
 pub fn sync_status(db: tauri::State<Db>) -> Result<SyncStatus, String> {
     let conn = db.0.lock().map_err(err)?;
-    let url = db::read_setting(&conn, URL_SETTING).filter(|s| !s.trim().is_empty());
+    let url = db::read_setting(&conn, URL_SETTING)
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| Some(DEFAULT_URL.to_string()));
     let token = db::read_setting(&conn, TOKEN_SETTING).filter(|s| !s.trim().is_empty());
     Ok(SyncStatus {
         configured: url.is_some() && token.is_some(),
