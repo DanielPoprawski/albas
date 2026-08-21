@@ -8,7 +8,7 @@
  * server. Rust keeps its own copy of this string (`sync::DEFAULT_URL`) for the
  * same reason, and the two must stay in step.
  */
-export const DEFAULT_SYNC_URL = 'https://albas-api.danni-dev.com';
+export const DEFAULT_SYNC_URL = 'https://albas.danni-dev.com/api';
 
 /**
  * `__sync_url` holds the full `/sync` endpoint — `sync::run` POSTs straight to

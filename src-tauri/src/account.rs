@@ -269,4 +269,21 @@ mod tests {
         assert_eq!(normalize_base(" https://s.example.com/sync/ "), "https://s.example.com");
         assert_eq!(normalize_base("http://localhost:8787/sync"), "http://localhost:8787");
     }
+
+    /// The real server puts the API under `/api`, because the same origin also
+    /// serves the web console. The base must keep that prefix — dropping it
+    /// would send every ceremony to the console's routes instead.
+    #[test]
+    fn base_normalisation_keeps_a_path_prefix() {
+        assert_eq!(
+            normalize_base("https://albas.danni-dev.com/api/sync"),
+            "https://albas.danni-dev.com/api"
+        );
+        assert_eq!(
+            normalize_base("https://albas.danni-dev.com/api/"),
+            "https://albas.danni-dev.com/api"
+        );
+        // What the shipped default already is, normalised to itself.
+        assert_eq!(normalize_base(crate::sync::DEFAULT_URL), "https://albas.danni-dev.com/api");
+    }
 }

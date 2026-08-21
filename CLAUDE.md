@@ -96,6 +96,36 @@ bumped nothing at all.
   from `package.json` — see `define` in `vite.config.ts`): Settings → **About**, and the
   desktop status bar's left module.
 
+## Domain and origins
+Everything is served from **one origin, `albas.danni-dev.com`** — the JSON API under `/api`,
+Android's assetlinks at the domain root, and the web console at `/`.
+
+- **The host is the WebAuthn relying party.** `sync-server/src/passkey.rs` derives `rp_id`
+  from the host of `ALBAS_SYNC_ORIGIN`, and an authenticator only releases a credential to
+  something proving it speaks for that host *or a parent of it*. Hence one origin: a console
+  on a sibling host could never use the app's passkeys. Hence also **not** the
+  `danni-dev.com` apex — the apex carries unrelated services, and an apex RP ID would make an
+  Albas passkey offerable to every one of them.
+- **Changing the domain invalidates every passkey.** There is no migration; accounts are
+  re-created. Budget for that before moving it again.
+- **Three files must move together**, and each says so: `src/syncServer.ts` (base form, no
+  `/sync`), `src-tauri/src/sync.rs` `DEFAULT_URL` (endpoint form, *with* `/sync`, because
+  `run` POSTs to it as-is), and the Android `asset_statements` in `values/strings.xml`
+  (domain **root**, not `/api`).
+- **`ALBAS_SYNC_ANDROID_ORIGIN` is domain-independent** — it is an `android:apk-key-hash:`
+  value derived from the release signing key. Don't touch it when the domain moves.
+- **nginx strips the `/api` prefix** via the trailing slash on `proxy_pass
+  http://albas-sync:8787/;`, so the Rust routes are unchanged. A slashless `proxy_pass`
+  breaks every endpoint at once. Configs live in `sync-server/nginx/`.
+- **A stored `__sync_url` always beats `DEFAULT_URL`**, so an existing install would keep
+  syncing to the old host after an update — silently, with no error to explain it. `db.rs`'s
+  `repoint_default_server` rewrites exactly the former defaults listed in `SUPERSEDED_URLS`,
+  once each, flagged in `meta`. **Add the outgoing URL to that list whenever the default
+  changes**, or the next move repeats the problem.
+- **`tauri.conf.json` is parsed as strict JSON by `tauri-build`** even though the CLI's
+  `tauri info` tolerates comments. Don't put `//` in it — the build fails with "key must be
+  a string" at the offending line.
+
 ## Project direction
 Recorded so a future session doesn't relitigate settled questions.
 

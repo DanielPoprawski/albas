@@ -29,7 +29,7 @@ curl -O https://raw.githubusercontent.com/DanielPoprawski/albas/main/sync-server
 cat > .env <<EOF
 ALBAS_SYNC_TOKEN=$(openssl rand -hex 32)
 ALBAS_SYNC_ADMIN_TOKEN=$(openssl rand -hex 32)
-ALBAS_SYNC_ORIGIN=https://albas-api.danni-dev.com
+ALBAS_SYNC_ORIGIN=https://albas.danni-dev.com
 EOF
 docker compose up -d
 ```
@@ -63,7 +63,7 @@ minted with that account's exact `name` is the only way, which is how the owner
 enrolls a security key on the env-token-bootstrapped `owner` account:
 
 ```bash
-curl -X POST https://albas-api.danni-dev.com/invites \
+curl -X POST https://albas.danni-dev.com/api/invites \
   -H "Authorization: Bearer $ALBAS_SYNC_ADMIN_TOKEN" \
   -H 'content-type: application/json' -d '{"name": "owner"}'
 # -> {"code":"3f9c…","name":"owner","expiresAt":…}   (single-use, 7 days)
@@ -117,16 +117,29 @@ mkdir -p nginx/conf.d
 cp nginx/bootstrap.conf nginx/conf.d/albas.conf     # HTTP only, so nginx can boot
 docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.nginx.yml \
-  run --rm certbot certonly --webroot -w /var/www/certbot -d albas-api.danni-dev.com
+  run --rm certbot certonly --webroot -w /var/www/certbot -d albas.danni-dev.com
 cp nginx/tls.conf nginx/conf.d/albas.conf           # now the cert exists
 docker compose -f docker-compose.yml -f docker-compose.nginx.yml restart nginx
 ```
 
-Two things in those templates are load-bearing. `client_max_body_size 32m` —
-nginx's 1 MB default rejects a first sync from a device with a lot of history as
-a 413. And the ACME challenge location is deliberately *more specific* than `/`,
-so `/.well-known/assetlinks.json` still falls through to the app, which is what
-Android passkeys need.
+**One origin serves everything**: the JSON API under `/api`, Android's
+assetlinks at the domain root, and (soon) the web console at `/`. That is
+deliberate — same-origin means the console never needs a CORS layer, and it puts
+the WebAuthn relying party on this exact host rather than on the `danni-dev.com`
+apex, where an Albas passkey would also be offerable to every other subdomain.
+
+Three things in those templates are load-bearing:
+
+- **The trailing slash on `proxy_pass http://albas-sync:8787/;`** is what strips
+  the `/api` prefix, so the routes in `main.rs` are unchanged — the app still
+  sees `/sync`, `/login/start` and the rest. A slashless `proxy_pass` breaks
+  every endpoint at once.
+- **`client_max_body_size 32m`** — nginx's 1 MB default rejects a first sync from
+  a device with a lot of history as a 413.
+- **`assetlinks.json` is matched exactly, at the root.** Android's Credential
+  Manager fetches it from there and will not follow it anywhere else, so it
+  cannot live under `/api`. The ACME challenge location is likewise more
+  specific than `/`.
 
 Then in Albas: **Settings → Account & sync**. The current server is baked in as
 the default, so signing in with a passkey needs no URL typed at all; the field
@@ -148,7 +161,7 @@ works well).
 | --------------------------- | --------------------- | ------------------------------------------------------------------------ |
 | `ALBAS_SYNC_TOKEN`          | *(unset)*             | Owner's sync token; creates/re-keys the `owner` account's env credential. Min 16 chars. |
 | `ALBAS_SYNC_ADMIN_TOKEN`    | *(unset)*             | Enables the admin endpoints (`/accounts`, `/invites`). Min 16 chars.     |
-| `ALBAS_SYNC_ORIGIN`         | *(unset)*             | Public https URL of this server; enables passkeys. `http://localhost:…` works for local testing. |
+| `ALBAS_SYNC_ORIGIN`         | *(unset)*             | Public https **origin** — scheme and host only, no `/api` path. The WebAuthn relying party is its host, so changing it invalidates every existing passkey. Unset disables passkeys. `http://localhost:…` works for local testing. |
 | `ALBAS_SYNC_SIGNUPS`        | `open`                | `open` = anyone with the URL can register; `invite` = invite code required. |
 | `ALBAS_SYNC_ANDROID_ORIGIN` | *(unset)*             | Extra allowed WebAuthn origin (`android:apk-key-hash:…`) asserted by Android's Credential Manager. |
 | `ALBAS_SYNC_ASSETLINKS`     | *(unset)*             | Raw JSON served at `/.well-known/assetlinks.json` (Android Digital Asset Links). |

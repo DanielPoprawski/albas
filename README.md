@@ -116,7 +116,9 @@ easy to break by accident.
 ## How it's hosted
 
 The sync server runs in Docker on a home VM, behind nginx with a Let's Encrypt certificate,
-reached over a Cloudflare tunnel. Images are published to
+at **`albas.danni-dev.com`**. One origin serves everything: the JSON API under `/api`,
+Android's Digital Asset Links at the domain root, and the web console at `/`. Images are
+published to
 `ghcr.io/danielpoprawski/albas-sync` by GitHub Actions on any push to `main` that touches
 `sync-server/**`, for both amd64 and arm64 — so the host needs neither a clone nor a Rust
 toolchain, and the same image runs on an ARM box or a Pi.
@@ -130,6 +132,15 @@ docker compose pull && docker compose up -d
 **Back up the `albas-sync-data` volume.** It holds `/data/albas-sync.db`, which is the only
 state the server has. Use `sqlite3 .backup` rather than `cp` — the database is in WAL mode
 and a raw copy can miss committed data.
+
+**The host is a security boundary, not just an address.** A passkey is bound to a *relying
+party ID*, which the server derives from the host in `ALBAS_SYNC_ORIGIN` — and an
+authenticator will only release that credential to a page or app proving it speaks for that
+host or a parent of it. Albas therefore claims `albas.danni-dev.com` and deliberately **not**
+the `danni-dev.com` apex: the apex also carries unrelated services, and an apex RP ID would
+make an Albas passkey offerable to all of them. It also means the domain cannot be changed
+without invalidating every passkey, and that three files must move together when it is:
+`src/syncServer.ts`, `src-tauri/src/sync.rs`, and the Android `asset_statements` string.
 
 Full protocol, account, sharing and deployment docs: [`sync-server/README.md`](sync-server/README.md).
 
@@ -165,7 +176,7 @@ source of truth that silently drifts from what is actually deployed.
 - [x] Local-first calendar, to-dos, habits, weights
 - [x] Multi-account sync server with passkeys and read-only sharing
 - [x] One unified version number across every artifact
-- [ ] Consolidate onto a single origin serving both the API and the web UI
+- [x] Consolidate onto a single origin serving both the API and the web UI *(client + configs done; DNS pending)*
 - [ ] Web admin console — accounts, invites, device tokens, shares
 - [ ] Rate limiting and automated backups on the server
 - [ ] Encryption at rest, and eventually end-to-end encryption

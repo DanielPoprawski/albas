@@ -157,7 +157,35 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     // empty category means uncategorised — no sentinel string, so the grouping
     // in TodoPanel never has to special-case a magic name.
     conn.pragma_update(None, "user_version", 5)?;
+    repoint_default_server(&conn)?;
     Ok(conn)
+}
+
+/// Endpoints this build has shipped as its default, oldest first, each paired
+/// with nothing but its own string — a device that was signed in when one of
+/// these was current has it *stored* in `__sync_url`, and a stored value always
+/// beats `sync::DEFAULT_URL`. Without this, moving the server would leave every
+/// existing install quietly syncing to a host that no longer answers, with no
+/// error to explain it and no clue that the Server field needed retyping.
+///
+/// Only an untouched former default is rewritten. Anyone self-hosting has a URL
+/// that appears nowhere in this list, so their setting is left alone.
+const SUPERSEDED_URLS: &[&str] = &["https://albas-api.danni-dev.com/sync"];
+
+/// Runs once per former default, flagged so a person who deliberately types an
+/// old URL back in doesn't have it taken away again on the next launch.
+fn repoint_default_server(conn: &Connection) -> rusqlite::Result<()> {
+    for old in SUPERSEDED_URLS {
+        let flag = format!("repointed:{old}");
+        if read_meta(conn, &flag).is_some() {
+            continue;
+        }
+        if read_setting(conn, crate::sync::URL_SETTING).as_deref() == Some(*old) {
+            write_setting(conn, crate::sync::URL_SETTING, crate::sync::DEFAULT_URL)?;
+        }
+        write_meta(conn, &flag, "1")?;
+    }
+    Ok(())
 }
 
 /// User preferences live in `meta` under this prefix so they can't collide with
