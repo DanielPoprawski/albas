@@ -39,6 +39,10 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha,format=short
+            # A pinnable tag to roll back to when `latest` breaks. Bump it in
+            # step with sync-server/Cargo.toml — the server is versioned
+            # independently of the app, which tracks package.json.
+            type=raw,value=0.2.0
 
       - uses: docker/build-push-action@v6
         with:

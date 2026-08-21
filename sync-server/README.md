@@ -29,7 +29,7 @@ curl -O https://raw.githubusercontent.com/DanielPoprawski/albas/main/sync-server
 cat > .env <<EOF
 ALBAS_SYNC_TOKEN=$(openssl rand -hex 32)
 ALBAS_SYNC_ADMIN_TOKEN=$(openssl rand -hex 32)
-ALBAS_SYNC_ORIGIN=https://sync.example.com
+ALBAS_SYNC_ORIGIN=https://albas-api.danni-dev.com
 EOF
 docker compose up -d
 ```
@@ -63,7 +63,7 @@ minted with that account's exact `name` is the only way, which is how the owner
 enrolls a security key on the env-token-bootstrapped `owner` account:
 
 ```bash
-curl -X POST https://sync.example.com/invites \
+curl -X POST https://albas-api.danni-dev.com/invites \
   -H "Authorization: Bearer $ALBAS_SYNC_ADMIN_TOKEN" \
   -H 'content-type: application/json' -d '{"name": "owner"}'
 # -> {"code":"3f9c…","name":"owner","expiresAt":…}   (single-use, 7 days)
@@ -105,18 +105,32 @@ change bumps the grantee's `grantRev`, which tells their next sync to rebuild
 its shared cache from scratch — so a revoked share disappears from their app
 on the next sync.
 
-The container listens on `127.0.0.1:8787` only. Put a TLS-terminating reverse
-proxy in front — the bearer token is the sole credential, so it must never cross
-a network in cleartext. With Caddy that is one line:
+The container listens on `127.0.0.1:8787` only. A TLS-terminating reverse proxy
+in front is mandatory, not optional — the bearer token is the sole credential, so
+it must never cross a network in cleartext, and passkeys require real HTTPS.
 
-```
-sync.example.com {
-    reverse_proxy 127.0.0.1:8787
-}
+This repo ships that proxy as a compose overlay: nginx plus certbot, with the
+config templates in `nginx/`.
+
+```bash
+mkdir -p nginx/conf.d
+cp nginx/bootstrap.conf nginx/conf.d/albas.conf     # HTTP only, so nginx can boot
+docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.nginx.yml \
+  run --rm certbot certonly --webroot -w /var/www/certbot -d albas-api.danni-dev.com
+cp nginx/tls.conf nginx/conf.d/albas.conf           # now the cert exists
+docker compose -f docker-compose.yml -f docker-compose.nginx.yml restart nginx
 ```
 
-Then in Albas: **Settings → Sync**, enter `https://sync.example.com/sync` and the
-token. Do the same on every device, using the same token.
+Two things in those templates are load-bearing. `client_max_body_size 32m` —
+nginx's 1 MB default rejects a first sync from a device with a lot of history as
+a 413. And the ACME challenge location is deliberately *more specific* than `/`,
+so `/.well-known/assetlinks.json` still falls through to the app, which is what
+Android passkeys need.
+
+Then in Albas: **Settings → Account & sync**. The current server is baked in as
+the default, so signing in with a passkey needs no URL typed at all; the field
+stays editable for anyone self-hosting their own.
 
 ### Building instead of pulling
 

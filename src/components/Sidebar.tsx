@@ -1,6 +1,7 @@
 import { CalendarDays, ListChecks, Weight, Settings, type LucideIcon } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Sheet, SheetContent, SheetTitle } from './ui/sheet';
+import { STATUS_BAR_H } from './StatusBar';
 import type { ActiveView } from '../types';
 
 /**
@@ -65,7 +66,12 @@ export default function Sidebar({ variant, open = false, onClose }: Props) {
 
   if (!isDrawer) {
     return (
-      <aside className="fixed left-0 top-0 h-full w-16 z-50 border-r border-line bg-chrome flex flex-col items-center pt-20 pb-base gap-xs">
+      // The rail ends where the status bar begins, so that bar can run the
+      // full width of the window rather than butting into this one.
+      <aside
+        style={{ height: `calc(100% - ${STATUS_BAR_H}px)` }}
+        className="fixed left-0 top-0 w-16 z-50 border-r border-line bg-chrome flex flex-col items-center pt-20 pb-base gap-xs"
+      >
         {nav}
       </aside>
     );

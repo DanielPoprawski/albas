@@ -4,41 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Albas is a Tauri v2 desktop app — an all-in-one to-do list, calendar, and habit tracker. The frontend is React + TypeScript + Tailwind CSS v4 (custom calendar grid, no calendar library), built with Vite. The backend is Rust via Tauri.
+Albas is a Tauri v2 desktop **and Android** app — an all-in-one to-do list, calendar, and habit tracker, positioned as "the ultimate productivity suite: for managing your schedule, keeping track of chores and errands, and building your habits". It is local-first: SQLite on the device is the source of truth and the app is fully usable with no server at all. The frontend is React + TypeScript + Tailwind CSS v4 (custom calendar grid, no calendar library), built with Vite. The backend is Rust via Tauri.
 
 ## Commands
 
+The package manager is **bun** (`bun.lock`; there is no `package-lock.json`). Note that
+`src-tauri/tauri.conf.json`'s `beforeDevCommand`/`beforeBuildCommand` also name bun — if they
+ever say `npm`, a Tauri build silently uses a different resolver than `bun install` did.
+
 ```bash
+bun install
+
 # Run in development — the Hyprland/Wayland WebKit workarounds
-# (WEBKIT_DISABLE_DMABUF_RENDERER etc.) are baked into the npm "tauri" script
-npm run tauri dev
+# (WEBKIT_DISABLE_DMABUF_RENDERER etc.) are baked into the "tauri" script
+bun run tauri dev
 
 # Android (SDK lives in ~/Android/Sdk; env vars set in ~/.bashrc)
-npm run tauri android dev     # run on connected device/emulator
-npm run tauri android build   # build APK
+bun run tauri android dev     # run on connected device/emulator
+bun run tauri android build   # build APK
 
 # A standalone APK — one that runs with the computer switched off.
 # `android dev` installs a build whose webview loads the UI from the Vite dev
 # server over the LAN, so that install is useless away from the desk. `build`
 # compiles frontendDist into the binary instead; --debug signs it with the
 # Android debug key so it will actually install.
-npm run tauri android build -- --debug --apk --target aarch64
+bun run tauri android build -- --debug --apk --target aarch64
 # Both commands write app-*-debug.apk to the same path, so check which one you
 # have before installing (a LAN address here means it's the dev artifact):
 unzip -p src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk \
   assets/tauri.conf.json | grep -o '"devUrl":"[^"]*"'
 
 # Signed release build (see "Android signing" below)
-npm run tauri android build -- --apk --target aarch64
+bun run app:android    # = tauri android build -- --apk --target aarch64
 adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
 
 # Build for production
-npm run build          # frontend only (tsc + vite)
-npm run tauri build    # full app bundle
+bun run build          # frontend ONLY (tsc + vite) — does not touch the desktop binary
+bun run app:desktop    # = tauri build; produces src-tauri/target/release/albas + deb/rpm/AppImage
 
-# Frontend dev server only (no Tauri)
-npm run dev
+# Frontend dev server only (no Tauri, no SQLite, no sync — localStorage blob)
+bun run dev
+
+# Versions (see "Versioning" below)
+bun run version:set 1.9.0
+bun run version:check
 ```
+
+**`bun run build` is not `bun run tauri build`.** The former is the frontend bundle; the
+latter is the thing a `.desktop` entry actually launches. Confusing the two is why a rebuild
+can appear to change nothing.
 
 ## Android identities, signing, and versioning (v1.6)
 Android identifies an installed app by **applicationId + signing certificate**. Same id signed by a different key is not an upgrade — the install is refused, and the only way through is an uninstall, which deletes the app-private SQLite database. That one rule explains everything below.
@@ -55,6 +69,56 @@ Hot reload works normally after that; the dev build still points at the LAN dev 
 
 **`tauri.properties` must live in `gen/android/app/`**, not `gen/android/`. `app/build.gradle.kts` reads it with `file("tauri.properties")`, which resolves against the *module* directory; a copy one level up is silently ignored and versionCode falls back to `1`.
 
+## Versioning
+**`package.json` is the single source of truth**; `scripts/version.mjs` derives every other
+file and `bun run version:check` fails on drift. Before it existed the five files disagreed
+in three different ways — `Cargo.toml` had never left `0.1.0`, and a commit titled "1.8"
+bumped nothing at all.
+
+- `bun run version:set <x.y.z>` rewrites `package.json`, `src-tauri/tauri.conf.json`,
+  `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and the Android `versionName`, and
+  **increments** `versionCode`. Then `git tag v<x.y.z>` — the repo had no tags before v1.9.0.
+- **Never hand-edit `tauri.properties`.** `versionCode` is monotonic, not derived: Android
+  refuses an install whose code is not greater than the installed one, so it is bumped rather
+  than set, and `--check` ignores it.
+- **Never run a blanket `cargo update`** to refresh the lock. `Cargo.lock` pins
+  `webauthn-authenticator-rs`/`-proto` at 0.5.1 (see "Passkeys and accounts"), and a blanket
+  update breaks the build. The script rewrites the `albas` entry by name instead.
+- The edits are regex-based rather than parse-and-reserialise, so files keep their formatting
+  — `tauri.conf.json` is indented with six spaces and `JSON.stringify` would reflow all of it.
+- **Tauri's bundler reads `tauri.conf.json`, not `Cargo.toml`.** That is why the deb was
+  `albas_1.7.1_amd64.deb` while Cargo said `0.1.0`; keeping Cargo in step is for sanity, not
+  function.
+- **`sync-server/` is versioned independently** (`0.2.0`) and tagged separately in the GHCR
+  image. It is a separately deployed artifact whose wire protocol is backward-compatible by
+  design, so a server rebuild does not imply an app release.
+- The running version is shown in two places, both fed by `__APP_VERSION__` (injected by Vite
+  from `package.json` — see `define` in `vite.config.ts`): Settings → **About**, and the
+  desktop status bar's left module.
+
+## Project direction
+Recorded so a future session doesn't relitigate settled questions.
+
+- **One origin.** The API and the (planned) web console will both be served from
+  `albas.danni-dev.com`, replacing `albas-api.danni-dev.com`. Deliberately a subdomain and
+  **not** the `danni-dev.com` apex: WebAuthn's RP ID is a security boundary, the apex will
+  also host a portfolio, a Minecraft server and a photo cloud, and an apex RP ID would make an
+  Albas passkey offerable to all of them. Same-origin also means no CORS layer is ever needed.
+- **Passkeys are not migratable across that move** — they are bound to the old RP ID — so the
+  accounts get wiped rather than migrated. Nothing on the server is worth keeping.
+- **Payloads stay plaintext for now**, and that is documented rather than hidden. E2E
+  encryption is mutually exclusive with the planned admin payload viewer, and it also breaks
+  read-only sharing (the server cannot hand another account rows it cannot decrypt). The cheap
+  intermediate step, when it matters, is encryption at rest with a server-held key.
+- **Monorepo, and the server host has no clone.** The CI path filter already gives
+  `sync-server/` an independent release pipeline; meanwhile `sync.rs`'s `TABLES` and the
+  server's share groups are co-designed and must agree. The host needs only
+  `docker-compose.yml`, `.env` and the nginx configs — everything else arrives as an image.
+- **Not moving to AWS.** The ordered bottlenecks are: no backups; unbounded tombstone growth;
+  the in-memory pending-ceremony map, which prevents running two replicas at all; then the
+  single `Mutex<Connection>`. None are user-count-driven. The realistic path is the current VM
+  → a home box, and the image already builds multi-arch for ARM.
+
 ## TODO LIST
 1. To-do reminders only fire on the due day; consider firing at the to-do's `time` when one is set.
 
@@ -65,7 +129,7 @@ Two things are load-bearing:
 - **The `* { font-family: Inter }` rule must stay inside `@layer base`.** Unlayered declarations outrank *every* layered one regardless of specificity, so as a bare `*` it beat `.font-title` and no heading could opt out.
 - **The TTF ships one weight (400), so `font-title` call sites also pass `font-normal`** — otherwise `font-bold`, or the `--text-headline-*--font-weight` baked into the size utility, makes the browser synthesise a smeared faux-bold serif.
 
-`public/icon.svg` is the app mark; the stock `vite.svg`/`tauri.svg` are deleted. It's the favicon in `index.html` and the source for every platform icon — regenerate with `npm run tauri icon public/icon.svg`, which rewrites `src-tauri/icons/` *and* the Android `mipmap-*` launchers (it also emits an unused `icons/ios/` set).
+`public/icon.svg` is the app mark; the stock `vite.svg`/`tauri.svg` are deleted. It's the favicon in `index.html` and the source for every platform icon — regenerate with `bun run tauri icon public/icon.svg`, which rewrites `src-tauri/icons/` *and* the Android `mipmap-*` launchers (it also emits an unused `icons/ios/` set).
 
 ## Icons — lucide (v1.7.1)
 **Every icon in the app is a lucide-react component.** The Material Symbols webfont is gone: the `<link>` is out of `index.html`, `.material-symbols-outlined` is out of `App.css`, and there is no `Sym` helper left in `components/ui/`. Reintroducing a glyph-name string anywhere is a regression.
@@ -157,6 +221,14 @@ Below the breakpoint: the icon rail becomes an off-canvas drawer (a `Sheet`, ope
 - **Navigation is `calendar/CalendarNav.tsx`**, and it owns the stepping logic for all three modes. `Calendar` renders it as a row above the sheet on desktop; on mobile `TopBar` renders it `compact` beside the title and `Calendar` renders no row at all. Both call sites mount the same component — putting the arrows in one and the mode switch in the other is how the two get out of sync.
 - **The mode switch has two shapes, not one dropdown** (v1.7.1). Desktop is `ModeButtons`: three buttons plus Today, because all three modes are constant destinations and a menu hid two of them behind a click and a read. Mobile is `ModeModal`: a calendar-icon button opening a `Dialog` with a labelled row per mode. Today lives *inside* that modal on mobile and is the only way back there.
 - **Mobile drops the prev/next arrows in month view** — the grid is swipeable, and the arrows were a second control for a gesture already there, on the row where space is tightest. Week and day view keep them, because neither is swipeable. If you ever make those swipeable, the arrows go too.
+
+## Desktop status bar
+A thin strip along the whole bottom edge, in the spirit of Obsidian's: `src/components/StatusBar.tsx`, mounted by `AppShell` for `!isMobile` only. A phone spends that edge on the FAB and the system gesture bar, so there is no mobile equivalent.
+
+- **It runs the full width, under the rail** — so `Sidebar`'s rail is `calc(100% - STATUS_BAR_H)` tall rather than the bar stopping short of it. `STATUS_BAR_H` is exported from `StatusBar.tsx` and read by the two layouts that must reserve the row: the rail's height and `main`'s `paddingBottom` (which is also what keeps the desktop FAB off the bar). Changing the height means changing only that constant.
+- **`StatusItem` is `forwardRef`, and that is load-bearing.** Modules that open a drop-up are wrapped in `DropdownMenuTrigger asChild`, and Radix anchors the popper on the child's ref — React 18 drops a ref passed to a plain function component, and the trigger then looks dead. Menus open with `side="top"`; nothing else fits above the bottom edge.
+- The only module so far is the account: name from `syncAccount` (or "Sync token" for token-only setups, "Not signed in" otherwise), with Settings and Sign out in the drop-up. Sign-out is the same `sync_sign_out` + `reloadFromStore()` pair Settings uses; errors are left to Settings → Account & sync, which has room to report them.
+- This is `dropdown-menu.tsx`'s first importer — it was previously generated-but-unused.
 
 ## First day of the week (v1.4)
 `firstDayOfWeek` (settings blob, `0` = Sunday, `1` = Monday, default Monday) is threaded explicitly — there is no module-level global. `weekOf()` and `getCalendarDays()` take it as a trailing parameter defaulting to `1`, as do `isDueOn` / `doneCountIn` / `streakOf` / `statusLabel` / `repeatLabel` (`todoLogic.ts`), `weeklyRows` (`weightLogic.ts`), `calendarTitle`, and `remindDueTodos`. **A missing argument silently means Monday**, so new call sites must pass it from `useApp()`.

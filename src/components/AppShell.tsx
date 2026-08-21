@@ -11,6 +11,7 @@ import TodoPanel from './TodoPanel';
 import WeightPanel from './WeightPanel';
 import Settings from './Settings';
 import Welcome from './Welcome';
+import StatusBar, { STATUS_BAR_H } from './StatusBar';
 import { useApp } from '../context/AppContext';
 import { inTauri } from '../persistence';
 import { useIsMobile } from '../useMedia';
@@ -72,8 +73,15 @@ export default function AppShell() {
       {/* Desktop is a flex row so the right panel can absorb whatever the
           calendar doesn't need; mobile drops the rail offset and the panel
           entirely, since Home already carries both lists. */}
+      {/* Desktop only — see StatusBar. The rail stops above it, so the bar
+          reads as one strip across the whole bottom edge. */}
+      {!isMobile && <StatusBar />}
+
       <main
         className={`pt-16 h-screen overflow-hidden ${isMobile ? '' : 'ml-16 flex'}`}
+        // Reserve the status bar's row, or the content column's last pixels —
+        // and the FAB, positioned against its bottom — sit under the bar.
+        style={isMobile ? undefined : { paddingBottom: STATUS_BAR_H }}
       >
         {/* The calendar goes edge-to-edge on phones; the list views keep their
             own padding now that the glass-card wrappers are gone.

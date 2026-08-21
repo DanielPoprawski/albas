@@ -1,123 +1,177 @@
 # Albas
 
-All in one to-do list, calendar, and habit tracker.
+**The ultimate productivity suite** — for managing your schedule, keeping track of chores
+and errands, and building your habits.
 
-## Installation:
-
-`git clone {url}`
-
-`cd albas`
-
-`npm run tauri dev`
-
-or the command for linux if you're having issues with Hyprland
-`WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 npm run tauri dev`
+Albas is a **local-first** desktop and Android app. SQLite on the device is the source of
+truth: every edit is made offline, nothing needs a network, and an optional self-hosted sync
+server exists only to reconcile your devices with each other. No account is required to use
+it, and no data leaves the machine unless you set sync up yourself.
 
 ---
 
-## ⚠️ TODO once the server exists: replace the domain placeholders
+## What's in it
 
-Sync and passkeys are built but **not usable until a real domain is filled in
-two places**. Both currently say `sync.example.com`. Until then the app still
-works fully offline — passkey endpoints just return 503.
+- **Calendar** — month, week and day views, built as a custom grid rather than a calendar
+  library. Multi-day events render as lanes across the month; the phone grid is swipeable.
+- **To-dos, habits and chores** — one unified model, distinguished only by their schedule.
+  A one-off is a task, a fixed cadence is a habit, and "every N days from when I last did it"
+  is a chore. Free-text categories, an importance flag, streaks and quotas.
+- **Weight tracking** — manual entries or automatic sync from a Wyze smart scale.
+- **Read-only sharing** — expose your calendar and/or to-dos to another account, one-way.
+- **Four themes** — dark, light, and two greys, with everything driven by design tokens.
+- **Reminders**, first-day-of-week, ICS import, and an offline-capable Android build.
 
-- [ ] **`sync-server/.env`** — add `ALBAS_SYNC_ORIGIN=https://sync.yourdomain.com`
-      (and uncomment `ALBAS_SYNC_ADMIN_TOKEN` if you want to mint invites).
-      Without `ALBAS_SYNC_ORIGIN` there are no passkeys at all: WebAuthn needs
-      it to derive the relying-party identity.
-- [ ] **`src-tauri/gen/android/app/src/main/res/values/strings.xml`** — the
-      `asset_statements` string. Android only. Desktop passkeys work without it.
-- [ ] **Android also needs** `ALBAS_SYNC_ASSETLINKS` and
-      `ALBAS_SYNC_ANDROID_ORIGIN` on the server — see "Android passkeys" below.
+## Install
 
-Everything else (`ALBAS_SYNC_TOKEN`, existing devices, existing data) keeps
-working untouched; the server migrates its own database on first start.
+Desktop bundles are produced by `bun run tauri build` and land in
+`src-tauri/target/release/bundle/` as `.deb`, `.rpm` and `.AppImage`. The raw binary is at
+`src-tauri/target/release/albas` — if you run from a checkout, a `.desktop` entry pointing
+straight at that path means a rebuild updates the installed app with no reinstall step.
 
-## Running the sync server on Docker
+Android is a signed APK — see [Building](#building) below.
 
-On the box that owns the domain:
-
-```bash
-mkdir albas-sync && cd albas-sync
-curl -O https://raw.githubusercontent.com/DanielPoprawski/albas/main/sync-server/docker-compose.yml
-
-cat > .env <<EOF
-ALBAS_SYNC_TOKEN=$(openssl rand -hex 32)
-ALBAS_SYNC_ADMIN_TOKEN=$(openssl rand -hex 32)
-ALBAS_SYNC_ORIGIN=https://sync.yourdomain.com
-EOF
-
-docker compose up -d
-docker compose logs -f          # should print "albas-sync listening on ..."
-```
-
-Later updates are `docker compose pull && docker compose up -d`. Data lives in
-the `albas-sync-data` volume — **that's the thing to back up.**
-
-The container listens on `127.0.0.1:8787` only, so it needs a TLS reverse proxy
-in front. Passkeys *require* real HTTPS (browsers and Android both refuse
-otherwise), so this isn't optional any more. With Caddy that's one line in the
-Caddyfile:
-
-```
-sync.yourdomain.com {
-    reverse_proxy 127.0.0.1:8787
-}
-```
-
-Then in the app: **Settings → Account & sync**, enter `https://sync.yourdomain.com`,
-and hit "Create account" (or "Sign in with passkey" once an account exists).
-
-To enroll your security key on the `owner` account that `ALBAS_SYNC_TOKEN`
-created, mint an invite naming it — that's the only way to attach a passkey to
-an account that already exists:
+## Developing
 
 ```bash
-curl -X POST https://sync.yourdomain.com/invites \
-  -H "Authorization: Bearer $ALBAS_SYNC_ADMIN_TOKEN" \
-  -H 'content-type: application/json' -d '{"name": "owner"}'
+bun install
+bun run tauri dev
 ```
 
-Paste the returned code into the app's Create-account screen with the name `owner`.
+The Hyprland/Wayland WebKit workarounds (`WEBKIT_DISABLE_DMABUF_RENDERER` etc.) are baked
+into the `tauri` script, so there is nothing to remember on Linux.
 
-### Android passkeys
+### Which command does what
 
-Android's Credential Manager will only run a ceremony for a domain that
-explicitly vouches for the app, and it asserts an `android:apk-key-hash:` origin
-instead of the https one. Two extra values, both derived from your release
-signing key:
+This trips people up, so it is worth being explicit — **`bun run build` does not build the
+app**:
+
+| Command | What it actually does |
+|---|---|
+| `bun run dev` | Vite only, on `localhost:1420`. No Rust, no SQLite, no sync — persistence falls back to a `localStorage` blob. Fine for pure UI work, misleading for anything else. |
+| `bun run tauri dev` | The real desktop app, Rust included. |
+| `bun run build` | `tsc && vite build`. The **frontend bundle only**. Does not touch the desktop binary. |
+| `bun run tauri build` (or `bun run app:desktop`) | Builds `src-tauri/target/release/albas` plus the deb/rpm/AppImage. **This** is what updates an installed desktop app. |
+| `bun run tauri android dev` | Installs `dev.daniel_p.albas.dev`, whose webview loads the UI from the Vite dev server over the LAN. Useless away from the desk. |
+| `bun run app:android` | A standalone signed release APK. Being plugged into the PC does nothing on its own — it still needs an `adb install` (below). |
+
+### Building
 
 ```bash
-# 1. the colon-hex fingerprint, for assetlinks.json
-keytool -list -v -keystore ~/.android/albas-release.jks -alias albas | grep 'SHA256:'
+# Desktop
+bun run app:desktop
 
-# 2. the same bytes as base64url, for ALBAS_SYNC_ANDROID_ORIGIN
-keytool -list -v -keystore ~/.android/albas-release.jks -alias albas \
-  | grep 'SHA256:' | cut -d' ' -f3 \
-  | python3 -c "import base64,sys; print(base64.urlsafe_b64encode(bytes.fromhex(sys.stdin.read().strip().replace(':',''))).decode().rstrip('='))"
+# Android release APK, then install it
+bun run app:android
+adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
 ```
 
-Add to the server's `.env` (note the app id uses an **underscore**):
+Debug Android builds install as a **separate app** (`dev.daniel_p.albas.dev`, launcher name
+"albas dev") with their own database, so switching between a dev build and the real app
+never costs a wipe. `CLAUDE.md` has the full story on Android identities, signing and a
+Tauri quirk where `android dev` installs the suffixed app but launches the unsuffixed one.
+
+### Versioning
+
+**`package.json` is the single source of truth.** Everything else is derived:
 
 ```bash
-ALBAS_SYNC_ANDROID_ORIGIN=android:apk-key-hash:<the base64url value>
-ALBAS_SYNC_ASSETLINKS='[{"relation":["delegate_permission/common.get_login_creds"],"target":{"namespace":"android_app","package_name":"dev.daniel_p.albas","sha256_cert_fingerprints":["<the colon-hex value>"]}}]'
+bun run version:set 1.9.0   # rewrites tauri.conf.json, Cargo.toml, Cargo.lock,
+                            # and the Android versionName; bumps versionCode
+bun run version:check       # fails if they have drifted apart
+git tag v1.9.0
 ```
 
-The server then serves that at `/.well-known/assetlinks.json`, which is exactly
-what the `asset_statements` string in `strings.xml` points at. Verify with
-`curl https://sync.yourdomain.com/.well-known/assetlinks.json`.
+Never hand-edit `src-tauri/gen/android/app/tauri.properties` — `versionCode` is monotonic and
+Android refuses an install whose code is not greater than the installed one.
 
-Debug builds install as `dev.daniel_p.albas.dev` signed with the Android debug
-key, so testing passkeys on a debug build needs a second entry in that JSON with
-that package name and the debug key's fingerprint (`~/.android/debug.keystore`,
-password `android`).
+`sync-server/` is versioned **independently** (`0.2.0`). It is a separately deployed artifact
+whose wire protocol is backward-compatible by design, so a server rebuild does not imply an
+app release.
 
-> Heads up: `tauri-plugin-webauthn` is young and pinned in `Cargo.lock` to
-> `webauthn-rs-proto` 0.5.1 — a blanket `cargo update` breaks the build until
-> upstream fixes it. Test the ceremony on desktop with the real key before
-> trusting it on a phone.
+## Architecture
 
-Full server docs, protocol and sharing details: [`sync-server/README.md`](sync-server/README.md).
+```
+React + TypeScript + Tailwind v4          src/
+        │  Tauri IPC (invoke)
+        ▼
+Rust: commands, SQLite, sync client        src-tauri/src/
+        │  HTTPS, bearer token
+        ▼
+albas-sync: opaque row store               sync-server/
+```
 
+- **The device owns the data.** SQLite is authoritative; the app is fully functional with the
+  server switched off or unreachable.
+- **The server is a dumb row store.** It holds opaque `(account, table, primary key) → payload`
+  rows with a timestamp and a tombstone flag, and never parses a to-do, an event or a weight
+  reading — which is why adding a column to the app almost never requires redeploying it.
+- **Two clocks, deliberately.** `updated_at` comes from the writing device and decides *who
+  wins* (last-write-wins, per row). `seq` is server-assigned and monotonic and decides *what a
+  device hasn't seen*. A skewed device clock therefore can never make another device skip a row.
 
+`CLAUDE.md` documents the design rules in detail, including the ones that are load-bearing and
+easy to break by accident.
+
+## How it's hosted
+
+The sync server runs in Docker on a home VM, behind nginx with a Let's Encrypt certificate,
+reached over a Cloudflare tunnel. Images are published to
+`ghcr.io/danielpoprawski/albas-sync` by GitHub Actions on any push to `main` that touches
+`sync-server/**`, for both amd64 and arm64 — so the host needs neither a clone nor a Rust
+toolchain, and the same image runs on an ARM box or a Pi.
+
+Deploying an update is:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+**Back up the `albas-sync-data` volume.** It holds `/data/albas-sync.db`, which is the only
+state the server has. Use `sqlite3 .backup` rather than `cp` — the database is in WAL mode
+and a raw copy can miss committed data.
+
+Full protocol, account, sharing and deployment docs: [`sync-server/README.md`](sync-server/README.md).
+
+### Why a monorepo, and why the server host has no clone
+
+The app and the server live in one repository. The CI path filter already gives the server an
+independent release pipeline from inside it, so splitting buys nothing operationally — while
+the sync client's table spec (`src-tauri/src/sync.rs`) and the server's share groups are
+co-designed and must agree, which would turn a one-line protocol change into a two-repository
+dance.
+
+The machine running the server needs exactly `docker-compose.yml`, a `.env`, and the nginx
+configs. Everything else arrives as a published image. A checkout there would be a second
+source of truth that silently drifts from what is actually deployed.
+
+## Security and privacy, honestly
+
+- There are **no passwords**. You sign in with a **passkey** — a security key, fingerprint or
+  face unlock. The private key never leaves your authenticator; the server stores only the
+  public half.
+- Each signed-in device gets its own **bearer token**. The token *is* the identity, so it must
+  never travel over plain HTTP — hence the TLS reverse proxy being mandatory rather than
+  optional.
+- **Payloads are stored as plaintext JSON.** "The server never parses your data" is a
+  *layering* claim, not a confidentiality one: whoever has root on the host can read every
+  event title and task. That is a deliberate, current trade-off — it is what makes an admin
+  view possible — and it is worth knowing before putting anything confidential in.
+- **Weight data is structurally unshareable.** It appears in no share group, and the sync
+  client drops a weights row defensively even if a server sent one.
+
+## Roadmap
+
+- [x] Local-first calendar, to-dos, habits, weights
+- [x] Multi-account sync server with passkeys and read-only sharing
+- [x] One unified version number across every artifact
+- [ ] Consolidate onto a single origin serving both the API and the web UI
+- [ ] Web admin console — accounts, invites, device tokens, shares
+- [ ] Rate limiting and automated backups on the server
+- [ ] Encryption at rest, and eventually end-to-end encryption
+
+**On encryption:** end-to-end encryption and an admin console that can read payloads are
+mutually exclusive — that is the definition, not an implementation detail. The intended path
+is encryption at rest with a server-held key first (which stops a stolen disk or backup
+without stopping the console), and a deliberate decision about true E2E later, since it also
+breaks read-only sharing and needs a key-recovery story.

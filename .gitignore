@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Android release signing. gen/android IS tracked, so these have to be named
+# explicitly — the keystore and its passwords must never be committed.
+src-tauri/gen/android/keystore.properties
+*.jks
+*.keystore
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

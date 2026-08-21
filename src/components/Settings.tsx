@@ -227,6 +227,8 @@ export default function Settings() {
         <SharingCard />
 
         <WyzeCard />
+
+        <AboutCard />
       </div>
     </div>
   );
@@ -850,6 +852,35 @@ function WyzeCard() {
       {state.kind === 'busy' && <p className="text-body-sm text-txt-muted mt-md">{state.what}</p>}
       {state.kind === 'ok' && <p className="text-body-sm text-success mt-md">{state.message}</p>}
       {state.kind === 'error' && <p className="text-body-sm text-danger mt-md">{state.message}</p>}
+    </div>
+  );
+}
+
+/**
+ * The one place the running version is visible. `__APP_VERSION__` is injected
+ * by Vite from package.json (see `define` in vite.config.ts), which is the
+ * single source every other version file is derived from — so if this number
+ * is right, the bundle, the installer and the APK all agree.
+ *
+ * Deliberately does *not* repeat the server URL: Account & sync above owns
+ * that, and showing it twice invites the two displays to disagree.
+ */
+function AboutCard() {
+  // No Tauri platform check — `os` would be a plugin and an async call for one
+  // word of text. Android's WebView is the only one that says so in the UA.
+  const platform = !inTauri()
+    ? 'Browser (data stays in this browser)'
+    : /android/i.test(navigator.userAgent)
+      ? 'Android app'
+      : 'Desktop app';
+
+  return (
+    <div className="p-md rounded-xl bg-fill">
+      <h4 className="text-body-md font-semibold text-txt mb-xs">About</h4>
+      <p className="text-body-sm text-txt-muted">
+        Albas <span className="font-semibold text-txt">v{__APP_VERSION__}</span>
+        <span> · {platform}</span>
+      </p>
     </div>
   );
 }
