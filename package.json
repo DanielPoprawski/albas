@@ -10,7 +10,9 @@
     "version:set": "node scripts/version.mjs",
     "version:check": "node scripts/version.mjs --check",
     "app:desktop": "bun run tauri build",
-    "app:android": "bun run tauri android build -- --apk --target aarch64",
+    "app:android": "bun run tauri android build -- --apk --target aarch64 && bun run android:install",
+    "android:install": "adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk",
+    "android:launch": "adb shell am start -n dev.daniel_p.albas/dev.daniel_p.albas.MainActivity",
     "tauri": "WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 tauri"
   },
   "dependencies": {

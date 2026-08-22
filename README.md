@@ -53,7 +53,7 @@ app**:
 | `bun run build` | `tsc && vite build`. The **frontend bundle only**. Does not touch the desktop binary. |
 | `bun run tauri build` (or `bun run app:desktop`) | Builds `src-tauri/target/release/albas` plus the deb/rpm/AppImage. **This** is what updates an installed desktop app. |
 | `bun run tauri android dev` | Installs `dev.daniel_p.albas.dev`, whose webview loads the UI from the Vite dev server over the LAN. Useless away from the desk. |
-| `bun run app:android` | A standalone signed release APK. Being plugged into the PC does nothing on its own — it still needs an `adb install` (below). |
+| `bun run app:android` | A standalone signed release APK, **and installs it** to the connected device. `android:install` re-installs the last build without recompiling; `android:launch` starts it. |
 
 ### Building
 
@@ -61,10 +61,13 @@ app**:
 # Desktop
 bun run app:desktop
 
-# Android release APK, then install it
+# Android: build the signed release APK and install it on the connected device
 bun run app:android
-adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
 ```
+
+`tauri android build` on its own only *compiles* — unlike `android dev`, it has no
+install step — so `app:android` chains `adb install -r` after it. Same signing key and
+applicationId means that's an in-place upgrade: the app's database survives.
 
 Debug Android builds install as a **separate app** (`dev.daniel_p.albas.dev`, launcher name
 "albas dev") with their own database, so switching between a dev build and the real app

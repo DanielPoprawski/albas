@@ -34,9 +34,13 @@ bun run tauri android build -- --debug --apk --target aarch64
 unzip -p src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk \
   assets/tauri.conf.json | grep -o '"devUrl":"[^"]*"'
 
-# Signed release build (see "Android signing" below)
-bun run app:android    # = tauri android build -- --apk --target aarch64
-adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+# Signed release build (see "Android signing" below), installed on the device.
+# `tauri android build` only compiles — unlike `android dev` it has no install
+# step — so the script chains adb itself. Same key + applicationId, so it is an
+# in-place upgrade and the app's database survives.
+bun run app:android      # build + adb install -r
+bun run android:install  # re-install the last build, no recompile
+bun run android:launch   # start it (release id is unsuffixed)
 
 # Build for production
 bun run build          # frontend ONLY (tsc + vite) — does not touch the desktop binary
