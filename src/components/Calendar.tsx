@@ -1,26 +1,33 @@
 import { useApp } from '../context/AppContext';
 import CalendarNav from './calendar/CalendarNav';
+import CalendarCategories from './calendar/CalendarCategories';
 import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
 
-export default function Calendar({ isMobile = false }: { isMobile?: boolean }) {
+interface CalendarProps {
+  isMobile?: boolean;
+  onAdd?: () => void;
+}
+
+export default function Calendar({ isMobile = false, onAdd }: CalendarProps) {
   const { calendarMode } = useApp();
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* The title lives in the top bar, and on mobile so does the navigation —
-          the grid needs that row's height more than the phone needs a second
-          bar. Desktop keeps it here, above the sheet. */}
-      {!isMobile && (
-        <div className="flex items-center mb-md flex-shrink-0">
-          <CalendarNav />
-        </div>
-      )}
+    <>
+      {!isMobile && <CalendarCategories />}
+      <div className="flex flex-col h-full min-h-0 bg-surface">
+        {/* Mobile navigation — desktop header is in MonthViewDesktop */}
+        {isMobile && (
+          <div className="flex items-center mb-0 flex-shrink-0">
+            <CalendarNav compact />
+          </div>
+        )}
 
-      {calendarMode === 'month' && <MonthView isMobile={isMobile} />}
-      {calendarMode === 'week' && <WeekView />}
-      {calendarMode === 'day' && <DayView />}
-    </div>
+        {calendarMode === 'month' && <MonthView isMobile={isMobile} onAdd={onAdd} />}
+        {calendarMode === 'week' && <WeekView />}
+        {calendarMode === 'day' && <DayView />}
+      </div>
+    </>
   );
 }

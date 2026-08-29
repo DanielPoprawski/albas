@@ -10,7 +10,8 @@ import { remindDueEvents, remindDueTodos } from '../notifications';
 import Calendar from './Calendar';
 import HomeView from './HomeView';
 import RightPanel from './RightPanel';
-import TodoPanel from './TodoPanel';
+import TodoViewRedesign from './TodoViewRedesign';
+import HabitsView from './HabitsView';
 import Settings from './Settings';
 import Welcome from './Welcome';
 import { useApp } from '../context/AppContext';
@@ -278,18 +279,10 @@ export default function AppShell() {
             {route === 'dashboard' && (isMobile ? <HomeView /> : <Calendar />)}
             {route === 'dashboard' && !isMobile && <RightPanel />}
 
-            {route === 'todo' && (
-              <div className="flex-1 min-w-0 overflow-auto scrollbar-hide p-[var(--space-16)]">
-                <TodoPanel />
-              </div>
-            )}
+            {route === 'todo' && <TodoViewRedesign />}
 
             {/* Package 04 owns this screen; the shell only routes to it. */}
-            {route === 'habits' && (
-              <div className="flex-1 min-w-0 overflow-auto p-[var(--space-24)] text-ui text-ink-muted">
-                Habits
-              </div>
-            )}
+            {route === 'habits' && <HabitsView />}
 
             {route === 'settings' && (
               <div className="flex-1 min-w-0 overflow-auto p-[var(--space-16)]">

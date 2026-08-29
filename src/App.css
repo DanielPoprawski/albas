@@ -609,6 +609,45 @@ svg.lucide {
   display: none;
 }
 
+/* ── Category items ───────────────────────────────────────────────────── */
+.category-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.category-item:hover {
+  background: var(--t-subtle);
+}
+
+.category-check {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--t-border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--t-accent);
+  flex-shrink: 0;
+}
+
+.category-check.checked {
+  background: var(--t-accent);
+  border-color: var(--t-accent);
+  color: white;
+}
+
+.category-color {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+}
+
 /* ── Bottom taskbar ───────────────────────────────────────────────────── */
 .bottom-bar {
   height: 32px;
@@ -692,4 +731,101 @@ svg.lucide {
     border-bottom: 1px solid var(--t-border);
     padding: 16px;
   }
+}
+
+/* ── To-Do View Redesign ──────────────────────────────────────────────── */
+
+/* Text size utilities for the redesign */
+.text-h1 {
+  font-size: var(--text-h1);
+  line-height: var(--text-h1--line-height);
+  font-weight: var(--text-h1--font-weight);
+}
+
+.text-h2 {
+  font-size: var(--text-h2);
+  line-height: var(--text-h2--line-height);
+  font-weight: var(--text-h2--font-weight);
+}
+
+.text-ui {
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+
+.text-meta {
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
+}
+
+.text-micro {
+  font-size: var(--text-micro);
+  line-height: var(--text-micro--line-height);
+  letter-spacing: var(--text-micro--letter-spacing);
+  font-weight: var(--text-micro--font-weight);
+}
+
+/* Shadow utilities for cards */
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+.shadow-pop {
+  box-shadow: var(--shadow-pop);
+}
+
+.shadow-modal {
+  box-shadow: var(--shadow-modal);
+}
+
+/* Color utilities for text */
+.text-ink {
+  color: var(--t-ink);
+}
+
+.text-ink-secondary {
+  color: var(--t-ink-secondary);
+}
+
+.text-ink-muted {
+  color: var(--t-ink-muted);
+}
+
+/* Background utilities */
+.bg-page {
+  background-color: var(--t-page);
+}
+
+.bg-surface {
+  background-color: var(--t-surface);
+}
+
+.bg-subtle {
+  background-color: var(--t-subtle);
+}
+
+.bg-accent-tint {
+  background-color: var(--t-accent-tint);
+}
+
+/* Border utilities */
+.border-border {
+  border-color: var(--t-border);
+}
+
+.border-border-strong {
+  border-color: var(--t-border-strong);
+}
+
+/* Accent color utilities */
+.text-accent {
+  color: var(--t-accent);
+}
+
+.bg-accent {
+  background-color: var(--t-accent);
+}
+
+.bg-accent-hover {
+  background-color: var(--t-accent-hover);
 }

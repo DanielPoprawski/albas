@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
+import { fmt } from '../../dates';
 import AddModal from '../AddModal';
 import MonthViewDesktop, { PILL_CAP as DESKTOP_PILL_CAP } from './MonthViewDesktop';
 import MonthViewMobile, { DUE_DOTS as MOBILE_DUE_DOTS, MIN_WEEKS as MOBILE_MIN_WEEKS, PILL_CAP as MOBILE_PILL_CAP } from './MonthViewMobile';
@@ -15,11 +16,27 @@ export { getCalendarDays } from './monthModel';
  * that branching inside one component was the bulk of its complexity — but they
  * share every derived value, so the split is presentational only.
  */
-export default function MonthView({ isMobile = false }: { isMobile?: boolean }) {
+interface MonthViewProps {
+  isMobile?: boolean;
+  onAdd?: () => void;
+}
+
+export default function MonthView({ isMobile = false, onAdd: onAddProp }: MonthViewProps) {
   const { setSelectedDate, setCalendarMode } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [editTodo, setEditTodo] = useState<Todo | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
+
+  // Connect the onAdd callback from the parent - open modal for today's date
+  const handleAdd = useCallback(() => {
+    const today = fmt(new Date());
+    if (onAddProp) {
+      onAddProp();
+    } else {
+      setAddDate(today);
+    }
+  }, [onAddProp]);
+
 
   const weeks = useMonthModel(
     isMobile
@@ -42,6 +59,7 @@ export default function MonthView({ isMobile = false }: { isMobile?: boolean }) 
       if (isMobile) setCalendarMode('day');
       else setAddDate(dateStr);
     },
+    onAdd: handleAdd,
   };
 
   return (

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 
-/** Phone-width breakpoint. Below this the app switches to the drawer layout. */
-const MOBILE_QUERY = '(max-width: 767px)';
+/**
+ * Phone-width breakpoint. Below this the app switches to the mobile layout:
+ * no sidebar, no desktop taskbar, bottom tabs instead.
+ */
+const MOBILE_QUERY = '(max-width: 768px)';
 
 /**
  * matchMedia rather than a Tauri platform check, deliberately: it needs no
