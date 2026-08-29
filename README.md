@@ -1,5 +1,9 @@
-# Albas
-
+#     ___     ____
+#    /   |   / / /_  ____ ______
+#   / /| |  / / __ \/ __ `/ ___/
+#  / ___ | / / /_/ / /_/ (__  )
+# /_/  |_|/_/_.___/\__,_/____/
+#
 **The ultimate productivity suite** — for managing your schedule, keeping track of chores
 and errands, and building your habits.
 

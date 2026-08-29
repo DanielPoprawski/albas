@@ -1,12 +1,18 @@
 /**
- * The sync server this build ships pointing at.
+ * The sync server, full stop.
  *
- * It is a *default*, not a lock: the Server field in Welcome and in
- * Settings → Account & sync stays editable, and whatever is stored in
- * `__sync_url` always wins. Hardcoding it just means a fresh install can sign
- * in without anyone typing a URL — the common case now that there is one real
- * server. Rust keeps its own copy of this string (`sync::DEFAULT_URL`) for the
- * same reason, and the two must stay in step.
+ * This was a *default* behind an editable Server field in Welcome and in
+ * Settings → Account & sync; both fields are gone. There is one hosted server,
+ * an account on it is the product, and a URL box asking a person to name their
+ * own only ever produced typos and a stale `http://localhost:8787/sync` sitting
+ * in front of this constant forever. Rust keeps its own copy of the string
+ * (`sync::DEFAULT_URL`, in endpoint form) and the two must stay in step.
+ *
+ * `__sync_url` still wins over it in Rust, and is still what the passkey flow
+ * writes — nothing reads a URL from the UI any more, so the only values that
+ * can be in there are this one and leftovers `db::repoint_default_server`
+ * sweeps. Pointing a build at another server means editing these two
+ * constants, not shipping the field again.
  */
 export const DEFAULT_SYNC_URL = 'https://albas.danni-dev.com/api';
 

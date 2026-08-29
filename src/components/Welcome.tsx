@@ -4,7 +4,6 @@ import { useApp } from '../context/AppContext';
 import { inputClass, labelClass } from './forms/shared';
 import { usePasskeyAuth } from './auth/usePasskeyAuth';
 import PinDialog from './auth/PinDialog';
-import { DEFAULT_SYNC_URL } from '../syncServer';
 
 type Mode = 'menu' | 'signin' | 'create';
 
@@ -24,7 +23,6 @@ export default function Welcome() {
   const { setSetting } = useApp();
   const auth = usePasskeyAuth();
   const [mode, setMode] = useState<Mode>('menu');
-  const [url, setUrl] = useState(DEFAULT_SYNC_URL);
   const [name, setName] = useState('');
   const [invite, setInvite] = useState('');
 
@@ -57,18 +55,6 @@ export default function Welcome() {
 
         {mode !== 'menu' && (
           <div className="flex flex-col gap-sm">
-            <div>
-              <label className={labelClass}>Server</label>
-              <input
-                className={inputClass}
-                autoComplete="off"
-                placeholder="https://sync.example.com"
-                value={url}
-                onChange={e => setUrl(e.target.value)}
-                disabled={busy}
-              />
-            </div>
-
             {mode === 'create' && (
               <>
                 <div>
@@ -83,7 +69,7 @@ export default function Welcome() {
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Invite code (only if the server requires one)</label>
+                  <label className={labelClass}>Invite code (only to add a passkey to an account you already have)</label>
                   <input
                     className={inputClass}
                     autoComplete="off"
@@ -105,10 +91,10 @@ export default function Welcome() {
               <button
                 onClick={() =>
                   mode === 'signin'
-                    ? auth.signIn(url)
-                    : auth.createAccount(url, name.trim(), invite.trim() || null)
+                    ? auth.signIn()
+                    : auth.createAccount(name.trim(), invite.trim() || null)
                 }
-                disabled={busy || url.trim() === '' || (mode === 'create' && name.trim() === '')}
+                disabled={busy || (mode === 'create' && name.trim() === '')}
                 className={PRIMARY_BTN}
               >
                 {mode === 'signin' ? 'Sign in' : 'Create account'}

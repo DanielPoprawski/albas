@@ -1,7 +1,9 @@
-import { forwardRef, useState } from 'react';
-import { CircleUser } from 'lucide-react';
+import { forwardRef, useEffect, useState } from 'react';
+import { CircleUser, RefreshCw } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { stampLabel, timeAgo } from '../dates';
 import { inTauri } from '../persistence';
+import { cn } from '../lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,13 +31,16 @@ export const STATUS_BAR_H = 28;
  * nowhere and the trigger looks dead.
  */
 const StatusItem = forwardRef<HTMLButtonElement, React.ComponentProps<'button'>>(
-  function StatusItem({ children, ...props }, ref) {
+  function StatusItem({ children, className, ...props }, ref) {
     return (
       <button
         type="button"
         ref={ref}
         {...props}
-        className="h-full px-sm flex items-center gap-1.5 text-[11px] leading-none text-txt-faint hover:text-txt hover:bg-fill transition-colors cursor-default select-none"
+        className={cn(
+          'h-full px-sm flex items-center gap-1.5 text-[11px] leading-none text-txt-faint hover:text-txt hover:bg-fill transition-colors cursor-default select-none',
+          className
+        )}
       >
         {children}
       </button>
@@ -99,6 +104,69 @@ function AccountItem() {
 }
 
 /**
+ * Last sync, and the button that runs one. Two readings of the same instant
+ * because they answer different questions: the clock time says *which* sync
+ * this was (the one before lunch, the one after the phone edit), and "5m ago"
+ * says whether it is recent enough to trust without doing anything. The stamp
+ * drops its date on the day it happened — see `stampLabel`.
+ *
+ * Only rendered when credentials exist: with no account there is nothing to
+ * sync with, and a permanently dead button next to "Not signed in" would say
+ * less than the account module already does.
+ */
+function SyncItem() {
+  const { signedIn, lastSync, syncing, syncNow } = useApp();
+  const [failed, setFailed] = useState(false);
+  // Re-render on a timer so "5m ago" ages on its own. Half a minute keeps the
+  // first minute honest without being a clock; nothing here reads the network.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!signedIn || !inTauri()) return null;
+
+  async function sync() {
+    if (syncing) return;
+    setFailed(false);
+    try {
+      await syncNow();
+    } catch {
+      // The bar has room for a word, not a reason. Settings → Account & sync
+      // runs the same call and reports what actually went wrong.
+      setFailed(true);
+    }
+  }
+
+  const label = syncing
+    ? 'Syncing…'
+    : failed
+      ? 'Sync failed'
+      : lastSync === null
+        ? 'Never synced'
+        : `${stampLabel(lastSync, now)} · ${timeAgo(lastSync, now)}`;
+
+  const title = failed
+    ? 'Sync failed — open Settings → Account & sync for the reason'
+    : lastSync === null
+      ? 'Sync now — this device has not synced yet'
+      : `Last synced ${new Date(lastSync).toLocaleString()} — click to sync now`;
+
+  return (
+    <StatusItem
+      title={title}
+      onClick={() => { void sync(); }}
+      className={failed ? 'text-danger' : undefined}
+    >
+      <RefreshCw size={12} strokeWidth={1.8} className={syncing ? 'animate-spin' : undefined} />
+      <span>{label}</span>
+    </StatusItem>
+  );
+}
+
+/**
  * The running version, injected by Vite from package.json (see `define` in
  * vite.config.ts). Clicking it opens Settings, where the About card shows the
  * same number with the platform beside it — a module that did nothing on click
@@ -134,7 +202,12 @@ export default function StatusBar() {
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-line bg-chrome flex items-center justify-between"
     >
       <VersionItem />
-      <AccountItem />
+      {/* `justify-between` splits the bar in two, so the right-hand modules
+          need this wrapper rather than being appended as siblings. */}
+      <div className="h-full flex items-center">
+        <SyncItem />
+        <AccountItem />
+      </div>
     </footer>
   );
 }

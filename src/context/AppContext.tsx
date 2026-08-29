@@ -55,6 +55,24 @@ export type NewEvent = Omit<CalendarEvent, 'id'>;
 
 export type NewWeight = Omit<WeightEntry, 'id'>;
 
+/** Mirrors `SyncOutcome` from Rust's `sync_now` (src-tauri/src/sync.rs). */
+export interface SyncOutcome {
+  pushed: number;
+  pulled: number;
+  skipped: number;
+  sharedChanged: boolean;
+  /** Epoch millis as a string — an i64 that would lose precision as a JSON number. */
+  lastSync: string | null;
+}
+
+/** Mirrors `SyncStatus` from Rust's `sync_status`. */
+export interface SyncStatusInfo {
+  configured: boolean;
+  url: string | null;
+  account: string | null;
+  lastSync: string | null;
+}
+
 interface AppContextType {
   todos: Todo[];
   events: CalendarEvent[];
@@ -105,6 +123,17 @@ interface AppContextType {
   signedIn: boolean;
   /** Account name from passkey login; null for token-only setups. */
   syncAccount: string | null;
+  /** Epoch millis of the last successful sync on this device, or null for never. */
+  lastSync: number | null;
+  /** True while a sync is in flight, whoever started it. */
+  syncing: boolean;
+  /**
+   * Runs a sync and folds the result back into React. Every caller goes
+   * through this — the status bar, Settings, and the once-per-launch effect
+   * below — so there is a single `lastSync` rather than one per surface.
+   * Rejects on failure; how loudly to say so is the caller's business.
+   */
+  syncNow: () => Promise<SyncOutcome>;
   /** Welcome screen dismissed (or made moot by being signed in). */
   welcomeDone: boolean;
 }
@@ -143,6 +172,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [activeView, setActiveView] = useState<ActiveView>('calendar');
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('month');
+  const [lastSync, setLastSync] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const initStarted = useRef(false);
   const syncStarted = useRef(false); // StrictMode double-mount guard
 
@@ -213,10 +244,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const status = await invoke<{ configured: boolean }>('sync_status');
+        const status = await invoke<SyncStatusInfo>('sync_status');
         if (!status.configured) return;
-        const out = await invoke<{ pulled: number; sharedChanged: boolean }>('sync_now');
-        if (out.pulled > 0 || out.sharedChanged) await reloadFromStore();
+        await syncNow();
       } catch (err) {
         console.warn('startup sync failed:', err);
       }
@@ -335,6 +365,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await refreshShared();
   }
 
+  /**
+   * The one place a sync is run from. Rust merges straight into SQLite, so a
+   * pull has to be read back into React here; doing that per caller is how the
+   * status bar and Settings would come to disagree about what is on screen and
+   * when it last arrived.
+   */
+  async function syncNow(): Promise<SyncOutcome> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    setSyncing(true);
+    try {
+      const out = await invoke<SyncOutcome>('sync_now');
+      if (out.pulled > 0 || out.sharedChanged) await reloadFromStore();
+      if (out.lastSync) setLastSync(Number(out.lastSync));
+      return out;
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   const hiddenOwners = useMemo<string[]>(() => {
     try {
       const parsed = JSON.parse(settings.__shared_hidden ?? '[]');
@@ -358,6 +407,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const signedIn = !!settings.__sync_token?.trim();
 
+  // Rust owns the stamp, and not every sync passes through `syncNow`: a
+  // passkey ceremony (`usePasskeyAuth`) syncs from inside the flow, so on
+  // sign-in React can only learn when that happened by asking. Signing out
+  // clears it — the next account's history is not this one's.
+  useEffect(() => {
+    if (!inTauri()) return;
+    if (!signedIn) {
+      setLastSync(null);
+      return;
+    }
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const status = await invoke<SyncStatusInfo>('sync_status');
+        setLastSync(status.lastSync ? Number(status.lastSync) : null);
+      } catch {
+        // backend not ready — the bar reads "never synced" until one runs
+      }
+    })();
+  }, [signedIn]);
+
   return (
     <AppContext.Provider value={{
       todos, events, weights, loaded,
@@ -379,6 +449,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleOwnerHidden,
       signedIn,
       syncAccount: settings.__sync_account?.trim() || null,
+      lastSync,
+      syncing,
+      syncNow,
       welcomeDone: !!settings.__welcome_done || signedIn,
     }}>
       {children}

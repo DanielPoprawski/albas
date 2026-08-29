@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Albas — Habits</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Sora:wght@400;600;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Outfit', sans-serif; background: #f8fafb; color: #1a202c; }
+    a { color: #a855f7; }
+    a:hover { color: #9333ea; }
+    .desktop-shell { width: 100%; height: 100vh; display: flex; flex-direction: column; }
+    .sidebar { width: 200px; background: white; border-right: 1px solid #e5e7eb; padding: 24px 16px; display: flex; flex-direction: column; gap: 24px; overflow-y: auto; flex-shrink: 0; }
+    .sidebar-logo { font-size: 16px; font-weight: 700; font-family: 'Sora', sans-serif; color: #1a202c; display: flex; align-items: center; gap: 8px; }
+    .logo-mark { width: 20px; height: 20px; background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); color: white; display: flex; align-items: center; justify-content: center; font-family: 'Sora', sans-serif; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+    .sidebar-section { display: flex; flex-direction: column; gap: 8px; }
+    .sidebar-title { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .sidebar-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; cursor: pointer; font-size: 12px; color: #6b7280; text-decoration: none; transition: all 0.2s; }
+    .sidebar-item svg { flex-shrink: 0; color: inherit; }
+    .sidebar-item:hover { background: #f3f4f6; color: #1a202c; }
+    .sidebar-item.active { color: #a855f7; font-weight: 500; }
+    .content { flex: 1; display: flex; overflow: hidden; }
+    .main-column { flex: 1; display: flex; flex-direction: column; background: white; overflow: hidden; }
+    .habits-header { display: flex; flex-direction: column; gap: 2px; padding: 16px 24px; border-bottom: 1px solid #e5e7eb; }
+    .habits-header h1 { font-size: 18px; font-weight: 700; font-family: 'Sora', sans-serif; margin: 0; }
+    .habits-header p { font-size: 12px; color: #9ca3af; }
+    .habits-body { flex: 1; overflow-y: auto; padding: 24px; }
+    .stats-row { display: flex; gap: 16px; margin-bottom: 20px; }
+    .stat-card { flex: 1; background: white; border: 1px solid #e5e7eb; padding: 16px 20px; }
+    .stat-value { font-family: 'Sora', sans-serif; font-size: 26px; font-weight: 700; }
+    .stat-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    .week-chart-card { background: white; border: 1px solid #e5e7eb; padding: 20px; margin-bottom: 24px; }
+    .week-chart-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #9ca3af; margin-bottom: 16px; }
+    .week-chart-bars { display: flex; align-items: flex-end; gap: 12px; height: 110px; }
+    .week-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
+    .week-bar-track { width: 100%; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
+    .week-bar-fill { width: 100%; background: #a855f7; min-height: 4px; }
+    .week-bar-label { font-size: 11px; color: #9ca3af; }
+    .habits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .habit-card { background: white; border: 1px solid #e5e7eb; padding: 18px; display: flex; flex-direction: column; gap: 14px; transition: border-color 0.2s; }
+    .habit-card:hover { border-color: #a855f7; }
+    .habit-card-top { display: flex; align-items: center; gap: 10px; }
+    .habit-color-dot { width: 10px; height: 10px; flex-shrink: 0; }
+    .habit-name { font-size: 14px; font-weight: 600; font-family: 'Sora', sans-serif; flex: 1; }
+    .habit-cadence-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 8px; flex-shrink: 0; }
+    .habit-stats-row { display: flex; gap: 20px; }
+    .habit-stat { display: flex; flex-direction: column; }
+    .habit-stat-num { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 700; }
+    .habit-stat-label { font-size: 10px; color: #9ca3af; }
+    .habit-reminder { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #6b7280; }
+    .habit-heatmap { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 9px); gap: 2px; }
+    .habit-heatmap-cell { width: 9px; height: 9px; background: #f3f4f6; border: 1px solid #e5e7eb; }
+    .habit-done-btn { border: 1px solid #a855f7; background: white; color: #a855f7; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; padding: 8px 12px; cursor: pointer; transition: all 0.2s; }
+    .habit-done-btn:hover { background: #faf5ff; }
+    .habit-done-btn.done { background: #a855f7; color: white; }
+    .habit-done-btn.done:hover { background: #9333ea; }
+    .add-habit-btn { position: fixed; bottom: 40px; right: 32px; width: 56px; height: 56px; background: #a855f7; color: white; border: none; cursor: pointer; font-size: 28px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3); transition: all 0.2s; }
+    .add-habit-btn:hover { background: #9333ea; }
+    .bottom-bar { height: 32px; background: white; border-top: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 11px; color: #6b7280; flex-shrink: 0; }
+    .bar-version { font-weight: 600; color: #1a202c; }
+    .bar-right { display: flex; align-items: center; gap: 12px; }
+    .bar-sync { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .bar-sync:hover { color: #a855f7; }
+    .bar-divider { width: 1px; height: 14px; background: #e5e7eb; }
+    .bar-user { display: flex; align-items: center; gap: 8px; }
+    .user-icon { width: 20px; height: 20px; background: #a855f7; color: white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; flex-shrink: 0; }
+    @media (max-width: 768px) {
+      .desktop-shell, .content { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid #e5e7eb; }
+      .stats-row { flex-direction: column; }
+    }
+  </style>
+</helmet>
+
+<div class="desktop-shell">
+  <div class="content">
+    <div class="sidebar">
+      <div class="sidebar-logo"><span class="logo-mark"><svg viewBox="0 0 100 100" width="20" height="20"><path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#fff"></path><path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#fff" fill-opacity="0.55"></path><path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#fff"></path></svg></span>Albas</div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">Menu</div>
+        <a class="sidebar-item" href="./Albas%20Desktop%20Dashboard.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+          Dashboard
+        </a>
+        <a class="sidebar-item" href="./Albas%20To-Do.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="6" height="6"></rect><path d="M4.5 7l1 1 2-2"></path><line x1="12" y1="7" x2="21" y2="7"></line><rect x="3" y="14" width="6" height="6"></rect><path d="M4.5 17l1 1 2-2"></path><line x1="12" y1="17" x2="21" y2="17"></line></svg>
+          To-Do
+        </a>
+        <a class="sidebar-item active" href="./Albas%20Habits.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+          Habits
+        </a>
+        <a class="sidebar-item" href="./Albas%20Settings.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg>
+          Settings
+        </a>
+      </div>
+    </div>
+
+    <div class="main-column">
+      <div class="habits-header">
+        <h1>Habits</h1>
+        <p>Build consistency, one day at a time.</p>
+      </div>
+
+      <div class="habits-body">
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-value">{{ todayDoneCount }}/{{ totalHabits }}</div>
+            <div class="stat-label">Completed today</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{{ bestOverallStreak }}</div>
+            <div class="stat-label">Longest active streak</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{{ weeklyRateOverall }}%</div>
+            <div class="stat-label">Weekly completion rate</div>
+          </div>
+        </div>
+
+        <div class="week-chart-card">
+          <div class="week-chart-title">This Week</div>
+          <div class="week-chart-bars">
+            <sc-for list="{{ weekBars }}" as="day" hint-placeholder-count="7">
+              <div class="week-bar-col">
+                <div class="week-bar-track"><div class="week-bar-fill" style="height: {{ day.pctStr }};"></div></div>
+                <div class="week-bar-label">{{ day.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div class="habits-grid">
+          <sc-for list="{{ habits }}" as="h" hint-placeholder-count="6">
+            <div class="habit-card">
+              <div class="habit-card-top">
+                <div class="habit-color-dot" style="background: {{ h.color }};"></div>
+                <div class="habit-name">{{ h.name }}</div>
+                <div class="habit-cadence-tag" style="color: {{ h.color }}; background: {{ h.tagBg }};">{{ h.category }}</div>
+              </div>
+              <div class="habit-stats-row">
+                <div class="habit-stat"><span class="habit-stat-num">{{ h.currentStreak }}</span><span class="habit-stat-label">Day streak</span></div>
+                <div class="habit-stat"><span class="habit-stat-num">{{ h.bestStreak }}</span><span class="habit-stat-label">Best streak</span></div>
+                <div class="habit-stat"><span class="habit-stat-num">{{ h.weeklyRate }}%</span><span class="habit-stat-label">This week</span></div>
+              </div>
+              <div class="habit-reminder">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                Reminder · {{ h.reminderTime }}
+              </div>
+              <div class="habit-heatmap">
+                <sc-for list="{{ h.cells }}" as="cell" hint-placeholder-count="63">
+                  <div class="habit-heatmap-cell" style="background: {{ cell.bg }}; border-color: {{ cell.border }};"></div>
+                </sc-for>
+              </div>
+              <button class="habit-done-btn {{ h.doneClass }}" onClick="{{ toggleHabit }}" data-id="{{ h.id }}">{{ h.doneLabel }}</button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="bar-version">v1.9.0</div>
+    <div class="bar-right">
+      <span class="bar-sync">↻ 11:12 PM · just now</span>
+      <span class="bar-divider"></span>
+      <span class="bar-user"><span class="user-icon">DP</span>Daniel P</span>
+    </div>
+  </div>
+
+  <button class="add-habit-btn" onClick="{{ addHabit }}" title="Add new habit">+</button>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+function genHistory(seed, len, rate, forceStreak) {
+  let arr = [];
+  let s = seed;
+  for (let i = 0; i < len; i++) {
+    s = (s * 9301 + 49297) % 233280;
+    arr.push((s / 233280) < rate ? 1 : 0);
+  }
+  if (forceStreak) {
+    for (let i = 1; i <= forceStreak; i++) arr[len - i] = 1;
+    if (len - forceStreak - 1 >= 0) arr[len - forceStreak - 1] = 0;
+  }
+  return arr;
+}
+
+function computeStreaks(history) {
+  let current = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]) current++; else break;
+  }
+  let best = 0, run = 0;
+  for (const d of history) {
+    if (d) { run++; best = Math.max(best, run); } else run = 0;
+  }
+  return { current, best };
+}
+
+const HABIT_DEFS = [
+  { id: 1, name: 'Morning Meditation', category: 'Mindfulness', color: '#a855f7', reminderTime: '7:00 AM', seed: 3, rate: 0.82, force: 12 },
+  { id: 2, name: 'Read 20 Minutes', category: 'Learning', color: '#3b82f6', reminderTime: '9:00 PM', seed: 7, rate: 0.7, force: 5 },
+  { id: 3, name: 'Workout', category: 'Fitness', color: '#06b6d4', reminderTime: '6:30 AM', seed: 11, rate: 0.65, force: 21 },
+  { id: 4, name: 'Drink 8 Glasses of Water', category: 'Health', color: '#10b981', reminderTime: 'All day', seed: 17, rate: 0.88, force: 3 },
+  { id: 5, name: 'Journal', category: 'Productivity', color: '#f59e0b', reminderTime: '10:00 PM', seed: 23, rate: 0.6, force: 8 },
+  { id: 6, name: 'No Phone Before Bed', category: 'Sleep', color: '#ec4899', reminderTime: '10:30 PM', seed: 29, rate: 0.55, force: 1 }
+];
+
+const HISTORY_LEN = 63;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TODAY = new Date(2026, 7, 28);
+
+class Component extends DCLogic {
+  state = {
+    habits: HABIT_DEFS.map(def => ({
+      ...def,
+      history: genHistory(def.seed, HISTORY_LEN, def.rate, def.force)
+    }))
+  };
+
+  toggleHabit = (e) => {
+    const id = Number(e.currentTarget.dataset.id);
+    this.setState(s => ({
+      habits: s.habits.map(h => {
+        if (h.id !== id) return h;
+        const history = h.history.slice();
+        history[history.length - 1] = history[history.length - 1] ? 0 : 1;
+        return { ...h, history };
+      })
+    }));
+  };
+
+  addHabit = () => alert('Add habit modal would open');
+
+  renderVals() {
+    const { habits } = this.state;
+    const totalHabits = habits.length;
+
+    const decorated = habits.map(h => {
+      const { current, best } = computeStreaks(h.history);
+      const last7 = h.history.slice(-7);
+      const weeklyRate = Math.round((last7.reduce((a, b) => a + b, 0) / 7) * 100);
+      const doneToday = !!h.history[h.history.length - 1];
+      const cells = h.history.map(d => ({
+        bg: d ? h.color : '#f3f4f6',
+        border: d ? h.color : '#e5e7eb'
+      }));
+      return {
+        ...h,
+        currentStreak: current,
+        bestStreak: best,
+        weeklyRate,
+        tagBg: h.color + '14',
+        doneClass: doneToday ? 'done' : '',
+        doneLabel: doneToday ? 'Completed today' : 'Mark as done',
+        cells
+      };
+    });
+
+    const todayDoneCount = decorated.filter(h => h.doneClass === 'done').length;
+    const bestOverallStreak = Math.max(...decorated.map(h => h.currentStreak));
+
+    let weekSum = 0;
+    for (const h of habits) weekSum += h.history.slice(-7).reduce((a, b) => a + b, 0);
+    const weeklyRateOverall = Math.round((weekSum / (totalHabits * 7)) * 100);
+
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weekBars = [];
+    for (let i = 6; i >= 0; i--) {
+      const dayIdx = HISTORY_LEN - 1 - i;
+      const done = habits.reduce((sum, h) => sum + h.history[dayIdx], 0);
+      const pct = Math.round((done / totalHabits) * 100);
+      const date = new Date(TODAY.getTime() - i * DAY_MS);
+      weekBars.push({ label: dayNames[date.getDay()], pctStr: pct + '%' });
+    }
+
+    return {
+      habits: decorated,
+      totalHabits,
+      todayDoneCount,
+      bestOverallStreak,
+      weeklyRateOverall,
+      weekBars,
+      toggleHabit: this.toggleHabit,
+      addHabit: this.addHabit
+    };
+  }
+}
+
+</script>
+</body>
+</html>

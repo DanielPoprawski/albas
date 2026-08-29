@@ -174,6 +174,12 @@ const SUPERSEDED_URLS: &[&str] = &["https://albas-api.danni-dev.com/sync"];
 
 /// Runs once per former default, flagged so a person who deliberately types an
 /// old URL back in doesn't have it taken away again on the next launch.
+///
+/// The second sweep is unflagged and unconditional, and deliberately so: since
+/// `check_url` dropped its loopback exemption there is no longer any `http://`
+/// URL the app will accept, so a stored one cannot have been typed back in on
+/// purpose — it can only be a leftover from local testing, sitting in front of
+/// `DEFAULT_URL` and syncing to a machine that isn't listening.
 fn repoint_default_server(conn: &Connection) -> rusqlite::Result<()> {
     for old in SUPERSEDED_URLS {
         let flag = format!("repointed:{old}");
@@ -184,6 +190,11 @@ fn repoint_default_server(conn: &Connection) -> rusqlite::Result<()> {
             write_setting(conn, crate::sync::URL_SETTING, crate::sync::DEFAULT_URL)?;
         }
         write_meta(conn, &flag, "1")?;
+    }
+    if let Some(stored) = read_setting(conn, crate::sync::URL_SETTING) {
+        if crate::sync::check_url(&stored).is_err() {
+            write_setting(conn, crate::sync::URL_SETTING, crate::sync::DEFAULT_URL)?;
+        }
     }
     Ok(())
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { KeyRound, UserPlus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import type { SyncStatusInfo } from '../context/AppContext';
 import { inTauri } from '../persistence';
 import { parseIcs } from '../ics';
 import { inputClass, labelClass } from './forms/shared';
@@ -234,23 +235,6 @@ export default function Settings() {
   );
 }
 
-/** Mirrors the `SyncStatus` struct returned by the `sync_status` command. */
-interface SyncStatusInfo {
-  configured: boolean;
-  url: string | null;
-  account: string | null;
-  lastSync: string | null;
-}
-
-/** Mirrors `SyncOutcome` from `sync_now`. */
-interface SyncOutcome {
-  pushed: number;
-  pulled: number;
-  skipped: number;
-  sharedChanged: boolean;
-  lastSync: string | null;
-}
-
 type SyncState =
   | { kind: 'idle' }
   | { kind: 'busy'; what: string }
@@ -258,17 +242,22 @@ type SyncState =
   | { kind: 'error'; message: string };
 
 /**
- * Account + sync. Signing in is a passkey ceremony against the server, which
- * mints a token for this device; the older "paste a token" path is kept behind
- * a disclosure for token-only accounts and for servers without passkeys
- * configured.
+ * Account + sync. Signing in is a passkey ceremony against `DEFAULT_SYNC_URL`,
+ * which mints a token for this device; the older "paste a token" path is kept
+ * behind a disclosure for accounts minted with `/accounts`.
+ *
+ * There is deliberately **no server field and no URL on display**. One hosted
+ * server is the only one an account can exist on, so a URL here was never a
+ * choice a person could make correctly — it was a way to mistype the product,
+ * or to leave a localhost address wedged in front of the real one. What the
+ * card shows is an account, or an invitation to have one.
  */
 function AccountCard() {
-  const { setSetting, reloadFromStore } = useApp();
+  const { setSetting, reloadFromStore, syncNow } = useApp();
   const auth = usePasskeyAuth();
   const [status, setStatus] = useState<SyncStatusInfo | null>(null);
   const [state, setState] = useState<SyncState>({ kind: 'idle' });
-  const [form, setForm] = useState({ url: DEFAULT_SYNC_URL, token: '' });
+  const [token, setToken] = useState('');
   const [mode, setMode] = useState<'signin' | 'create'>('signin');
   const [name, setName] = useState('');
   const [invite, setInvite] = useState('');
@@ -287,9 +276,7 @@ function AccountCard() {
     (async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const s = await invoke<SyncStatusInfo>('sync_status');
-        setStatus(s);
-        setForm(f => ({ ...f, url: s.url ?? DEFAULT_SYNC_URL }));
+        setStatus(await invoke<SyncStatusInfo>('sync_status'));
       } catch {
         // backend not ready — the card still renders in its unconfigured state
       }
@@ -303,8 +290,8 @@ function AccountCard() {
       // Written through setSetting so React state and SQLite agree. The `__`
       // prefix keeps both keys out of the synced payload — the token must
       // never be uploaded to the server it authenticates against.
-      setSetting('__sync_url', syncEndpoint(form.url));
-      setSetting('__sync_token', form.token.trim());
+      setSetting('__sync_url', syncEndpoint(DEFAULT_SYNC_URL));
+      setSetting('__sync_token', token.trim());
       setSetting('__sync_account', '');
       setSetting('__welcome_done', '1');
       await refreshStatus();
@@ -318,10 +305,9 @@ function AccountCard() {
   async function sync() {
     setState({ kind: 'busy', what: 'Syncing…' });
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const out = await invoke<SyncOutcome>('sync_now');
-      // Rust merged straight into SQLite, so pull the rows back into React.
-      if (out.pulled > 0 || out.sharedChanged) await reloadFromStore();
+      // `syncNow` owns the reload-after-pull and the shared `lastSync`, so the
+      // status bar's stamp moves with this button too.
+      const out = await syncNow();
       await refreshStatus();
       const parts = [`sent ${out.pushed}`, `received ${out.pulled}`];
       if (out.skipped > 0) parts.push(`${out.skipped} skipped`);
@@ -343,7 +329,7 @@ function AccountCard() {
       await invoke('sync_sign_out');
       await reloadFromStore();
       await refreshStatus();
-      setForm({ url: form.url, token: '' });
+      setToken('');
       setState({ kind: 'idle' });
     } catch (err) {
       setState({ kind: 'error', message: String(err) });
@@ -354,9 +340,10 @@ function AccountCard() {
     <div className="p-md rounded-xl bg-fill">
       <h4 className="text-body-md font-semibold text-txt mb-xs">Account &amp; sync</h4>
       <p className="text-body-sm text-txt-muted mb-md">
-        Keeps your to-dos, events and weights in step across devices via your own
-        server. Albas stays fully offline-capable — edits are made locally and
-        reconciled on the next sync, with the most recent edit winning.
+        An Albas account keeps your to-dos, events and weights in step across your
+        devices. It is optional: without one Albas is fully usable and everything
+        stays on this device. Edits are always made locally and reconciled on the
+        next sync, with the most recent edit winning.
       </p>
 
       {!available ? (
@@ -367,7 +354,6 @@ function AccountCard() {
             {status.account
               ? <>Signed in as <span className="font-semibold">{status.account}</span></>
               : <>Connected with a sync token</>}
-            <span className="text-txt-muted"> · {status.url}</span>
             {status.lastSync && (
               <span className="text-txt-muted">
                 {' · last synced '}
@@ -391,17 +377,10 @@ function AccountCard() {
       ) : (
         <>
           <div className="flex flex-col gap-sm">
-            <div>
-              <label className={labelClass}>Server</label>
-              <input
-                className={inputClass}
-                autoComplete="off"
-                placeholder={DEFAULT_SYNC_URL}
-                value={form.url}
-                onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
-                disabled={busy}
-              />
-            </div>
+            <p className="text-body-sm text-txt-muted">
+              Your passkey — a security key, fingerprint or face unlock — is the
+              whole sign-in; there is no password. Accounts are free.
+            </p>
 
             {mode === 'create' && (
               <>
@@ -417,7 +396,7 @@ function AccountCard() {
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Invite code (only if the server requires one)</label>
+                  <label className={labelClass}>Invite code (only to add a passkey to an account you already have)</label>
                   <input
                     className={inputClass}
                     autoComplete="off"
@@ -433,8 +412,8 @@ function AccountCard() {
               {mode === 'signin' ? (
                 <>
                   <button
-                    onClick={() => auth.signIn(form.url)}
-                    disabled={busy || form.url.trim() === ''}
+                    onClick={() => auth.signIn()}
+                    disabled={busy}
                     className={`${PRIMARY_BTN} flex items-center gap-xs`}
                   >
                     <KeyRound size={14} /> Sign in with passkey
@@ -446,8 +425,8 @@ function AccountCard() {
               ) : (
                 <>
                   <button
-                    onClick={() => auth.createAccount(form.url, name.trim(), invite.trim() || null)}
-                    disabled={busy || form.url.trim() === '' || name.trim() === ''}
+                    onClick={() => auth.createAccount(name.trim(), invite.trim() || null)}
+                    disabled={busy || name.trim() === ''}
                     className={PRIMARY_BTN}
                   >
                     Create account
@@ -473,18 +452,17 @@ function AccountCard() {
                 className={inputClass}
                 type="password"
                 autoComplete="off"
-                value={form.token}
-                onChange={e => setForm(f => ({ ...f, token: e.target.value }))}
+                value={token}
+                onChange={e => setToken(e.target.value)}
               />
               <p className="text-[11px] text-txt-muted mt-xs">
-                For accounts minted with <code>/accounts</code>, or a server without passkeys
-                configured. The server field may be the base URL or the <code>/sync</code>{' '}
-                endpoint. Only https:// is accepted (http:// works for localhost while testing),
-                since the token is the only credential.
+                For accounts minted with <code>/accounts</code>, rather than with a passkey.
+                The token is the only credential, so it is sent to {DEFAULT_SYNC_URL} over
+                https and nowhere else.
               </p>
               <button
                 onClick={connectManually}
-                disabled={busy || form.url.trim() === '' || form.token.trim() === ''}
+                disabled={busy || token.trim() === ''}
                 className={`${PRIMARY_BTN} mt-sm`}
               >
                 Connect
@@ -862,8 +840,9 @@ function WyzeCard() {
  * single source every other version file is derived from — so if this number
  * is right, the bundle, the installer and the APK all agree.
  *
- * Deliberately does *not* repeat the server URL: Account & sync above owns
- * that, and showing it twice invites the two displays to disagree.
+ * Deliberately does *not* show the server URL. Nowhere in the app does any
+ * more — there is one server, it is a constant, and a person reading About
+ * wants to know which build they are running, not which host it talks to.
  */
 function AboutCard() {
   // No Tauri platform check — `os` would be a plugin and an async call for one

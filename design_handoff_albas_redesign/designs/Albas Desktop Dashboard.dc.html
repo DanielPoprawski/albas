@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Albas — Desktop</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Sora:wght@400;600;700&display=swap');
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: #f8fafb;
+      color: #1a202c;
+    }
+    
+    .desktop-shell {
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .sidebar {
+      width: 200px;
+      background: white;
+      border-right: 1px solid #e5e7eb;
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      overflow-y: auto;
+    }
+    
+    .sidebar-logo {
+      font-size: 16px;
+      font-weight: 700;
+      font-family: 'Sora', sans-serif;
+      color: #1a202c;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-mark {
+      width: 20px;
+      height: 20px;
+      background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Sora', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #6b7280;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .sidebar-item svg { flex-shrink: 0; color: inherit; }
+
+    .sidebar-item:hover { background: #f3f4f6; color: #1a202c; }
+
+    .sidebar-item.active { color: #a855f7; font-weight: 500; }
+    
+    .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .sidebar-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    
+    .category-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      border-radius: 0;
+      transition: all 0.2s;
+    }
+    
+    .category-item:hover {
+      background: #f3f4f6;
+    }
+    
+    .category-check {
+      width: 14px;
+      height: 14px;
+      border: 1px solid #d1d5db;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #a855f7;
+      flex-shrink: 0;
+    }
+    
+    .category-check.checked {
+      background: #a855f7;
+      border-color: #a855f7;
+      color: white;
+    }
+    
+    .category-color {
+      width: 8px;
+      height: 8px;
+      border-radius: 0;
+      flex-shrink: 0;
+    }
+    
+    .content {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    
+    .calendar-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #e5e7eb;
+      background: white;
+    }
+    
+    .calendar-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .calendar-header select {
+      padding: 6px 10px;
+      border: 1px solid #e5e7eb;
+      background: white;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 500;
+    }
+    
+    .calendar-header button {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #e5e7eb;
+      background: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    
+    .calendar-header button:hover {
+      border-color: #a855f7;
+    }
+    
+    .add-btn {
+      margin-left: auto !important;
+      padding: 6px 12px !important;
+      width: auto !important;
+      height: auto !important;
+      border: 1px solid #a855f7 !important;
+      color: #a855f7;
+      font-size: 12px !important;
+      font-weight: 600;
+    }
+    
+    .calendar-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 0;
+      border: 1px solid #e5e7eb;
+      border-top: none;
+      overflow: hidden;
+    }    
+    .day-cell {
+      border-right: 1px solid #e5e7eb;
+      border-bottom: 1px solid #e5e7eb;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    
+    .day-cell:nth-child(7n) {
+      border-right: none;
+    }
+    
+.day-cell.past {
+      background: #eef0f2;
+    }
+    
+    .day-cell.past .day-header {
+      color: #b0b5bd;
+    }
+    
+    .day-cell.past .event {
+      opacity: 0.45;
+    }
+    
+
+    .span-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+      flex: 1;
+      align-items: flex-end;
+    }
+    
+    .span-title {
+      font-size: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+      line-height: 1.25;
+    }
+    
+    .day-header {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 5px 6px 0;
+      font-size: 11px;
+      font-weight: 600;
+      position: relative;
+      background: transparent;
+    }
+    
+    .weekday-row {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      border-left: 1px solid #e5e7eb;
+      border-right: 1px solid #e5e7eb;
+      border-top: 1px solid #e5e7eb;
+      background: white;
+    }
+    
+    .weekday-row span {
+      padding: 6px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: #9ca3af;
+    }
+    
+    .day-cell.today .day-header {
+      font-weight: 700;
+    }
+    
+    .day-events {
+      flex: 1;
+      padding: 4px;
+      overflow: hidden;
+      font-size: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      background: transparent;
+    }
+    
+    .day-events::after {
+      content: '';
+      flex: 1;
+      order: 0;
+      min-height: 0;
+    }
+    
+    .day-events .event.all-day {
+      order: -1;
+    }
+    
+    .event {
+      padding: 2px 4px;
+      background: #f3e8ff;
+      border: 1px solid #e9d5ff;
+      border-radius: 0;
+      color: #6b21a8;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .event.work {
+      background: #fef3c7;
+      border-color: #fcd34d;
+      color: #92400e;
+    }
+    
+    .event.appointment {
+      background: #dbeafe;
+      border-color: #bfdbfe;
+      color: #1e40af;
+    }
+    
+    .event.personal {
+      background: #dcfce7;
+      border-color: #bbf7d0;
+      color: #166534;
+    }
+    
+    .event.birthday {
+      background: #fce7f3;
+      border-color: #fbcfe8;
+      color: #831843;
+    }
+    
+    .event.all-day {
+      font-size: 9px;
+      padding: 1px 2px;
+    }
+    
+    .event.timed {
+      font-size: 9px;
+      padding: 2px 4px;
+      order: 1;
+    }
+    
+    .multi-day-bracket {
+      position: absolute;
+      pointer-events: none;
+      border: 3px solid;
+    }
+    
+    .bracket-tl {
+      top: 0;
+      left: 0;
+      width: 12px;
+      height: 12px;
+      border-right: none;
+      border-bottom: none;
+    }
+    
+    .bracket-bl {
+      bottom: 0;
+      left: 0;
+      width: 12px;
+      height: 12px;
+      border-right: none;
+      border-top: none;
+    }
+    
+    .bracket-tr {
+      top: 0;
+      right: 0;
+      width: 12px;
+      height: 12px;
+      border-left: none;
+      border-bottom: none;
+    }
+    
+    .bracket-br {
+      bottom: 0;
+      right: 0;
+      width: 12px;
+      height: 12px;
+      border-left: none;
+      border-top: none;
+    }
+    
+    .right-panel {
+      width: 320px;
+      background: white;
+      border-left: 1px solid #e5e7eb;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    
+    .panel-section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6b21a8;
+      margin-bottom: 8px;
+    }
+    
+    .habit-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px;
+      background: white;
+      border: 1px solid #e5e7eb;
+    }
+    
+    .habit-name {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .habit-week {
+      display: flex;
+      gap: 4px;
+    }
+    
+    .habit-day {
+      width: 18px;
+      height: 18px;
+      border: 1px solid #d1d5db;
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 9px;
+      font-weight: 600;
+      color: #9ca3af;
+      transition: all 0.2s;
+    }
+    
+    .habit-day.done {
+      border-color: currentColor;
+      color: white;
+    }
+    
+    .habit-row:nth-child(1) .habit-name { color: #a855f7; }
+    .habit-row:nth-child(1) .habit-day.done { background: #a855f7; border-color: #a855f7; }
+    
+    .habit-row:nth-child(2) .habit-name { color: #ef4444; }
+    .habit-row:nth-child(2) .habit-day.done { background: #ef4444; border-color: #ef4444; }
+    
+    .habit-row:nth-child(3) .habit-name { color: #f59e0b; }
+    .habit-row:nth-child(3) .habit-day.done { background: #f59e0b; border-color: #f59e0b; }
+    
+    .habit-row:nth-child(4) .habit-name { color: #06b6d4; }
+    .habit-row:nth-child(4) .habit-day.done { background: #06b6d4; border-color: #06b6d4; }
+    
+    .habit-row:nth-child(5) .habit-name { color: #10b981; }
+    .habit-row:nth-child(5) .habit-day.done { background: #10b981; border-color: #10b981; }
+    
+    .habit-row:nth-child(6) .habit-name { color: #10b981; }
+    .habit-row:nth-child(6) .habit-day.done { background: #10b981; border-color: #10b981; }
+    
+    .habit-row:nth-child(7) .habit-name { color: #6366f1; }
+    .habit-row:nth-child(7) .habit-day.done { background: #6366f1; border-color: #6366f1; }
+    
+    .add-habit-row {
+      padding: 8px 0;
+      color: #9ca3af;
+      font-size: 11px;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+    
+    .add-habit-row:hover {
+      color: #6b21a8;
+    }
+    
+    .task-item {
+      background: white;
+      border: 1px solid #e5e7eb;
+      padding: 12px;
+      display: flex;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      align-items: flex-start;
+      order: 1;
+      margin-bottom: 8px;
+    }
+    
+    .task-item.starred {
+      order: -1;
+    }
+    
+    .task-item.add-task {
+      order: 999;
+      justify-content: center;
+      color: #9ca3af;
+      font-size: 12px;
+      cursor: text;
+      border: 1px dashed #e5e7eb;
+      background: #f9fafb;
+    }
+    
+    .task-item:hover {
+      border-color: #a855f7;
+      background: #f9fafb;
+    }
+    
+    .task-item.add-task:hover {
+      color: #a855f7;
+      border-color: #a855f7;
+    }
+    
+    .task-star {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: #f59e0b;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    
+    .task-checkbox {
+      width: 20px;
+      height: 20px;
+      border: 1px solid #e5e7eb;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 6px;
+    }
+    
+    .task-checkbox.done {
+      background: #a855f7;
+      border-color: #a855f7;
+      color: white;
+      font-size: 11px;
+    }
+    
+    .task-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .task-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: #1a202c;
+    }
+    
+    .task-time {
+      font-size: 10px;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+    
+    .tasks-list {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .bottom-bar {
+      height: 32px;
+      background: white;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 11px;
+      color: #6b7280;
+      flex-shrink: 0;
+    }
+    
+    .bar-version { font-weight: 600; color: #1a202c; }
+    
+    .bar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .bar-sync {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    
+    .bar-sync:hover { color: #a855f7; }
+    
+    .bar-divider {
+      width: 1px;
+      height: 14px;
+      background: #e5e7eb;
+    }
+    
+    .bar-user {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .user-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 0;
+      background: #a855f7;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 600;
+    }
+  </style>
+</helmet>
+
+<div class="desktop-shell">
+  <div style="display: flex; flex: 1; overflow: hidden;">
+    <!-- Sidebar -->
+    
+    
+    <!-- Calendar -->
+    <div class="sidebar" style="justify-content: flex-start; align-items: stretch">
+      <div class="sidebar-logo"><span class="logo-mark"><svg viewBox="0 0 100 100" width="20" height="20"><path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#fff"></path><path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#fff" fill-opacity="0.55"></path><path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#fff"></path></svg></span>Albas</div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">Menu</div>
+        <a class="sidebar-item active" href="./Albas%20Desktop%20Dashboard.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+          Dashboard
+        </a>
+        <a class="sidebar-item" href="./Albas%20To-Do.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="6" height="6"></rect><path d="M4.5 7l1 1 2-2"></path><line x1="12" y1="7" x2="21" y2="7"></line><rect x="3" y="14" width="6" height="6"></rect><path d="M4.5 17l1 1 2-2"></path><line x1="12" y1="17" x2="21" y2="17"></line></svg>
+          To-Do
+        </a>
+        <a class="sidebar-item" href="./Albas%20Habits.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+          Habits
+        </a>
+        <a class="sidebar-item" href="./Albas%20Settings.dc.html">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg>
+          Settings
+        </a>
+      </div><div class="sidebar-section" style="flex-direction: column; flex-wrap: nowrap; justify-content: flex-end">
+        <div class="sidebar-title">Categories</div>
+        <div class="category-item">
+          <div class="category-check checked">✓</div>
+          <div class="category-color" style="background: #a855f7;"></div>
+          <span>Birthdays</span>
+        </div>
+        <div class="category-item">
+          <div class="category-check checked">✓</div>
+          <div class="category-color" style="background: #f59e0b;"></div>
+          <span>Work</span>
+        </div>
+        <div class="category-item">
+          <div class="category-check checked">✓</div>
+          <div class="category-color" style="background: #3b82f6;"></div>
+          <span>Appointments</span>
+        </div>
+        <div class="category-item">
+          <div class="category-check checked">✓</div>
+          <div class="category-color" style="background: #10b981;"></div>
+          <span>Personal</span>
+        </div>
+        <div class="category-item">
+          <div class="category-check">✓</div>
+          <div class="category-color" style="background: #ef4444;"></div>
+          <span>School</span>
+        </div>
+      </div>
+      
+    </div><div class="calendar-column">
+      
+      
+      <div class="calendar-header">
+        <button>←</button>
+        <select>
+          <option>August 2026</option>
+          <option>July 2026</option>
+          <option>September 2026</option>
+        </select>
+        <button>→</button>
+        <button class="add-btn">+ Add</button>
+      </div><div class="weekday-row"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div><div class="calendar-grid">
+        <!-- Week 1 -->
+        <div class="day-cell past other-month">
+          <div class="day-header">28</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell past other-month">
+          <div class="day-header">29</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell past other-month">
+          <div class="day-header">30</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">1</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">2</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">3</div>
+          <div class="day-events">
+            <div class="event work all-day">Team Offsite</div>
+          </div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">4</div>
+          <div class="day-events"></div>
+        </div>
+        
+        <!-- Week 2 -->
+        <div class="day-cell past">
+          <div class="day-header">5</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">6</div>
+          <div class="day-events">
+            <div class="event personal all-day">Sarah's Birthday</div>
+          </div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">7</div>
+          <div class="day-events">
+            <div class="event all-day">Dentist appt</div>
+            <div class="event appointment timed">2:00 PM</div>
+          </div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">8</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell past">
+          <div class="day-header">9</div>
+          <div class="day-events">
+            <div class="event work timed">10:00 AM</div>
+            <div class="event work timed">3:00 PM</div>
+          </div>
+        </div>
+        <div class="day-cell today" style="background-color: #f59e0b1f">
+          <div class="day-header" style="font-weight: 800; font-size: 13px">10<div class="span-titles" style="align-items: flex-start"><span class="span-title" style="color: #b45309">Conf Call</span></div></div>
+          <div class="day-events">
+            <div class="event personal all-day">☐ Project due</div><div class="event timed" style="background: #bfdbfe; border-color: #93c5fd; color: #1e40af;">Meeting 2 PM</div>
+          </div>
+          <div class="multi-day-bracket bracket-tl" style="border-color: #f59e0b;"></div>
+          <div class="multi-day-bracket bracket-bl" style="border-color: #f59e0b;"></div>
+        </div>
+        <div class="day-cell" style="background-color: #f59e0b1f">
+          <div class="day-header">11</div>
+          <div class="day-events">
+          </div>
+          <div class="multi-day-bracket bracket-tr" style="border-color: #f59e0b;"></div>
+          <div class="multi-day-bracket bracket-br" style="border-color: #f59e0b;"></div>
+        </div>
+        
+        <!-- Week 3 -->
+        <div class="day-cell">
+          <div class="day-header">12</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell" style="background-color: #06b6d423">
+          <div class="day-header">13<div class="span-titles" style="align-items: flex-start"><span class="span-title" style="color: #0e7490">Product Launch</span></div></div>
+          <div class="day-events">
+          </div>
+          <div class="multi-day-bracket bracket-tl" style="border-color: #06b6d4;"></div>
+          <div class="multi-day-bracket bracket-bl" style="border-color: #06b6d4;"></div>
+        </div>
+        <div class="day-cell" style="background-color: #06b6d423">
+          <div class="day-header">14</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell overlap" style="background: repeating-linear-gradient(45deg, rgba(6,182,212,0.16) 0px, rgba(6,182,212,0.16) 8px, rgba(236,72,153,0.16) 8px, rgba(236,72,153,0.16) 16px);">
+          <div class="day-header" style="text-align: left; justify-content: flex-start">15<div class="span-titles" style="align-items: flex-start"><span class="span-title" style="color: #be185d; text-align: left">Trip to Dominican Republic</span></div></div>
+          <div class="day-events">
+          </div>
+          <div class="multi-day-bracket bracket-tr" style="border-color: #06b6d4;"></div>
+          <div class="multi-day-bracket bracket-br" style="border-color: #06b6d4;"></div>
+          <div class="multi-day-bracket bracket-tl" style="border-color: #ec4899;"></div>
+          <div class="multi-day-bracket bracket-bl" style="border-color: #ec4899;"></div>
+        </div>
+        <div class="day-cell" style="background-color: #ec489923">
+          <div class="day-header">16</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell" style="background-color: #ec489923">
+          <div class="day-header">17</div>
+          <div class="day-events">
+            <div class="event appointment timed">9:00 AM</div>
+          </div>
+          <div class="multi-day-bracket bracket-tr" style="border-color: #ec4899;"></div>
+          <div class="multi-day-bracket bracket-br" style="border-color: #ec4899;"></div>
+        </div>
+        <div class="day-cell">
+          <div class="day-header">18</div>
+          <div class="day-events"></div>
+        </div>
+        
+        <!-- Week 4 -->
+        <div class="day-cell">
+          <div class="day-header">19</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell overlap" style="background: repeating-linear-gradient(45deg, rgba(59,130,246,0.16) 0px, rgba(59,130,246,0.16) 8px, rgba(16,185,129,0.16) 8px, rgba(16,185,129,0.16) 16px);">
+          <div class="day-header">20<div class="span-titles" style="align-items: flex-start"><span class="span-title" style="color: #1d4ed8">Conference</span><span class="span-title" style="color: #047857">Home Renovation</span></div></div>
+          <div class="day-events">
+          </div>
+          <div class="multi-day-bracket bracket-tl" style="border-color: #3b82f6;"></div>
+          <div class="multi-day-bracket bracket-bl" style="border-color: #3b82f6;"></div>
+          <div class="multi-day-bracket bracket-tl" style="border-color: #10b981; top:5px; left:5px; width:8px; height:8px;"></div>
+          <div class="multi-day-bracket bracket-bl" style="border-color: #10b981; bottom:5px; left:5px; width:8px; height:8px;"></div>
+        </div>
+        <div class="day-cell overlap" style="background: repeating-linear-gradient(45deg, rgba(59,130,246,0.16) 0px, rgba(59,130,246,0.16) 8px, rgba(16,185,129,0.16) 8px, rgba(16,185,129,0.16) 16px);">
+          <div class="day-header">21</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell overlap" style="background: repeating-linear-gradient(45deg, rgba(59,130,246,0.16) 0px, rgba(59,130,246,0.16) 8px, rgba(16,185,129,0.16) 8px, rgba(16,185,129,0.16) 16px);">
+          <div class="day-header">22</div>
+          <div class="day-events"></div>
+          <div class="multi-day-bracket bracket-tr" style="border-color: #3b82f6;"></div>
+          <div class="multi-day-bracket bracket-br" style="border-color: #3b82f6;"></div>
+        </div>
+        <div class="day-cell" style="background-color: #10b98123">
+          <div class="day-header">23</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell" style="background-color: #10b98123">
+          <div class="day-header">24</div>
+          <div class="day-events">
+            <div class="event work all-day">Q3 Planning</div>
+          </div>
+        </div>
+        <div class="day-cell" style="background-color: #10b98123">
+          <div class="day-header">25</div>
+          <div class="day-events"></div>
+        </div>
+        
+        <!-- Week 5 -->
+        <div class="day-cell" style="background-color: #10b98123">
+          <div class="day-header">26</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell" style="background-color: #10b98123">
+          <div class="day-header">27</div>
+          <div class="day-events"></div>
+          <div class="multi-day-bracket bracket-tr" style="border-color: #10b981;"></div>
+          <div class="multi-day-bracket bracket-br" style="border-color: #10b981;"></div>
+        </div>
+        <div class="day-cell">
+          <div class="day-header">28</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell">
+          <div class="day-header">29</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell">
+          <div class="day-header">30</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell">
+          <div class="day-header">31</div>
+          <div class="day-events"></div>
+        </div>
+        <div class="day-cell other-month">
+          <div class="day-header">1</div>
+          <div class="day-events"></div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Right Panel: Habits & Tasks -->
+    <div class="right-panel">
+      <!-- Habits -->
+      <div>
+        <div class="panel-section-title">Habits</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="habit-row">
+            <span class="habit-name">Meditate</span>
+            <div class="habit-week">
+              <div class="habit-day">✓</div>
+              <div class="habit-day">✓</div>
+              <div class="habit-day">✓</div>
+              <div class="habit-day">✓</div>
+              <div class="habit-day">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+            </div>
+          </div>
+          <div class="habit-row">
+            <span class="habit-name">Gym</span>
+            <div class="habit-week">
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+            </div>
+          </div>
+          <div class="habit-row">
+            <span class="habit-name">Reading</span>
+            <div class="habit-week">
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+            </div>
+          </div>
+          <div class="habit-row">
+            <span class="habit-name">Code</span>
+            <div class="habit-week">
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+            </div>
+          </div>
+          <div class="habit-row">
+            <span class="habit-name">Walk</span>
+            <div class="habit-week">
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+            </div>
+          </div>
+          <div class="habit-row">
+            <span class="habit-name">Water</span>
+            <div class="habit-week">
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+            </div>
+          </div>
+          <div class="habit-row">
+            <span class="habit-name">Sleep 8h</span>
+            <div class="habit-week">
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day"></div>
+              <div class="habit-day done">✓</div>
+              <div class="habit-day done">✓</div>
+            </div>
+          </div>
+          <div class="add-habit-row">+ Add new habit…</div>
+        </div>
+      </div>
+      
+      <!-- Tasks -->
+      <div>
+        <div class="panel-section-title">Today's Tasks</div>
+        <div class="tasks-list">
+          <div class="task-item starred">
+            <div class="task-star">★</div>
+            <div class="task-checkbox"></div>
+            <div class="task-content">
+              <div class="task-title">Finish project report</div>
+              <div class="task-time">Due 2:00 PM</div>
+            </div>
+          </div>
+          <div class="task-item starred">
+            <div class="task-star">★</div>
+            <div class="task-checkbox"></div>
+            <div class="task-content">
+              <div class="task-title">Grocery shopping</div>
+              <div class="task-time">Sometime today</div>
+            </div>
+          </div>
+          <div class="task-item">
+            <div class="task-star">☆</div>
+            <div class="task-checkbox done">✓</div>
+            <div class="task-content">
+              <div class="task-title">Reply to emails</div>
+              <div class="task-time">Done</div>
+            </div>
+          </div>
+          <div class="task-item">
+            <div class="task-star">☆</div>
+            <div class="task-checkbox"></div>
+            <div class="task-content">
+              <div class="task-title">Call dentist</div>
+              <div class="task-time">3:30 PM</div>
+            </div>
+          </div>
+          <div class="task-item add-task">+ Add new task…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Bottom Bar -->
+  <div class="bottom-bar">
+    <div class="bar-version">v1.9.0</div>
+    <div class="bar-right">
+      <span class="bar-sync">↻ 11:12 PM · just now</span>
+      <span class="bar-divider"></span>
+      <span class="bar-user"><span class="user-icon">DP</span>Daniel P</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

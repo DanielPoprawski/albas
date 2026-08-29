@@ -100,8 +100,15 @@ bumped nothing at all.
   from `package.json` — see `define` in `vite.config.ts`): Settings → **About**, and the
   desktop status bar's left module.
 
+## Websites
+The repo includes two separate web projects:
+
+1. **`web/` — Public web console** at `albas.danni-dev.com` (alongside `/api` sync endpoint). Read-only user interface for synced data. Bun-based, deployed to production. Currently a blank template; implementation is planned after the app redesign lands.
+
+2. **Admin console** — Restricted-access console running on a friend's VM, reachable only via Cloudflare tunnel. Staff-only interface for server administration, user management, and debugging. Part of the redesign (screen 8 in `design_handoff_albas_redesign/`); separate deployment and auth model from the public web console.
+
 ## Domain and origins
-Everything is served from **one origin, `albas.danni-dev.com`** — the JSON API under `/api`,
+The **public app and web console share one origin**, `albas.danni-dev.com` — the JSON API under `/api`,
 Android's assetlinks at the domain root, and the web console at `/`.
 
 - **The host is the WebAuthn relying party.** `sync-server/src/passkey.rs` derives `rp_id`
@@ -126,6 +133,21 @@ Android's assetlinks at the domain root, and the web console at `/`.
   `repoint_default_server` rewrites exactly the former defaults listed in `SUPERSEDED_URLS`,
   once each, flagged in `meta`. **Add the outgoing URL to that list whenever the default
   changes**, or the next move repeats the problem.
+- **`check_url` is https-only — loopback is no longer exempt** (was: plain `http://` against
+  `localhost`/`127.0.0.1`). That exemption was the only way a device could come to store
+  `http://localhost:8787/sync`, which then sat in front of `DEFAULT_URL` forever. Alongside
+  `SUPERSEDED_URLS`, `repoint_default_server` now also sweeps *any* stored URL that
+  `check_url` rejects back to the default — unflagged and unconditional, because no such URL
+  can have been typed in deliberately. Restoring local http testing means restoring the
+  loopback arm **and** clearing the stored setting.
+- **The server is not user-editable, and is not shown.** The Server field is gone from both
+  Welcome and Settings → Account & sync, `usePasskeyAuth` supplies `DEFAULT_SYNC_URL` itself
+  (its `signIn`/`createAccount` take no URL), and the signed-in line names the account only.
+  There is one hosted server; a URL box was a way to mistype it, and — before `check_url`
+  went https-only — the way a stray `http://localhost:8787/sync` came to sit in front of the
+  real one forever. Nothing in the UI reads or writes a URL any more: the manual-token path
+  posts to `syncEndpoint(DEFAULT_SYNC_URL)`. Repointing a build means editing the two
+  constants (plus `strings.xml`), not restoring the field.
 - **`tauri.conf.json` is parsed as strict JSON by `tauri-build`** even though the CLI's
   `tauri info` tolerates comments. Don't put `//` in it — the build fails with "key must be
   a string" at the offending line.
@@ -148,6 +170,13 @@ Recorded so a future session doesn't relitigate settled questions.
   `sync-server/` an independent release pipeline; meanwhile `sync.rs`'s `TABLES` and the
   server's share groups are co-designed and must agree. The host needs only
   `docker-compose.yml`, `.env` and the nginx configs — everything else arrives as an image.
+- **Local-only Albas is free; the hosted server is the paid part.** SQLite on the device
+  stays the source of truth and the app must never require an account to be useful — "Use
+  offline" on the Welcome screen is load-bearing, not a courtesy. Sync, sharing and the web
+  console are what an account buys. Accounts and registration are **free for now**
+  (`ALBAS_SYNC_SIGNUPS` still defaults to open); the subscription is not built, so don't add
+  entitlement checks ahead of it. Invites survive for the one job open signup can't do:
+  attaching a passkey to an account that already exists.
 - **Not moving to AWS.** The ordered bottlenecks are: no backups; unbounded tombstone growth;
   the in-memory pending-ceremony map, which prevents running two replicas at all; then the
   single `Mutex<Connection>`. None are user-count-driven. The realistic path is the current VM

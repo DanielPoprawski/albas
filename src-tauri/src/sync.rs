@@ -235,24 +235,25 @@ fn json_to_sql(v: &serde_json::Value) -> SqlValue {
     }
 }
 
-/// `https://` always; plain `http://` only against loopback, so the bearer
-/// token can't leave the machine in cleartext by accident.
+/// `https://`, with no exemptions.
+///
+/// Plain `http://` used to be accepted against loopback so a locally-run
+/// sync-server could be pointed at during development. That exemption is gone:
+/// it was the only route by which a device could come to store
+/// `http://localhost:8787/sync` in `__sync_url`, and a stored URL always beats
+/// `DEFAULT_URL` — so one afternoon of local testing left that install syncing
+/// to nothing, forever, with no error to explain it. There is one real server;
+/// the setting now cannot name anything that isn't reachable over TLS.
+///
+/// Reinstating local testing means restoring the loopback arm here *and*
+/// clearing the stored setting afterwards.
 pub(crate) fn check_url(url: &str) -> Result<(), String> {
     if url.starts_with("https://") {
         return Ok(());
     }
-    if let Some(rest) = url.strip_prefix("http://") {
-        let host = rest.split(['/', ':']).next().unwrap_or("");
-        if matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1") {
-            return Ok(());
-        }
-        return Err(
-            "Sync URL must use https:// — plain http:// is only allowed for localhost, \
-             otherwise your sync token travels in cleartext."
-                .into(),
-        );
-    }
-    Err("Sync URL must start with https://".into())
+    Err("Sync URL must start with https:// — the sync token is the only credential, \
+         so it can never travel in cleartext."
+        .into())
 }
 
 fn collect(conn: &Connection, since: i64) -> rusqlite::Result<Vec<Change>> {
@@ -506,10 +507,12 @@ mod tests {
     }
 
     #[test]
-    fn url_check_allows_https_and_loopback_only() {
+    fn url_check_allows_https_only() {
         assert!(check_url("https://sync.example.com/sync").is_ok());
-        assert!(check_url("http://localhost:8787/sync").is_ok());
-        assert!(check_url("http://127.0.0.1:8787/sync").is_ok());
+        assert!(check_url(DEFAULT_URL).is_ok());
+        // Loopback is no longer exempt — see check_url for why.
+        assert!(check_url("http://localhost:8787/sync").is_err());
+        assert!(check_url("http://127.0.0.1:8787/sync").is_err());
         assert!(check_url("http://192.168.1.10:8787/sync").is_err());
         assert!(check_url("ftp://example.com").is_err());
     }

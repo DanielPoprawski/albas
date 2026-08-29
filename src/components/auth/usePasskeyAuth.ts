@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { cancelCeremony, createAccount, signIn, submitPin, type PasskeyEvent } from '../../auth';
+import { DEFAULT_SYNC_URL } from '../../syncServer';
 
 export type AuthState =
   | { kind: 'idle' }
@@ -16,6 +17,9 @@ export type AuthState =
  * On success the Rust side already stored the token and account behind React's
  * back, so this syncs once and reloads everything; `signedIn`/`welcomeDone`
  * flip as the settings come back.
+ *
+ * The server is `DEFAULT_SYNC_URL` and is supplied here rather than by the
+ * caller: there is one server, and neither screen holds a URL any more.
  */
 export function usePasskeyAuth() {
   const { reloadFromStore, setSetting } = useApp();
@@ -51,10 +55,12 @@ export function usePasskeyAuth() {
   return {
     state,
     pin,
-    signIn: (url: string) =>
-      run('Touch your security key or confirm on your device…', () => signIn(url, onEvent)),
-    createAccount: (url: string, name: string, invite: string | null) =>
-      run('Creating your passkey…', () => createAccount(url, name, invite, onEvent)),
+    signIn: () =>
+      run('Touch your security key or confirm on your device…', () =>
+        signIn(DEFAULT_SYNC_URL, onEvent)
+      ),
+    createAccount: (name: string, invite: string | null) =>
+      run('Creating your passkey…', () => createAccount(DEFAULT_SYNC_URL, name, invite, onEvent)),
     submitPin: async (p: string) => {
       setPin(null); // an invalidPin event reopens the dialog with the attempt count
       try {

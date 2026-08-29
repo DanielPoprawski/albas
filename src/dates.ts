@@ -107,3 +107,31 @@ export function calendarTitle(
   const year = currentMonth.getFullYear();
   return year === thisYear ? name : `${name} ${year}`;
 }
+
+/**
+ * A timestamp as the status bar wants it: the clock time, plus the date only
+ * when it isn't today. A sync that happened this session is almost always
+ * minutes old, and "24 Aug" in front of it every time is noise; a sync from
+ * last week needs the day or the time alone is a lie.
+ */
+export function stampLabel(ms: number, now: number = Date.now()): string {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return fmt(d) === fmt(new Date(now)) ? time : `${shortDate(fmt(d))} ${time}`;
+}
+
+/**
+ * Coarse "how long ago", deliberately approximate — the point of the status
+ * bar's copy is "recent enough?", not a duration. Rounds down, so it never
+ * claims more time has passed than actually has, and stops at days because
+ * anything older than that is a problem the bar can't express anyway.
+ */
+export function timeAgo(ms: number, now: number = Date.now()): string {
+  const secs = Math.max(0, Math.floor((now - ms) / 1000));
+  if (secs < 45) return 'just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${Math.max(1, mins)}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}

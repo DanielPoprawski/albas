@@ -1,3 +1,7 @@
+/* Outfit (body/UI), Sora (headings + wordmark), JetBrains Mono (ids, SQL).
+   Weights are exactly the ones the redesign uses — nothing here is loaded
+   "just in case", every extra face is a request on first paint. */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 /* Supplies the animate-in / fade-in-0 / zoom-in-95 utilities that generated
    shadcn components reference. Tailwind v4 dropped tailwindcss-animate, and
@@ -5,36 +9,275 @@
 @import "tw-animate-css";
 
 /*
- * Theme layer.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Albas redesign — token layer
+ * ─────────────────────────────────────────────────────────────────────────
  *
- * `@theme inline` makes Tailwind emit `var(--t-…)` into the generated utilities
- * instead of copying the literal value, which is what lets a runtime
- * `data-theme` swap on <html> repaint the whole app. The `--t-*` variables are
- * defined per theme below.
+ * One light palette. White surfaces on a very light gray page, a single
+ * purple accent, hairline #e5e7eb borders, and hard 90° corners everywhere.
  *
- * Two surface worlds, and they do not share a text scale:
- *   chrome — the app frame (sidebar, top bar, panels, modals). Dark in 3 of 4
- *            themes. Uses txt / txt-muted / txt-faint.
- *   sheet  — the calendar card, deliberately the inverse of the chrome for
- *            contrast. Uses sheet-txt / sheet-txt-muted / sheet-txt-faint.
+ * The raw values live as `--t-*` custom properties on :root; the `@theme
+ * inline` block below turns them into Tailwind utilities that *reference*
+ * the property rather than copying its value, so a runtime override on
+ * :root (or a future theme) repaints the whole app.
+ *
+ * The category accents (amber/green/blue/pink/teal) are small-mark colours
+ * only — dots, pills, tags, habit squares. Never a large fill.
  */
+:root {
+  color-scheme: light;
+
+  /* Type stacks. Raw properties, like the colours: the @theme block below
+     references them, and a `var()` on :root is never pruned. */
+  --t-font-body: 'Outfit', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --t-font-heading: 'Sora', 'Outfit', system-ui, -apple-system, sans-serif;
+  --t-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Surfaces */
+  --t-page: #f8fafb;
+  --t-surface: #ffffff;
+  --t-border: #e5e7eb;
+  --t-border-strong: #d1d5db;
+  --t-subtle: #f3f4f6;
+
+  /* Accent */
+  --t-accent: #a855f7;
+  --t-accent-hover: #9333ea;
+  --t-accent-deep: #7e22ce;
+  --t-accent-tint: #faf5ff;
+
+  /* Text */
+  --t-ink: #1a202c;
+  --t-ink-secondary: #6b7280;
+  --t-ink-muted: #9ca3af;
+
+  /* Category accents — the mark colour, plus the tint/hairline/ink trio a
+     chip is drawn from. Taken from the To-Do category defs and the calendar
+     `.event.*` rules in the Dashboard design. */
+  --t-cat-purple: #a855f7;
+  --t-cat-purple-tint: #f3e8ff;
+  --t-cat-purple-line: #e9d5ff;
+  --t-cat-purple-ink: #6b21a8;
+
+  --t-cat-amber: #f59e0b;
+  --t-cat-amber-tint: #fef3c7;
+  --t-cat-amber-line: #fcd34d;
+  --t-cat-amber-ink: #92400e;
+
+  --t-cat-green: #10b981;
+  --t-cat-green-tint: #dcfce7;
+  --t-cat-green-line: #bbf7d0;
+  --t-cat-green-ink: #166534;
+
+  --t-cat-blue: #3b82f6;
+  --t-cat-blue-tint: #dbeafe;
+  --t-cat-blue-line: #bfdbfe;
+  --t-cat-blue-ink: #1e40af;
+
+  --t-cat-pink: #ec4899;
+  --t-cat-pink-tint: #fce7f3;
+  --t-cat-pink-line: #fbcfe8;
+  --t-cat-pink-ink: #831843;
+
+  --t-cat-teal: #06b6d4;
+  --t-cat-teal-tint: #cffafe;
+  --t-cat-teal-line: #a5f3fc;
+  --t-cat-teal-ink: #0e7490;
+
+  /* Status */
+  --t-danger: #ef4444;
+  --t-success: #10b981;
+  --t-scrim: rgb(15 23 42 / 0.35);
+
+  /*
+   * Spacing scale — 4 6 8 10 12 14 16 18 20 24. Exposed as properties rather
+   * than as Tailwind's numeric `--spacing-*` namespace on purpose: hijacking
+   * that namespace would silently redefine `p-4` from 16px to 4px across
+   * every file in the app. Use these in arbitrary values — `p-[var(--space-14)]`
+   * — or just write the px, which is what the designs do.
+   */
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-18: 18px;
+  --space-20: 20px;
+  --space-24: 24px;
+
+  /*
+   * Legacy `--t-*` aliases.
+   *
+   * The pre-redesign components address the app through this older
+   * vocabulary (bg-chrome, text-txt, bg-sheet, …). They are pointed at the
+   * new palette so every screen still renders while waves 2–3 migrate,
+   * rather than going unstyled the moment this package lands. Delete an
+   * alias once nothing references its utility.
+   */
+  --t-app-bg: var(--t-page);
+  --t-chrome: var(--t-surface);
+  --t-elevated: var(--t-surface);
+  --t-line: var(--t-border);
+  --t-grid-line: var(--t-border);
+  --t-fill: var(--t-subtle);
+  --t-fill-strong: #e9ebee;
+  --t-fill-stronger: var(--t-border-strong);
+  --t-txt: var(--t-ink);
+  --t-txt-muted: var(--t-ink-secondary);
+  --t-txt-faint: var(--t-ink-muted);
+  --t-accent-hi: var(--t-accent-hover);
+  --t-accent-text: var(--t-accent);
+  --t-accent-fg: #ffffff;
+  --t-sheet: var(--t-surface);
+  --t-sheet-header: var(--t-subtle);
+  --t-sheet-line: var(--t-border);
+  --t-sheet-border: var(--t-border);
+  --t-sheet-hour-line: var(--t-border);
+  --t-sheet-hover: var(--t-accent-tint);
+  --t-sheet-txt: var(--t-ink);
+  --t-sheet-txt-muted: var(--t-ink-secondary);
+  --t-sheet-txt-faint: var(--t-ink-muted);
+  --t-past-x: rgb(26 32 44 / 0.35);
+
+  /* shadcn's components read --radius directly, not through @theme. */
+  --radius: 0;
+}
+
 @theme inline {
+  /* ── Type ─────────────────────────────────────────────────────────────
+     Outfit is the default for everything; Sora is opt-in via `font-heading`
+     on titles, the wordmark and card headers. `font-title` is kept as an
+     alias so the headings that already carry it land on Sora unedited. */
+  --font-body: var(--t-font-body);
+  --font-heading: var(--t-font-heading);
+  --font-mono: var(--t-font-mono);
+  --font-sans: var(--t-font-body);
+  --font-title: var(--t-font-heading);
+
+  /* ── Colour ───────────────────────────────────────────────────────────*/
+  --color-page: var(--t-page);
+  --color-surface: var(--t-surface);
+  --color-line: var(--t-border);
+  --color-line-strong: var(--t-border-strong);
+  --color-subtle: var(--t-subtle);
+
+  --color-accent: var(--t-accent);
+  --color-accent-hover: var(--t-accent-hover);
+  --color-accent-deep: var(--t-accent-deep);
+  --color-accent-tint: var(--t-accent-tint);
+
+  --color-ink: var(--t-ink);
+  --color-ink-secondary: var(--t-ink-secondary);
+  --color-ink-muted: var(--t-ink-muted);
+
+  --color-cat-purple: var(--t-cat-purple);
+  --color-cat-purple-tint: var(--t-cat-purple-tint);
+  --color-cat-purple-line: var(--t-cat-purple-line);
+  --color-cat-purple-ink: var(--t-cat-purple-ink);
+  --color-cat-amber: var(--t-cat-amber);
+  --color-cat-amber-tint: var(--t-cat-amber-tint);
+  --color-cat-amber-line: var(--t-cat-amber-line);
+  --color-cat-amber-ink: var(--t-cat-amber-ink);
+  --color-cat-green: var(--t-cat-green);
+  --color-cat-green-tint: var(--t-cat-green-tint);
+  --color-cat-green-line: var(--t-cat-green-line);
+  --color-cat-green-ink: var(--t-cat-green-ink);
+  --color-cat-blue: var(--t-cat-blue);
+  --color-cat-blue-tint: var(--t-cat-blue-tint);
+  --color-cat-blue-line: var(--t-cat-blue-line);
+  --color-cat-blue-ink: var(--t-cat-blue-ink);
+  --color-cat-pink: var(--t-cat-pink);
+  --color-cat-pink-tint: var(--t-cat-pink-tint);
+  --color-cat-pink-line: var(--t-cat-pink-line);
+  --color-cat-pink-ink: var(--t-cat-pink-ink);
+  --color-cat-teal: var(--t-cat-teal);
+  --color-cat-teal-tint: var(--t-cat-teal-tint);
+  --color-cat-teal-line: var(--t-cat-teal-line);
+  --color-cat-teal-ink: var(--t-cat-teal-ink);
+
+  --color-danger: var(--t-danger);
+  --color-success: var(--t-success);
+  --color-scrim: var(--t-scrim);
+
+  /* ── Radius ───────────────────────────────────────────────────────────
+     Every key in Tailwind's radius namespace is zeroed, so `rounded-lg` in a
+     not-yet-migrated component compiles to a square corner instead of being
+     a visual regression waiting to be found. The `*` reset further down is
+     the belt to this pair of braces. */
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+
+  /* ── Shadows ──────────────────────────────────────────────────────────*/
+  --shadow-card: 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-modal: 0 30px 70px rgb(15 23 42 / 0.22);
+  --shadow-pop: 0 2px 8px rgb(15 23 42 / 0.08);
+
+  /* ── Type scale ───────────────────────────────────────────────────────
+     The redesign's five real sizes. `micro` is the uppercase 10px label that
+     sits above inputs and heads every section. */
+  --text-h1: 18px;
+  --text-h1--line-height: 24px;
+  --text-h1--font-weight: 700;
+  --text-h2: 14px;
+  --text-h2--line-height: 20px;
+  --text-h2--font-weight: 600;
+  --text-ui: 13px;
+  --text-ui--line-height: 18px;
+  --text-meta: 11px;
+  --text-meta--line-height: 15px;
+  --text-micro: 10px;
+  --text-micro--line-height: 14px;
+  --text-micro--letter-spacing: 0.5px;
+  --text-micro--font-weight: 700;
+
+  /*
+   * shadcn/ui bridge.
+   *
+   * shadcn components are written against a fixed vocabulary of colour names.
+   * Aliasing that vocabulary onto the tokens above means a generated file
+   * inherits the redesign untouched.
+   *
+   * Note `accent` is NOT aliased here: in this palette `accent` is the brand
+   * purple (above), not shadcn's menu-hover surface. The generated files in
+   * components/ui were rewritten to use `bg-subtle` for that hover instead,
+   * so the name means one thing app-wide.
+   */
+  --color-background: var(--t-page);
+  --color-foreground: var(--t-ink);
+  --color-card: var(--t-surface);
+  --color-card-foreground: var(--t-ink);
+  --color-popover: var(--t-surface);
+  --color-popover-foreground: var(--t-ink);
+  --color-primary: var(--t-accent);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--t-subtle);
+  --color-secondary-foreground: var(--t-ink);
+  --color-muted: var(--t-subtle);
+  --color-muted-foreground: var(--t-ink-secondary);
+  --color-destructive: var(--t-danger);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--t-border);
+  --color-input: var(--t-border);
+  --color-ring: var(--t-accent);
+
+  /* Legacy utility names, kept alive for the not-yet-migrated screens. */
   --color-app-bg: var(--t-app-bg);
   --color-chrome: var(--t-chrome);
   --color-elevated: var(--t-elevated);
-  --color-scrim: var(--t-scrim);
-
-  --color-line: var(--t-line);
   --color-fill: var(--t-fill);
   --color-fill-strong: var(--t-fill-strong);
   --color-fill-stronger: var(--t-fill-stronger);
-
   --color-txt: var(--t-txt);
   --color-txt-muted: var(--t-txt-muted);
   --color-txt-faint: var(--t-txt-faint);
-  --color-danger: var(--t-danger);
-  --color-success: var(--t-success);
-
   --color-sheet: var(--t-sheet);
   --color-sheet-header: var(--t-sheet-header);
   --color-sheet-line: var(--t-sheet-line);
@@ -42,256 +285,15 @@
   --color-sheet-txt: var(--t-sheet-txt);
   --color-sheet-txt-muted: var(--t-sheet-txt-muted);
   --color-sheet-txt-faint: var(--t-sheet-txt-faint);
-  /* Strike-through on elapsed day cells. Follows the sheet like --t-grid-line:
-     literal black is invisible on the three themes whose sheet is dark. */
   --color-past-x: var(--t-past-x);
-
-  /* Accent. Aliased onto the original M3 names so every existing
-     bg-primary / text-primary-fixed-dim call site follows the theme. */
-  --color-primary: var(--t-accent);
-  --color-primary-container: var(--t-accent-hi);
-  --color-primary-fixed-dim: var(--t-accent-text);
-  --color-on-primary: var(--t-accent-fg);
-
-  /*
-   * shadcn/ui bridge.
-   *
-   * shadcn components are written against a fixed vocabulary of colour names.
-   * Rather than let them bring their own palette (which would be a second
-   * source of truth that no theme swap reaches), alias that vocabulary onto
-   * the same --t-* variables. A generated component then inherits all four
-   * themes without being touched.
-   *
-   * ⚠ `accent` is a false friend: in shadcn it means the *hover surface* of a
-   * menu item, not the brand colour. The brand is --t-accent → `primary`.
-   * Reaching for `bg-accent` expecting blue is the mistake this note exists
-   * to prevent.
-   */
-  --color-background: var(--t-app-bg);
-  --color-foreground: var(--t-txt);
-  --color-card: var(--t-chrome);
-  --color-card-foreground: var(--t-txt);
-  --color-popover: var(--t-elevated);
-  --color-popover-foreground: var(--t-txt);
-  --color-primary-foreground: var(--t-accent-fg);
-  --color-secondary: var(--t-fill-strong);
-  --color-secondary-foreground: var(--t-txt);
-  --color-muted: var(--t-fill);
-  --color-muted-foreground: var(--t-txt-muted);
-  --color-accent: var(--t-fill-strong);
-  --color-accent-foreground: var(--t-txt);
-  --color-destructive: var(--t-danger);
-  --color-destructive-foreground: var(--t-accent-fg);
-  --color-border: var(--t-line);
-  --color-input: var(--t-line);
-  --color-ring: var(--t-accent);
-}
-
-/* shadcn's components read --radius directly (not through @theme), so it lives
-   outside the block. 0.5rem is the rounded-lg this app already uses. */
-:root {
-  --radius: 0.5rem;
-}
-
-/*
- * Tailwind v4 defaults border-color to `currentColor`, while generated shadcn
- * components write a bare `border` and expect a themed default (their v3
- * template installed one). Without this a menu's border draws in the *text*
- * colour. The two existing bare-`border` call sites set borderColor inline,
- * which still wins, so nothing that already looked right changes.
- */
-@layer base {
-  *,
-  ::after,
-  ::before {
-    border-color: var(--t-line);
-  }
-}
-
-:root,
-:root[data-theme='dark'] {
-  /* native date/time pickers and scrollbars follow this, so it has to be set
-     per theme — components used to hardcode `colorScheme: 'dark'` inline,
-     which left the light theme with black OS popups. */
-  color-scheme: dark;
-  --t-app-bg: #0b1c30;
-  --t-chrome: #0a121e;
-  --t-elevated: #13233a;
-  --t-scrim: rgb(10 18 30 / 0.8);
-
-  --t-line: rgb(195 198 215 / 0.1);
-  --t-grid-line: rgb(195 198 215 / 0.12);
-  --t-fill: rgb(255 255 255 / 0.05);
-  --t-fill-strong: rgb(255 255 255 / 0.1);
-  --t-fill-stronger: rgb(255 255 255 / 0.2);
-
-  --t-txt: #eaf1ff;
-  --t-txt-muted: #c3c6d7;
-  --t-txt-faint: #737686;
-  --t-danger: #ff8a8f;
-  --t-success: #4edea3;
-
-  --t-accent: #004ac6;
-  --t-accent-hi: #2563eb;
-  --t-accent-text: #b4c5ff;
-  --t-accent-fg: #ffffff;
-
-  /* The sheet sits just above app-bg rather than inverting to white — a white
-     calendar under a dark chrome read as unthemed. */
-  --t-sheet: #0f2440;
-  --t-sheet-header: #142a48;
-  --t-sheet-line: rgb(195 198 215 / 0.14);
-  --t-sheet-border: rgb(195 198 215 / 0.16);
-  --t-sheet-hour-line: rgb(255 255 255 / 0.07);
-  --t-sheet-hover: rgb(255 255 255 / 0.05);
-  --t-sheet-txt: #eaf1ff;
-  --t-sheet-txt-muted: #c3c6d7;
-  --t-sheet-txt-faint: #8b90a3;
-  --t-past-x: rgb(195 198 215 / 0.45);
-}
-
-:root[data-theme='light'] {
-  color-scheme: light;
-  --t-app-bg: #eef1f6;
-  --t-chrome: #ffffff;
-  --t-elevated: #ffffff;
-  --t-scrim: rgb(11 28 48 / 0.45);
-
-  --t-line: rgb(11 28 48 / 0.12);
-  --t-grid-line: rgb(11 28 48 / 0.1);
-  --t-fill: rgb(11 28 48 / 0.04);
-  --t-fill-strong: rgb(11 28 48 / 0.08);
-  --t-fill-stronger: rgb(11 28 48 / 0.14);
-
-  --t-txt: #0b1c30;
-  --t-txt-muted: #4b5565;
-  --t-txt-faint: #79839a;
-  --t-danger: #c0182f;
-  --t-success: #067a52;
-
-  --t-accent: #1d4ed8;
-  --t-accent-hi: #2563eb;
-  --t-accent-text: #1d4ed8;
-  --t-accent-fg: #ffffff;
-
-  --t-sheet: #ffffff;
-  --t-sheet-header: #f2f5fa;
-  --t-sheet-line: rgb(11 28 48 / 0.12);
-  --t-sheet-border: rgb(11 28 48 / 0.14);
-  --t-sheet-hour-line: rgb(0 0 0 / 0.07);
-  --t-sheet-hover: rgb(29 78 216 / 0.05);
-  --t-sheet-txt: #0b1c30;
-  --t-sheet-txt-muted: #434655;
-  --t-sheet-txt-faint: #737686;
-  --t-past-x: rgb(11 28 48 / 0.55);
-}
-
-:root[data-theme='grey-high'] {
-  color-scheme: dark;
-  --t-app-bg: #121212;
-  --t-chrome: #000000;
-  --t-elevated: #1e1e1e;
-  --t-scrim: rgb(0 0 0 / 0.75);
-
-  --t-line: rgb(255 255 255 / 0.18);
-  --t-grid-line: rgb(255 255 255 / 0.26);
-  --t-fill: rgb(255 255 255 / 0.07);
-  --t-fill-strong: rgb(255 255 255 / 0.14);
-  --t-fill-stronger: rgb(255 255 255 / 0.26);
-
-  --t-txt: #fafafa;
-  --t-txt-muted: #cfcfcf;
-  --t-txt-faint: #9a9a9a;
-  --t-danger: #ff7b7b;
-  --t-success: #4ce6a6;
-
-  --t-accent: #2563eb;
-  --t-accent-hi: #3b82f6;
-  --t-accent-text: #a8c4ff;
-  --t-accent-fg: #ffffff;
-
-  --t-sheet: #000000;
-  --t-sheet-header: #141414;
-  --t-sheet-line: rgb(255 255 255 / 0.24);
-  --t-sheet-border: rgb(255 255 255 / 0.3);
-  --t-sheet-hour-line: rgb(255 255 255 / 0.14);
-  --t-sheet-hover: rgb(255 255 255 / 0.08);
-  --t-sheet-txt: #ffffff;
-  --t-sheet-txt-muted: #d4d4d4;
-  --t-sheet-txt-faint: #9a9a9a;
-  --t-past-x: rgb(255 255 255 / 0.55);
-}
-
-:root[data-theme='grey-low'] {
-  color-scheme: dark;
-  --t-app-bg: #2b2e33;
-  --t-chrome: #23262a;
-  --t-elevated: #32363c;
-  --t-scrim: rgb(20 22 25 / 0.7);
-
-  --t-line: rgb(255 255 255 / 0.1);
-  --t-grid-line: rgb(255 255 255 / 0.09);
-  --t-fill: rgb(255 255 255 / 0.05);
-  --t-fill-strong: rgb(255 255 255 / 0.09);
-  --t-fill-stronger: rgb(255 255 255 / 0.16);
-
-  --t-txt: #d7dade;
-  --t-txt-muted: #a2a7ae;
-  --t-txt-faint: #7d828a;
-  --t-danger: #e08b8b;
-  --t-success: #7fc9a9;
-
-  --t-accent: #3f6fd8;
-  --t-accent-hi: #5b86e5;
-  --t-accent-text: #a9c0ee;
-  --t-accent-fg: #ffffff;
-
-  --t-sheet: #33373d;
-  --t-sheet-header: #2c3036;
-  --t-sheet-line: rgb(255 255 255 / 0.1);
-  --t-sheet-border: rgb(255 255 255 / 0.09);
-  --t-sheet-hour-line: rgb(255 255 255 / 0.07);
-  --t-sheet-hover: rgb(255 255 255 / 0.05);
-  --t-sheet-txt: #d7dade;
-  --t-sheet-txt-muted: #a2a7ae;
-  --t-sheet-txt-faint: #7d828a;
-  --t-past-x: rgb(255 255 255 / 0.38);
-}
-
-/* Slabo 27px — the title face. Bundled from public/ rather than fetched, so
-   an offline Android build renders its headings on the first paint. It ships a
-   single weight (400), which is why `font-title` call sites drop `font-bold`:
-   the browser would otherwise synthesise a smeared faux-bold serif. */
-@font-face {
-  font-family: 'Slabo 27px';
-  src: url('/Slabo27px-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+  --color-primary-container: var(--t-accent-hover);
+  --color-primary-fixed-dim: var(--t-accent);
+  --color-on-primary: #ffffff;
 }
 
 @theme {
-  /* Titles only — body text and the small uppercase eyebrow labels stay Inter.
-     Slabo is drawn for one optical size (27px) and falls apart under
-     letter-spacing at 10px. */
-  --font-title: 'Slabo 27px', Georgia, serif;
-
-  /* Fixed accents — these read acceptably on both surface worlds, so they
-     don't participate in theming. */
-  --color-on-primary-container: #eeefff;
-  --color-on-primary-fixed-variant: #003ea8;
-
-  --color-secondary: #006c49;
-  --color-secondary-container: #6cf8bb;
-  --color-on-secondary: #ffffff;
-  --color-on-secondary-fixed-variant: #005236;
-
-  --color-tertiary: #ad0033;
-  --color-tertiary-container: #d22348;
-  --color-on-tertiary: #ffffff;
-  --color-on-tertiary-fixed-variant: #92002a;
-
-  /* Spacing */
+  /* Spacing aliases the pre-redesign components address by name. The
+     redesign's own scale is the `--space-*` properties on :root. */
   --spacing-xs: 4px;
   --spacing-base: 8px;
   --spacing-sm: 12px;
@@ -301,72 +303,115 @@
   --spacing-lg: 40px;
   --spacing-xl: 64px;
 
-  /* Font sizes */
-  --text-headline-xl: 2.25rem;
-  --text-headline-xl--line-height: 2.75rem;
+  /* Legacy type scale — superseded by --text-h1/h2/ui/meta/micro above. */
+  --text-headline-xl: 36px;
+  --text-headline-xl--line-height: 44px;
   --text-headline-xl--font-weight: 700;
-  --text-headline-lg: 1.5rem;
-  --text-headline-lg--line-height: 2rem;
-  --text-headline-lg--font-weight: 600;
-  --text-headline-lg-mobile: 1.25rem;
-  --text-headline-lg-mobile--line-height: 1.75rem;
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--font-weight: 700;
+  --text-headline-lg-mobile: 20px;
+  --text-headline-lg-mobile--line-height: 28px;
   --text-headline-lg-mobile--font-weight: 600;
-  --text-body-md: 1rem;
-  --text-body-md--line-height: 1.5rem;
-  --text-body-sm: 0.875rem;
-  --text-body-sm--line-height: 1.25rem;
-  --text-label-md: 0.75rem;
-  --text-label-md--line-height: 1rem;
-  --text-label-md--letter-spacing: 0.05em;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 24px;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 20px;
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--letter-spacing: 0.5px;
   --text-label-md--font-weight: 600;
 }
 
-/* Inter is the default for everything, including form controls, which don't
-   inherit a font on their own. This must stay inside `@layer base`: unlayered
-   rules outrank *every* layered one regardless of specificity, so an unlayered
-   `*` would beat the `font-title` utility and no heading could opt out. */
+/*
+ * Tailwind v4 defaults border-color to `currentColor`, while generated shadcn
+ * components write a bare `border` and expect a themed default. Without this
+ * a menu's border draws in the *text* colour.
+ */
 @layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--t-border);
+  }
+
+  /* Outfit for everything, including form controls, which don't inherit a
+     font on their own. This must stay inside `@layer base`: unlayered rules
+     outrank *every* layered one regardless of specificity, so an unlayered
+     `*` would beat the `font-heading` utility and no title could opt out. */
   * {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--t-font-body);
   }
 }
 
-body {
-  background-color: var(--t-app-bg);
-  color: var(--t-txt);
-  overflow: hidden;
+/*
+ * Radius is 0 across this redesign — no exceptions, and no component gets to
+ * opt out. Deliberately *unlayered*, so it outranks the utilities layer: a
+ * stray `rounded-lg` or `rounded-full` surviving in a screen that hasn't been
+ * migrated yet cannot put a corner back.
+ */
+*,
+*::before,
+*::after {
+  border-radius: 0;
 }
 
-/* lucide draws stroked SVGs at whatever the surrounding font-size implies
-   nothing about, so icons take an explicit `size`. These two defaults spare
-   every call site a `flex-shrink-0` and a stray text cursor. */
+body {
+  background-color: var(--t-page);
+  color: var(--t-ink);
+  font-family: var(--t-font-body);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Global interactive states.
+ *
+ * One focus ring for the whole app rather than a per-component `ring-*`:
+ * :focus-visible already excludes mouse clicks, so this is only ever seen by
+ * keyboard users, and an outline (unlike a box-shadow ring) can't be clipped
+ * by an ancestor's overflow.
+ */
+:focus-visible {
+  outline: 2px solid var(--t-accent);
+  outline-offset: 2px;
+}
+
+:disabled,
+[aria-disabled='true'],
+[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+::selection {
+  background: var(--t-accent-tint);
+  color: var(--t-accent-deep);
+}
+
+/* lucide draws stroked SVGs at whatever size the call site passes; these two
+   defaults spare every one of them a `flex-shrink-0` and a stray text cursor. */
 svg.lucide {
   flex-shrink: 0;
   user-select: none;
 }
 
-.glass-card {
-  backdrop-filter: blur(12px);
-  background: var(--t-fill);
-  border: 1px solid var(--t-line);
-}
-
 .calendar-cell {
-  border-right: 1px solid var(--t-grid-line);
-  border-bottom: 1px solid var(--t-grid-line);
+  border-right: 1px solid var(--t-border);
+  border-bottom: 1px solid var(--t-border);
   transition: background-color 0.15s;
   display: flex;
   flex-direction: column;
 }
 
 .calendar-cell:hover {
-  background: var(--t-sheet-hover);
+  background: var(--t-accent-tint);
 }
 
 /* Hour rules inside the day/week grid — same idea as .calendar-cell borders,
    exposed as a class so HourGrid doesn't need an inline rgba(). */
 .hour-line {
-  border-top: 1px solid var(--t-sheet-hour-line);
+  border-top: 1px solid var(--t-border);
 }
 
 .scrollbar-hide::-webkit-scrollbar {

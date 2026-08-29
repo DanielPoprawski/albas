@@ -6,6 +6,13 @@ import { Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * A square 18px box with a 1px gray hairline, filling solid purple when
+ * checked — the same mark the task rows, the category list and the habit week
+ * all draw. The border is `line-strong` rather than `line`: at 18px an
+ * unchecked box against a white card needs the extra contrast to read as a
+ * control at all.
+ */
 function Checkbox({
   className,
   ...props
@@ -14,7 +21,13 @@ function Checkbox({
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "peer size-4 shrink-0 rounded-[4px] border border-input shadow-xs transition-shadow outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:bg-input/30 dark:aria-invalid:ring-destructive/40 dark:data-[state=checked]:bg-primary",
+        "peer size-[18px] shrink-0 cursor-pointer border border-line-strong bg-surface",
+        "text-white transition-colors duration-150 outline-none",
+        "hover:border-accent",
+        "data-[state=checked]:border-accent data-[state=checked]:bg-accent",
+        "data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent",
+        "disabled:cursor-not-allowed",
+        "aria-invalid:border-destructive",
         className
       )}
       {...props}
@@ -23,7 +36,7 @@ function Checkbox({
         data-slot="checkbox-indicator"
         className="grid place-content-center text-current transition-none"
       >
-        <Check size={14} strokeWidth={3} />
+        <Check size={12} strokeWidth={3} />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   )

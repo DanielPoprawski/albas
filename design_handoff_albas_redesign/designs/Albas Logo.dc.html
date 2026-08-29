@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+  <meta name="design_doc_mode" content="canvas">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Sora:wght@400;600;700&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eef0f3; font-family: 'Outfit', system-ui, sans-serif; }
+    a { color: #1a202c; }
+    a:hover { color: #a855f7; }
+    .dv-turn { padding: 40px 44px 32px; border-bottom: 1px solid rgba(0,0,0,.08); scroll-margin-top: 16px; }
+    .dv-thd { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; }
+    .dv-tid { font: 600 10px ui-monospace, Menlo, monospace; padding: 3px 7px; background: #1a1a1a; color: #fff; border-radius: 4px; text-decoration: none; }
+    .dv-tname { font: 600 14px/1.2 system-ui, sans-serif; color: #1a1a1a; }
+    .dv-sub { font: 400 12px/1.5 system-ui, sans-serif; color: rgba(0,0,0,.55); margin: 0 0 20px; }
+    .dv-opts { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+    .dv-opt { flex: none; display: flex; flex-direction: column; gap: 9px; scroll-margin-top: 16px; }
+    .dv-oid { font: 600 10.5px ui-monospace, Menlo, monospace; padding: 3px 7px; background: rgba(0,0,0,.08); color: #1a1a1a; border-radius: 5px; text-decoration: none; }
+    .dv-olabel { display: flex; align-items: baseline; gap: 8px; font: 400 11px/1.3 system-ui, sans-serif; color: rgba(0,0,0,.55); }
+    .dv-card { max-width: 100%; background: #fff; border: 1px solid rgba(0,0,0,.08); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden; width: 232px; }
+    .dv-opt:target .dv-oid { background: #2a78d6; color: #fff; }
+    .dv-next { margin: 22px 0 0; font: 12px/1.5 system-ui, sans-serif; color: rgba(0,0,0,.5); }
+    .tile-wrap { padding: 22px; display: flex; align-items: center; justify-content: center; }
+    .ctx-row { padding: 12px 18px; border-top: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px; }
+    .ctx-label { font: 500 10px/1.3 'Outfit', sans-serif; color: #9ca3af; text-transform: uppercase; letter-spacing: .4px; width: 62px; flex-shrink: 0; }
+    .sidebar-logo-demo { font-size: 16px; font-weight: 700; font-family: 'Sora', sans-serif; color: #1a202c; display: flex; align-items: center; gap: 8px; }
+    .mark-20 { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  </style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+  <div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Albas mark, recolored to the current theme</span></div>
+  <p class="dv-sub">Same sail + flag + crossbar &quot;A&quot; construction as the original — recolored to the app's purple (#a855f7 / #7e22ce), on sharp-cornered tiles to match the rest of the UI. Each option also shown at sidebar scale.</p>
+  <div class="dv-opts">
+
+    <div class="dv-opt" id="1a">
+      <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Gradient tile</div>
+      <div class="dv-card">
+        <div class="tile-wrap" style="background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);">
+          <svg viewBox="0 0 100 100" width="116" height="116">
+            <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#ffffff"></path>
+            <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#ffffff" fill-opacity="0.55"></path>
+            <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#ffffff"></path>
+          </svg>
+        </div>
+        <div class="ctx-row">
+          <span class="ctx-label">Sidebar</span>
+          <span class="sidebar-logo-demo">
+            <span class="mark-20" style="background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);">
+              <svg viewBox="0 0 100 100" width="20" height="20">
+                <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#ffffff"></path>
+                <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#ffffff" fill-opacity="0.55"></path>
+                <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#ffffff"></path>
+              </svg>
+            </span>
+            Albas
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1b">
+      <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Two-tone on white</div>
+      <div class="dv-card">
+        <div class="tile-wrap" style="background: #f8fafb; border-bottom: 1px solid #f0f0f0;">
+          <svg viewBox="0 0 100 100" width="116" height="116">
+            <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#a855f7"></path>
+            <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#7e22ce"></path>
+            <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#ffffff"></path>
+          </svg>
+        </div>
+        <div class="ctx-row">
+          <span class="ctx-label">Sidebar</span>
+          <span class="sidebar-logo-demo">
+            <span class="mark-20" style="background:#f8fafb;">
+              <svg viewBox="0 0 100 100" width="20" height="20">
+                <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#a855f7"></path>
+                <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#7e22ce"></path>
+                <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#ffffff"></path>
+              </svg>
+            </span>
+            Albas
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1c">
+      <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Flat monochrome</div>
+      <div class="dv-card">
+        <div class="tile-wrap" style="background: #f8fafb; border-bottom: 1px solid #f0f0f0;">
+          <svg viewBox="0 0 100 100" width="116" height="116">
+            <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#a855f7"></path>
+            <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#a855f7"></path>
+            <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#f8fafb"></path>
+          </svg>
+        </div>
+        <div class="ctx-row">
+          <span class="ctx-label">Favicon</span>
+          <span class="sidebar-logo-demo">
+            <span class="mark-20" style="background:#f8fafb;">
+              <svg viewBox="0 0 100 100" width="20" height="20">
+                <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#a855f7"></path>
+                <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#a855f7"></path>
+                <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#f8fafb"></path>
+              </svg>
+            </span>
+            Albas
+          </span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <p class="dv-next">Try next: &quot;make <a class="dv-oid" href="#1a">1a</a> the one, apply it everywhere&quot; · &quot;lean the tilt more&quot; · &quot;show a rounded-corner version too&quot;</p>
+</section>
+
+</x-dc>
+</body>
+</html>
