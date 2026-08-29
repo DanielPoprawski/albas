@@ -1,46 +1,251 @@
-import { useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { remindDueEvents, remindDueTodos } from '../notifications';
-import TopBar from './TopBar';
-import Sidebar from './Sidebar';
 import Calendar from './Calendar';
 import HomeView from './HomeView';
 import RightPanel from './RightPanel';
-import AddModal from './AddModal';
 import TodoPanel from './TodoPanel';
-import WeightPanel from './WeightPanel';
 import Settings from './Settings';
 import Welcome from './Welcome';
-import StatusBar, { STATUS_BAR_H } from './StatusBar';
 import { useApp } from '../context/AppContext';
+import { stampLabel, timeAgo } from '../dates';
 import { inTauri } from '../persistence';
 import { useIsMobile } from '../useMedia';
+import type { ActiveView } from '../types';
 
-function Fab({ onClick, className, style }: {
-  onClick: () => void;
-  className?: string;
-  style?: React.CSSProperties;
+/**
+ * The four destinations the redesign's sidebar has. They are the shell's own
+ * vocabulary rather than `ActiveView`'s: Habits is a new screen (package 04)
+ * that the stored view type doesn't name yet, and Dashboard/To-Do read better
+ * here than the old calendar/todos.
+ */
+type Route = 'dashboard' | 'todo' | 'habits' | 'settings';
+
+/** Route → the persisted view, where one exists. Habits has none yet. */
+const VIEW_OF: Partial<Record<Route, ActiveView>> = {
+  dashboard: 'calendar',
+  todo: 'todos',
+  settings: 'settings',
+};
+
+function routeOf(view: ActiveView): Route {
+  if (view === 'todos') return 'todo';
+  if (view === 'settings') return 'settings';
+  if (view === 'weight') return 'habits';
+  return 'dashboard';
+}
+
+/* ── Sidebar slot ────────────────────────────────────────────────────────
+ *
+ * A screen can hang its own second sidebar section (To-Do's Categories, a
+ * filter list, …) under Menu by rendering `<SidebarSlot>` anywhere in its
+ * tree. It portals into the sidebar, so a page component never has to be
+ * split in two or thread a node up through props.
+ *
+ * The target is held as state, not a ref: a ref set during the shell's own
+ * render would still be null on the consumer's first pass, and nothing would
+ * re-render it.
+ */
+const SlotContext = createContext<HTMLElement | null>(null);
+
+export function SidebarSlot({ children }: { children: ReactNode }) {
+  const host = useContext(SlotContext);
+  return host ? createPortal(children, host) : null;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────*/
+
+const ICON = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8 } as const;
+
+const NAV: { route: Route; label: string; icon: ReactNode }[] = [
+  {
+    route: 'dashboard',
+    label: 'Dashboard',
+    icon: (
+      <svg {...ICON}>
+        <rect x="3" y="3" width="7" height="7" />
+        <rect x="14" y="3" width="7" height="7" />
+        <rect x="3" y="14" width="7" height="7" />
+        <rect x="14" y="14" width="7" height="7" />
+      </svg>
+    ),
+  },
+  {
+    route: 'todo',
+    label: 'To-Do',
+    icon: (
+      <svg {...ICON}>
+        <rect x="3" y="4" width="6" height="6" />
+        <path d="M4.5 7l1 1 2-2" />
+        <line x1="12" y1="7" x2="21" y2="7" />
+        <rect x="3" y="14" width="6" height="6" />
+        <path d="M4.5 17l1 1 2-2" />
+        <line x1="12" y1="17" x2="21" y2="17" />
+      </svg>
+    ),
+  },
+  {
+    route: 'habits',
+    label: 'Habits',
+    icon: (
+      <svg {...ICON}>
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    ),
+  },
+  {
+    route: 'settings',
+    label: 'Settings',
+    icon: (
+      <svg {...ICON}>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+      </svg>
+    ),
+  },
+];
+
+function Sidebar({
+  route,
+  onNavigate,
+  slotRef,
+}: {
+  route: Route;
+  onNavigate: (route: Route) => void;
+  slotRef: (el: HTMLDivElement | null) => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      aria-label="Add"
-      style={style}
-      className={`z-40 w-14 h-14 bg-primary text-on-primary rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all ${className ?? ''}`}
-    >
-      <Plus size={28} strokeWidth={2.5} />
-    </button>
+    <aside className="sidebar">
+      <div className="sidebar-logo">
+        <span className="logo-mark">
+          {/* The app mark, drawn rather than lettered — same three strokes as
+              public/icon.svg, in white on the purple square. */}
+          <svg viewBox="0 0 100 100" width="20" height="20" aria-hidden="true">
+            <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#fff" />
+            <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#fff" fillOpacity="0.55" />
+            <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#fff" />
+          </svg>
+        </span>
+        Albas
+      </div>
+
+      <div className="sidebar-section">
+        <div className="sidebar-title">Menu</div>
+        {NAV.map(({ route: r, label, icon }) => (
+          // Real anchors, so a destination has a hover target, a focus ring
+          // and a middle-click affordance. The href is the hash the route
+          // would have if this app ever grows a router; navigation itself is
+          // still state, hence the preventDefault.
+          <a
+            key={r}
+            href={`#/${r}`}
+            aria-current={route === r ? 'page' : undefined}
+            className={`sidebar-item${route === r ? ' active' : ''}`}
+            onClick={e => {
+              e.preventDefault();
+              onNavigate(r);
+            }}
+          >
+            {icon}
+            {label}
+          </a>
+        ))}
+      </div>
+
+      {/* Page-specific section — see SidebarSlot. Empty renders as nothing. */}
+      <div className="sidebar-section sidebar-slot" ref={slotRef} />
+    </aside>
   );
 }
 
-export default function AppShell() {
-  const [showModal, setShowModal] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const isMobile = useIsMobile();
-  const { activeView, calendarMode, todos, events, loaded, welcomeDone, firstDayOfWeek } = useApp();
+/* ── Bottom taskbar ──────────────────────────────────────────────────────*/
 
-  // Only the desktop month grid sizes itself; week/day fill the space as before
-  const monthGridDesktop = !isMobile && activeView === 'calendar' && calendarMode === 'month';
+/** "Daniel Poprawski" → "DP"; a single word gives its first letter. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+/**
+ * The strip along the bottom edge: version on the left, sync state and the
+ * account on the right. Identical on every route — it belongs to the shell,
+ * not to any screen.
+ */
+function BottomBar() {
+  const { signedIn, syncAccount, lastSync, syncing, syncNow } = useApp();
+  // Re-render on a timer so "5m ago" ages on its own without a sync running.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const canSync = signedIn && inTauri();
+  const label = syncing
+    ? 'Syncing…'
+    : lastSync
+      ? `${stampLabel(lastSync, now)} · ${timeAgo(lastSync, now)}`
+      : canSync
+        ? 'Never synced'
+        : 'Not signed in';
+
+  const name = syncAccount ?? (signedIn ? 'Sync token' : 'Local');
+
+  return (
+    <div className="bottom-bar">
+      <div className="bar-version">v{__APP_VERSION__}</div>
+      <div className="bar-right">
+        <button
+          type="button"
+          className="bar-sync"
+          disabled={!canSync || syncing}
+          title={canSync ? 'Sync now' : 'Sync is off until an account is set up'}
+          onClick={() => {
+            // The bar has room for a word, not a reason; Settings → Account &
+            // sync runs the same call and reports what went wrong.
+            if (canSync && !syncing) void syncNow().catch(() => {});
+          }}
+        >
+          <span aria-hidden="true">↻</span>
+          {label}
+        </button>
+        <span className="bar-divider" />
+        <span className="bar-user">
+          <span className="user-icon">{initialsOf(name)}</span>
+          {name}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────────*/
+
+export default function AppShell() {
+  const isMobile = useIsMobile();
+  const [slotHost, setSlotHost] = useState<HTMLDivElement | null>(null);
+  const { activeView, setActiveView, todos, events, loaded, welcomeDone, firstDayOfWeek } = useApp();
+
+  // The shell's own route. Seeded from the persisted view and re-derived
+  // whenever something else changes it (Settings links, the account menu),
+  // but held locally as well because Habits has no ActiveView to store.
+  const [route, setRoute] = useState<Route>(() => routeOf(activeView));
+  useEffect(() => setRoute(routeOf(activeView)), [activeView]);
+
+  function navigate(next: Route) {
+    setRoute(next);
+    const view = VIEW_OF[next];
+    if (view) setActiveView(view);
+  }
 
   // Remind about due to-dos and upcoming events on launch, then re-check
   // periodically. 5-minute cadence so short event offsets (10 min) can't
@@ -62,88 +267,40 @@ export default function AppShell() {
   if (inTauri() && !welcomeDone) return <Welcome />;
 
   return (
-    <div className="h-screen overflow-hidden bg-app-bg">
-      <TopBar isMobile={isMobile} onOpenDrawer={() => setDrawerOpen(true)} />
-      <Sidebar
-        variant={isMobile ? 'drawer' : 'rail'}
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      />
+    <div className="desktop-shell">
+      <div className="shell-body">
+        <Sidebar route={route} onNavigate={navigate} slotRef={setSlotHost} />
 
-      {/* Desktop is a flex row so the right panel can absorb whatever the
-          calendar doesn't need; mobile drops the rail offset and the panel
-          entirely, since Home already carries both lists. */}
-      {/* Desktop only — see StatusBar. The rail stops above it, so the bar
-          reads as one strip across the whole bottom edge. */}
-      {!isMobile && <StatusBar />}
+        {/* The content slot. A flex row, so a two-column screen is simply two
+            children of it; single-column screens fill it. */}
+        <SlotContext.Provider value={slotHost}>
+          <div className="shell-content">
+            {route === 'dashboard' && (isMobile ? <HomeView /> : <Calendar />)}
+            {route === 'dashboard' && !isMobile && <RightPanel />}
 
-      <main
-        className={`pt-16 h-screen overflow-hidden ${isMobile ? '' : 'ml-16 flex'}`}
-        // Reserve the status bar's row, or the content column's last pixels —
-        // and the FAB, positioned against its bottom — sit under the bar.
-        style={isMobile ? undefined : { paddingBottom: STATUS_BAR_H }}
-      >
-        {/* The calendar goes edge-to-edge on phones; the list views keep their
-            own padding now that the glass-card wrappers are gone.
+            {route === 'todo' && (
+              <div className="flex-1 min-w-0 overflow-auto scrollbar-hide p-[var(--space-16)]">
+                <TodoPanel />
+              </div>
+            )}
 
-            `flex-none` for the desktop month grid is load-bearing: that grid
-            sets its own width from its height to keep 3:2 day cells, and a
-            flex-1 column would stretch past it and strand the leftover space
-            instead of handing it to the panel. */}
-        <div
-          className={`h-full ${
-            isMobile
-              ? (activeView === 'calendar' ? 'p-0' : 'p-sm')
-              : `relative p-md min-w-0 ${monthGridDesktop ? 'flex-none' : 'flex-1'}`
-          }`}
-        >
-          {/* On a phone 'calendar' is the home page: the calendar with habits
-              and tasks stacked under it. There is no separate to-do
-              destination there — one list surface, as on desktop. Home also
-              absorbs 'todos', so narrowing a desktop window while that view is
-              open lands somewhere real instead of on a blank screen. */}
-          {(activeView === 'calendar' || (isMobile && activeView === 'todos')) &&
-            (isMobile ? <HomeView /> : <Calendar />)}
-          {/* No habits here — this view is the to-dos, and the habit strips
-              live beside the calendar (see RightPanel). Capped rather than
-              full-bleed, too: without the panel beside it a to-do row would
-              stretch the width of the monitor, stranding its due label a foot
-              away from its name. */}
-          {activeView === 'todos' && !isMobile && (
-            <div className="h-full overflow-auto scrollbar-hide max-w-[46rem]">
-              <TodoPanel />
-            </div>
-          )}
-          {activeView === 'weight' && <WeightPanel />}
-          {activeView === 'settings' && <Settings />}
+            {/* Package 04 owns this screen; the shell only routes to it. */}
+            {route === 'habits' && (
+              <div className="flex-1 min-w-0 overflow-auto p-[var(--space-24)] text-ui text-ink-muted">
+                Habits
+              </div>
+            )}
 
-          {/* Desktop FAB sits inside the content column, so it follows the
-              calendar's edge instead of a hardcoded offset — the right panel's
-              width is no longer fixed. */}
-          {!isMobile && <Fab onClick={() => setShowModal(true)} className="absolute right-md bottom-md" />}
-        </div>
+            {route === 'settings' && (
+              <div className="flex-1 min-w-0 overflow-auto p-[var(--space-16)]">
+                <Settings />
+              </div>
+            )}
+          </div>
+        </SlotContext.Provider>
+      </div>
 
-        {/* Calendar only. Everywhere else the panel was a second copy of a
-            list the main view already owns — or, in Settings and Weight, a
-            list with nothing to do with what's on screen. */}
-        {!isMobile && activeView === 'calendar' && <RightPanel />}
-      </main>
-
-      {/* On mobile it floats above the gesture bar. */}
-      {isMobile && (
-        <Fab
-          onClick={() => setShowModal(true)}
-          className="fixed z-50"
-          style={{ right: 20, bottom: 'calc(20px + env(safe-area-inset-bottom))' }}
-        />
-      )}
-
-      {showModal && (
-        <AddModal
-          defaultType={activeView === 'calendar' ? 'event' : 'todo'}
-          onClose={() => setShowModal(false)}
-        />
-      )}
+      <BottomBar />
     </div>
   );
 }

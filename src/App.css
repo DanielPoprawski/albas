@@ -1,12 +1,40 @@
-/* Outfit (body/UI), Sora (headings + wordmark), JetBrains Mono (ids, SQL).
-   Weights are exactly the ones the redesign uses — nothing here is loaded
-   "just in case", every extra face is a request on first paint. */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 /* Supplies the animate-in / fade-in-0 / zoom-in-95 utilities that generated
    shadcn components reference. Tailwind v4 dropped tailwindcss-animate, and
    without this those classes silently compile to nothing. */
 @import "tw-animate-css";
+
+/*
+ * Outfit (body/UI) and Sora (headings + the wordmark), self-hosted from
+ * public/ rather than fetched from fonts.googleapis.com. Albas is offline-first
+ * — an Android build with no network must render in its own type on the first
+ * paint, not in the system sans while a request that will never resolve hangs.
+ *
+ * These are the *variable* files: one 108K face each spanning the whole weight
+ * range, against 224K/180K for the four and three static weights the redesign
+ * uses. Declaring the full axis range in `font-weight` is what lets the browser
+ * instance 500 and 600 out of the same file — omit it and every weight but 400
+ * renders as a synthesised faux-bold.
+ *
+ * `format('truetype')`, not the variable-specific `truetype-variations`: an
+ * engine that doesn't know that keyword discards the whole `src` and falls back
+ * to the system sans, where this way it just renders the 400 instance.
+ */
+@font-face {
+  font-family: 'Outfit';
+  src: url('/Outfit/Outfit-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Sora';
+  src: url('/Sora/Sora-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
 
 /*
  * ─────────────────────────────────────────────────────────────────────────
@@ -31,6 +59,9 @@
      references them, and a `var()` on :root is never pruned. */
   --t-font-body: 'Outfit', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --t-font-heading: 'Sora', 'Outfit', system-ui, -apple-system, sans-serif;
+  /* Not bundled: no file supplied, and only the admin console's ids and SQL
+     console ask for it. Named first so dropping one into public/ is all it
+     takes; the system mono renders until then. */
   --t-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Surfaces */
@@ -452,5 +483,213 @@ svg.lucide {
   .month-slide-next,
   .month-slide-prev {
     animation: none;
+  }
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ * App shell — sidebar + content + bottom taskbar
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * The class names are the design file's own (`.sidebar`, `.sidebar-item`,
+ * `.bottom-bar`, …) so a screen package can paste its markup out of the
+ * design and land on the right rules. Values come from the `--t-*` tokens,
+ * which carry exactly the hexes the design hardcodes.
+ */
+.desktop-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* The [sidebar][content] row. `overflow: hidden` here is what makes the
+   taskbar a fixed 32px strip rather than something a long page pushes off
+   the bottom of the window. */
+.shell-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* The content slot. A flex *row* by default, matching the design's
+   `.content`, so a screen that is two columns (calendar + right panel) is
+   just two children. `min-width: 0` stops a wide child from pushing the
+   sidebar off-screen. */
+.shell-content {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  background: var(--t-surface);
+  overflow: hidden;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--t-surface);
+  border-right: 1px solid var(--t-border);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+}
+
+.sidebar-logo {
+  font-family: var(--t-font-heading);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--t-ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-mark {
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--t-font-heading);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--t-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--t-ink-secondary);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.sidebar-item svg {
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.sidebar-item:hover {
+  background: var(--t-subtle);
+  color: var(--t-ink);
+}
+
+.sidebar-item.active {
+  color: var(--t-accent);
+  font-weight: 500;
+}
+
+/* The page-specific second section (Categories, filters, …). Collapsed when
+   the current screen supplies nothing, or the sidebar's 24px gap would leave
+   a hole under Menu. */
+.sidebar-slot:empty {
+  display: none;
+}
+
+/* ── Bottom taskbar ───────────────────────────────────────────────────── */
+.bottom-bar {
+  height: 32px;
+  flex-shrink: 0;
+  background: var(--t-surface);
+  border-top: 1px solid var(--t-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 11px;
+  color: var(--t-ink-secondary);
+}
+
+.bar-version {
+  font-weight: 600;
+  color: var(--t-ink);
+}
+
+.bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bar-sync {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.bar-sync:hover {
+  color: var(--t-accent);
+}
+
+.bar-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--t-border);
+}
+
+.bar-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--t-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Below the breakpoint the shell and its content both stack: the sidebar
+   becomes a full-width band above the page instead of a column beside it. */
+@media (max-width: 768px) {
+  .shell-body {
+    flex-direction: column;
+  }
+
+  .shell-content {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--t-border);
+    padding: 16px;
   }
 }
