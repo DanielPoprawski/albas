@@ -1,119 +1,178 @@
-# Albas Web Console
+# Albas Web Console — Implementation Guide
 
-This folder is the **public web console** served at `albas.danni-dev.com/` (alongside the `/api` sync endpoint). It provides a read-only interface for viewing synced data from the desktop/mobile app.
+## Overview
 
-**Status:** Currently a blank Bun-based template. Implementation is planned after the app redesign completes (the redesign spec includes screens for a user-facing web console).
+The web console is a **read-only** Bun + React interface for Albas synced data, served at `albas.danni-dev.com/`. It must remain stateless, fetch everything from `/api/sync`, and never parse app data — same principle as `sync-server/` itself.
 
-**Deployment:** Pushed to production at `albas.danni-dev.com` on the same host as `sync-server/`.
+## Key Constraints
 
-**Authentication:** Uses the same Albas account + passkey system as the app — users sign in to view their own data.
+- **Read-only:** No mutations; every data structure is immutable, sourced from `/sync`. State is append-only.
+- **No server-side rendering of user data:** Never embed rows in HTML templates. Fetch them, render them client-side.
+- **Same origin as the sync server:** No CORS layer, WebAuthn RP ID is this exact domain, not a subdomain or apex.
+- **Token handling:** Bearer token (minted on passkey login) stored in `localStorage`, validated on page load, discarded on logout. Never expose it in URLs or logs.
+- **Theme consistency:** Use the same `--t-*` design tokens as the main app. Both respond to `data-theme` or `prefers-color-scheme`.
 
----
+## Project Layout
+
+```
+web/
+├── src/
+│   ├── index.ts              # Bun entry point; serves index.html and routes API calls
+│   ├── frontend.tsx          # React root component
+│   ├── pages/                # Page components (Dashboard, Calendar, Todos)
+│   ├── components/           # Reusable UI pieces (EventCard, TodoRow, etc.)
+│   ├── hooks/                # useAuth, useSync, etc.
+│   ├── types/web.ts          # Type definitions (mirror of app's types where needed)
+│   ├── styles/web.css        # Tailwind v4 setup; import --t-* tokens from main app
+│   └── api/                  # Fetch wrappers for /api endpoints
+├── index.html                # Static HTML shell
+├── package.json              # Bun project config (separate from root)
+└── bun.lockb                 # Bun lockfile (separate from root)
+```
 
 ## Bun Setup
 
-Default to using Bun instead of Node.js.
+Use Bun, not npm:
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+```bash
+bun install
+bun run dev        # development with HMR
+bun run build      # production bundle
+bun start          # run production build
+```
 
-## APIs
+- `bun:sqlite` for any local caching (not synced data)
+- `Bun.serve()` for the server; no express
+- `Bun.file()` for file I/O, not `fs`
+- HTML imports work natively; no bundler config needed
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## Authentication & Session
+
+- **Welcome route:** Passkey ceremony via Tauri plugin? No — the web console runs in a browser with no Tauri. Use `WebAuthn.isUserVerifyingPlatformAuthenticatorAvailable()` and vanilla `navigator.credentials.get()` for security keys/biometrics.
+- **Token flow:** `POST /login/start` → challenge, `POST /login/finish` → token. Store token in `localStorage['albas-session']`.
+- **Validation on load:** Check token with `GET /health` or a minimal `/sync` call before rendering the app.
+- **Logout:** Delete the token from `localStorage` and redirect to Welcome.
+
+## Fetching & Caching
+
+All data flows through `/sync`:
+
+```ts
+// First load: include `since: 0` to get a full snapshot
+const response = await fetch('/api/sync', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${token}` },
+  body: JSON.stringify({ since: 0, sharedSince: 0, grantRev: 0, changes: [] })
+});
+// { seq, changes, shared, sharedSeq, grantRev }
+
+// Store seq, sharedSeq, grantRev in state
+// On next sync, send { since: seq, sharedSince: sharedSeq, grantRev, changes: [] }
+// Apply `changes` and `shared` rows; these are the only updates
+```
+
+**Never** call `/api` endpoints directly for data — they don't exist. Everything goes through `/sync`.
+
+## Types
+
+Mirror only what the console needs from the app:
+
+```ts
+// web/src/types/web.ts
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  startDate: string; // ISO 8601
+  endDate: string;
+  allDay: boolean;
+  color?: string;
+  sharedBy?: string; // if from another account
+};
+
+export type Todo = {
+  id: string;
+  title: string;
+  due?: string;
+  completed: boolean;
+  category?: string;
+  important: boolean;
+  sharedBy?: string;
+};
+
+// Never import from the main app's types.ts — maintain independence.
+```
+
+## Theming
+
+The main app defines tokens in `src/App.css`. The web console **does not** import that file directly (CORS + bundler issues). Instead:
+
+1. **Host copies the token definitions** to `web/src/styles/web.css` (or generates them from a shared source).
+2. **Both projects define the full `--t-*` palette** on `:root` (light) and `[data-theme='dark']`.
+3. **Tailwind v4 `@theme inline` block** aliases shadcn/Tailwind names onto them.
+4. **JavaScript toggles `data-theme`** based on user choice or `prefers-color-scheme`.
+
+```css
+/* web/src/styles/web.css */
+:root {
+  --t-surface: #ffffff;
+  --t-accent: #2563eb;
+  /* ... etc ... */
+}
+
+[data-theme='dark'] {
+  --t-surface: #0a0a0a;
+  --t-accent: #60a5fa;
+  /* ... etc ... */
+}
+```
+
+The browser respects `color-scheme` per theme, so native date pickers stay legible.
+
+## Shared Data
+
+Shared rows arrive in `shared` key with `from` field (owner account name):
+
+```ts
+// In /sync response
+{
+  "shared": [
+    { "from": "sarah", "tbl": "events", "pk": "e1", "payload": { /* ... */ } }
+  ]
+}
+
+// Render with attribution, dimmed styling, read-only (no edit buttons)
+<EventCard {...event} sharedBy="sarah" readOnly />
+```
+
+Use `sharedDisplay.ts` logic from the main app (copy it; don't import) to apply the right styling and tooltip.
+
+## What NOT to Do
+
+- ❌ **Don't hardcode user data.** If a screen shows "Sarah's calendar," that must come from the actual account data, not a template.
+- ❌ **Don't add E2E encryption here.** The console never decrypts; it renders plaintext rows as-is.
+- ❌ **Don't store passwords or tokens in a cookie.** `localStorage` is fine for a single-device session; HTTPS is mandatory.
+- ❌ **Don't parse payloads.** A row's `payload` is opaque JSON; render it as-is, don't assume a shape.
+- ❌ **Don't use express, Next.js, or any full-stack framework.** Bun's `Bun.serve()` is the server; React is the frontend; they live in one `index.ts`.
+
+## Deployment
+
+The console is deployed by the same CI pipeline that publishes `sync-server/`. Updates land automatically on `albas.danni-dev.com` when `web/src/**` changes.
+
+nginx forwards requests to the Bun app running on `127.0.0.1:3000`. The TLS terminating reverse proxy is shared with `sync-server/`.
 
 ## Testing
 
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+```bash
+bun test            # unit tests in .test.ts files
 ```
 
-## Frontend
+For integration tests against a live `sync-server`, set `ALBAS_SYNC_TEST_URL` and use the same token protocol as the app (see `sync-server/README.md`).
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+## Maintenance & Sync Protocol Updates
 
-Server:
+When `sync.rs` (`src-tauri/src/sync.rs`) changes:
+1. **TABLES** additions → mirror in `web/src/types/web.ts` if the console will display them.
+2. **Payment protocol changes** → update the fetch wrapper in `web/src/api/sync.ts`.
+3. **Share group changes** → update the render logic in components.
 
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+The server is the source of truth; the console is a client and must adapt when the protocol changes.

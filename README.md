@@ -23,7 +23,7 @@ it, and no data leaves the machine unless you set sync up yourself.
   is a chore. Free-text categories, an importance flag, streaks and quotas.
 - **Weight tracking** — manual entries or automatic sync from a Wyze smart scale.
 - **Read-only sharing** — expose your calendar and/or to-dos to another account, one-way.
-- **Four themes** — dark, light, and two greys, with everything driven by design tokens.
+- **Two themes** — light and dark, with everything driven by design tokens.
 - **Reminders**, first-day-of-week, ICS import, and an offline-capable Android build.
 
 ## Install
