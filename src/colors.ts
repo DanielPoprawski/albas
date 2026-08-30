@@ -52,6 +52,31 @@ export const CATEGORY_ACCENTS = {
 
 export type CategoryAccentName = keyof typeof CATEGORY_ACCENTS;
 
+/**
+ * The starter categories the Add modal offers and the To-Do sidebar lists.
+ *
+ * `Todo.category` is free text derived from use — there is no managed list —
+ * so this is a set of *suggestions*, not an enumeration. It lives here because
+ * three components were each carrying their own copy and they disagreed: the
+ * same "Work" was blue in the Add modal and purple in the sidebar. A category
+ * has one colour or it has none.
+ */
+export const TODO_CATEGORIES: { label: string; hex: string }[] = [
+  { label: 'Work', hex: CATEGORY_ACCENTS.blue.hex },
+  { label: 'Personal', hex: CATEGORY_ACCENTS.purple.hex },
+  { label: 'Shopping', hex: CATEGORY_ACCENTS.amber.hex },
+  { label: 'Health', hex: CATEGORY_ACCENTS.green.hex },
+  { label: 'Finance', hex: CATEGORY_ACCENTS.teal.hex },
+];
+
+/** The accent a category name should draw in, or the default for an unknown one. */
+export function categoryAccent(label: string): CategoryAccent {
+  const found = TODO_CATEGORIES.find(
+    (c) => c.label.toLowerCase() === label.trim().toLowerCase(),
+  );
+  return accentOf(found?.hex ?? DEFAULT_COLOR);
+}
+
 /** The accent hexes in the order the designs list their categories. */
 export const CATEGORY_HEXES: string[] = [
   CATEGORY_ACCENTS.purple.hex,

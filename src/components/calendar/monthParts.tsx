@@ -142,9 +142,8 @@ export function BarsOverlay({
               marginBottom: 2,
               marginLeft: seg.startsHere ? 4 : 0,
               marginRight: seg.endsHere ? 4 : 0,
-              borderRadius: seg.startsHere && seg.endsHere ? 6
-                : seg.startsHere ? '6px 0 0 6px'
-                : seg.endsHere ? '0 6px 6px 0' : 0,
+              // No radius: the redesign is 90° everywhere, and an inline
+              // style would beat the global `border-radius: 0` reset.
               backgroundColor: `${hex}cc`,
               color: '#fff',
               opacity: sharedOpacity(seg.item.event),

@@ -11,8 +11,16 @@ import {
   SelectValue,
 } from '../ui/select';
 
-export const inputClass = 'w-full bg-fill-strong border border-fill-stronger rounded-lg px-sm py-xs text-body-sm text-txt placeholder-txt-muted/60 focus:outline-none focus:border-primary-fixed-dim transition-colors';
-export const labelClass = 'block text-[10px] font-bold uppercase tracking-wider text-txt-muted mb-xs';
+/*
+ * The shared text-input skin. White ground and a hairline border, matching the
+ * designs' `.input-text`; the filled grey `bg-fill-strong` it used to carry is
+ * a pre-redesign surface. `focus:border-accent` colours the border on any
+ * focus and the global :focus-visible outline still lands on top for keyboard
+ * users — the previous `focus:outline-none` took that away and left the border
+ * tint as the only signal.
+ */
+export const inputClass = 'w-full bg-surface border border-line px-sm py-xs text-body-sm text-ink placeholder:text-ink-muted focus:border-accent transition-colors';
+export const labelClass = 'block text-[10px] font-bold uppercase tracking-wider text-ink-muted mb-xs';
 
 export function SegmentedControl<T extends string>({ options, value, onChange }: {
   options: { value: T; label: string }[];

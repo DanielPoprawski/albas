@@ -1,11 +1,14 @@
 import { serve } from "bun";
 import index from "./index.html";
+import admin from "../admin.html";
 
 const server = serve({
   routes: {
-    // Serve index.html for all unmatched routes.
-    "/*": index,
+    // Admin console
+    "/admin": admin,
+    "/admin/*": admin,
 
+    // API endpoints
     "/api/hello": {
       async GET(req) {
         return Response.json({
@@ -27,6 +30,9 @@ const server = serve({
         message: `Hello, ${name}!`,
       });
     },
+
+    // Serve index.html for all unmatched routes.
+    "/*": index,
   },
 
   development: process.env.NODE_ENV !== "production" && {

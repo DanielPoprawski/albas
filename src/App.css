@@ -69,6 +69,13 @@
   --t-surface: #ffffff;
   --t-border: #e5e7eb;
   --t-border-strong: #d1d5db;
+  /* An extra-light hairline for divisions *inside* a card (the Add-modal's
+     footer rule) — lighter than --t-border, which separates card from page. */
+  --t-border-subtle: #f1f5f9;
+  /* The idle state of a small icon affordance (the Add-modal's chip "x"
+     buttons), which resolves to --t-ink on hover. Deliberately dimmer than
+     --t-ink-muted: at rest it should read as available, not as content. */
+  --t-icon-idle: #c3c8d0;
   --t-subtle: #f3f4f6;
 
   /* Accent */
@@ -110,6 +117,13 @@
   --t-cat-pink-line: #fbcfe8;
   --t-cat-pink-ink: #831843;
 
+  /* Red is the danger colour doubling as a category mark — the dashboard's
+     habit palette uses it for its second row. */
+  --t-cat-red: #ef4444;
+  --t-cat-red-tint: #fee2e2;
+  --t-cat-red-line: #fecaca;
+  --t-cat-red-ink: #991b1b;
+
   --t-cat-teal: #06b6d4;
   --t-cat-teal-tint: #cffafe;
   --t-cat-teal-line: #a5f3fc;
@@ -118,7 +132,18 @@
   /* Status */
   --t-danger: #ef4444;
   --t-success: #10b981;
-  --t-scrim: rgb(15 23 42 / 0.35);
+  /* The amber a warning callout writes its body text in — a shade darker
+     than the category ink, which is tuned for a 10px pill rather than a
+     paragraph. Splash/Auth's offline warning is the only user. */
+  --t-warn-ink: #b45309;
+
+  /* The far end of the splash's two-tone diagonal page wash. Only the
+     Welcome gate uses it; every other surface is flat --t-page. */
+  --t-page-shade: #f0f4f8;
+  /* The Add Modal's backdrop, which is the one the designs specify: the ink
+     colour at 38%. Every dialog overlay in the app draws from this, so the
+     shadcn `Dialog` and `AddModal` dim the page identically. */
+  --t-scrim: rgb(26 32 44 / 0.38);
 
   /*
    * Spacing scale — 4 6 8 10 12 14 16 18 20 24. Exposed as properties rather
@@ -171,9 +196,163 @@
   --t-sheet-txt-muted: var(--t-ink-secondary);
   --t-sheet-txt-faint: var(--t-ink-muted);
   --t-past-x: rgb(26 32 44 / 0.35);
+  /* An elapsed / out-of-month day cell in the month grid, and the day number
+     inside it. The design's `.day-cell.past` pair. */
+  --t-past-cell: #eef0f2;
+  --t-past-ink: #b0b5bd;
 
   /* shadcn's components read --radius directly, not through @theme. */
   --radius: 0;
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ * Dark theme
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * The second and last theme. `grey-high`/`grey-low` are gone for good — the
+ * redesign never drew them, `ThemeName` names two, and `AppContext`'s THEMES
+ * validates against those two.
+ *
+ * This block redefines only the `--t-*` properties whose *value* changes.
+ * Every legacy alias that is already a `var()` of one of them (`--t-app-bg`,
+ * `--t-chrome`, `--t-line`, `--t-txt`, …) follows for free and is deliberately
+ * not repeated; the ones carrying a literal in `:root` (`--t-fill-strong`,
+ * `--t-past-*`) are restated here because nothing else would move them. The
+ * three font stacks don't change at all.
+ *
+ * Everything the app paints reaches these through `@theme inline`, which emits
+ * `var(--t-…)` into the utilities rather than copying the light value, so this
+ * override repaints the whole app — including Radix portals, which render at
+ * the end of <body> and are still inside <html data-theme>.
+ */
+[data-theme='dark'] {
+  /* The counterpart of `color-scheme: light` on :root. This is what keeps a
+     native date/time picker from rendering black-on-black in the wrong theme
+     — the redesign's date and time inputs make it load-bearing again. */
+  color-scheme: dark;
+
+  /* Surfaces. The same three-step relationship as light — page below,
+     surface above it, `subtle` a hair off surface for inset rows — read
+     bottom-up instead of top-down. Not pure black: the app is a stack of
+     hairline-bordered cards, and #000 leaves the borders doing all the work
+     of separating them. */
+  --t-page: #0e1013;
+  --t-surface: #17191e;
+  --t-border: #2a2d34;
+  --t-border-strong: #3c4048;
+  /* Both of these invert their direction, as roles rather than values: the
+     in-card hairline sits *below* --t-border here instead of above it, and the
+     idle icon sits between --t-ink-muted and --t-border-strong going the other
+     way. Copying the light values would make one invisible and one glaring. */
+  --t-border-subtle: #23262d;
+  --t-icon-idle: #525862;
+  --t-subtle: #1e2127;
+
+  /* Accent. Nudged lighter than the light theme's #a855f7 so it clears text
+     contrast against a dark card, while staying the same purple.
+     `--t-accent-deep` inverts its role: in light it is the *darker* purple a
+     chip's label is written in, so on dark it becomes the lighter one. It is
+     also the far end of the Welcome gradient, where a lavender still reads. */
+  --t-accent: #b06bf8;
+  --t-accent-hover: #c084fc;
+  --t-accent-deep: #d8b4fe;
+  /* The selected/hover wash behind accent text. Light's #faf5ff is a white
+     tinted purple; this is the page tinted purple by the same small amount. */
+  --t-accent-tint: #241a33;
+
+  /* Text. Slightly off-white rather than #fff — full white on a near-black
+     surface haloes at 11–13px, which is most of this app's type. */
+  --t-ink: #e8eaed;
+  --t-ink-secondary: #a0a6b0;
+  --t-ink-muted: #6f757f;
+
+  /*
+   * Category ramps.
+   *
+   * These are seven small-mark hues in four variants. The mark itself
+   * (`--t-cat-*`) is brightened a little and otherwise kept — it is a dot or
+   * a 2px bar and must stay recognisably the same colour across themes.
+   *
+   * The trio behind it is *not* uniformly darkened. `-tint` is the chip's
+   * fill, so it becomes a low-lightness, low-saturation version of the hue
+   * that sits just above `--t-surface`; `-line` is its hairline, one step
+   * brighter than the tint rather than one step darker as in light; and
+   * `-ink` flips outright — in light it is the darkest value of the ramp
+   * (dark text on a pale chip), here it must be the *lightest* (pale text on
+   * a dark chip), or every chip label would be invisible.
+   */
+  --t-cat-purple: #b06bf8;
+  --t-cat-purple-tint: #2a1d3d;
+  --t-cat-purple-line: #46305f;
+  --t-cat-purple-ink: #ddc2fb;
+
+  --t-cat-amber: #fbbf24;
+  --t-cat-amber-tint: #38290f;
+  --t-cat-amber-line: #5c4318;
+  --t-cat-amber-ink: #fcd77e;
+
+  --t-cat-green: #34d399;
+  --t-cat-green-tint: #102f24;
+  --t-cat-green-line: #1c4d3a;
+  --t-cat-green-ink: #86efc4;
+
+  --t-cat-blue: #60a5fa;
+  --t-cat-blue-tint: #14243d;
+  --t-cat-blue-line: #22406b;
+  --t-cat-blue-ink: #a8cbfc;
+
+  --t-cat-pink: #f472b6;
+  --t-cat-pink-tint: #3a1a2b;
+  --t-cat-pink-line: #5e2c46;
+  --t-cat-pink-ink: #f9b4d5;
+
+  --t-cat-red: #f87171;
+  --t-cat-red-tint: #3a1a1a;
+  --t-cat-red-line: #5e2a2a;
+  --t-cat-red-ink: #fbb0b0;
+
+  --t-cat-teal: #22d3ee;
+  --t-cat-teal-tint: #0e2c33;
+  --t-cat-teal-line: #185059;
+  --t-cat-teal-ink: #8ce7f6;
+
+  /* Status. Both are used as marks and as text on a dark surface, so both
+     move up the ramp; `--t-warn-ink` is a body-copy amber and needs the most. */
+  --t-danger: #f87171;
+  --t-success: #34d399;
+  --t-warn-ink: #fbbf24;
+
+  /* The far end of the Welcome gate's diagonal wash — a shade *up* from the
+     page here, since there is nothing below #0e1013 to shade toward. */
+  --t-page-shade: #171b22;
+  /* Still a dimming overlay, not a lightening one: the page is darker than
+     any dialog, so the scrim has to go on being ink and has to go on being
+     darker than what it covers. Deeper than light's 38% because the contrast
+     between a lit dialog and a dark page is smaller to begin with. */
+  --t-scrim: rgb(0 0 0 / 0.6);
+
+  /*
+   * Legacy aliases that carry a literal in :root, and so would otherwise stay
+   * light. Everything else in that block is a var() and follows on its own.
+   */
+  --t-fill-strong: #23262d;
+
+  /*
+   * The calendar sheet.
+   *
+   * Per CLAUDE.md § Theming the sheet *follows* the theme rather than
+   * inverting it, so in dark it is a dark surface just above `--t-app-bg`
+   * — which is exactly what `--t-surface` already is. They are restated
+   * explicitly all the same: `--t-grid-line` and `--t-past-x` are the sheet's
+   * own cell border and the strike through an elapsed day, and if they don't
+   * flip with the surface the grid loses its lines and the past loses its
+   * crosses. Light's `rgb(26 32 44 / .35)` X is invisible on #17191e.
+   */
+  --t-grid-line: #2a2d34;
+  --t-past-x: rgb(232 234 237 / 0.28);
+  --t-past-cell: #131519;
+  --t-past-ink: #5a6069;
 }
 
 @theme inline {
@@ -223,6 +402,10 @@
   --color-cat-pink-tint: var(--t-cat-pink-tint);
   --color-cat-pink-line: var(--t-cat-pink-line);
   --color-cat-pink-ink: var(--t-cat-pink-ink);
+  --color-cat-red: var(--t-cat-red);
+  --color-cat-red-tint: var(--t-cat-red-tint);
+  --color-cat-red-line: var(--t-cat-red-line);
+  --color-cat-red-ink: var(--t-cat-red-ink);
   --color-cat-teal: var(--t-cat-teal);
   --color-cat-teal-tint: var(--t-cat-teal-tint);
   --color-cat-teal-line: var(--t-cat-teal-line);
@@ -610,13 +793,21 @@ svg.lucide {
 }
 
 /* ── Category items ───────────────────────────────────────────────────── */
+/* Written to work as a <button> as well as a <div>: a category row toggles
+   something, so it should be reachable by keyboard and carry aria-pressed. */
 .category-item {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
   cursor: pointer;
   font-size: 12px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font-family: inherit;
   transition: all 0.2s;
 }
 
@@ -646,6 +837,17 @@ svg.lucide {
   width: 8px;
   height: 8px;
   flex-shrink: 0;
+}
+
+.category-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--t-ink);
+}
+
+.category-count {
+  font-size: 11px;
+  color: var(--t-ink-muted);
 }
 
 /* ── Bottom taskbar ───────────────────────────────────────────────────── */
@@ -828,4 +1030,572 @@ svg.lucide {
 
 .bg-accent-hover {
   background-color: var(--t-accent-hover);
+}
+
+/* ── Mobile Dashboard (Package 09) ───────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  /* Hide desktop sidebar on mobile */
+  .sidebar {
+    display: none;
+  }
+
+  /* Hide desktop bottom bar on mobile */
+  .bottom-bar {
+    display: none;
+  }
+
+  /* Shell content fills available space on mobile */
+  .shell-content {
+    flex-direction: column;
+  }
+
+  /* The way back from a non-dashboard route on a phone. HomeView brings its
+     own header and tabs; every other screen would otherwise sit here with no
+     navigation at all, because .sidebar and .bottom-bar are hidden above. */
+  .mobile-route-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    height: 40px;
+    flex-shrink: 0;
+    padding: 0 var(--space-8);
+    background: var(--t-surface);
+    border-bottom: 1px solid var(--t-border);
+  }
+
+  .mobile-route-back {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--t-accent);
+    cursor: pointer;
+  }
+
+  .mobile-route-title {
+    font-size: 14px;
+    font-weight: 700;
+    font-family: var(--t-font-heading);
+    color: var(--t-ink);
+    flex: 1;
+    text-align: center;
+    /* Balances the back button so the title sits centred in the bar. */
+    margin-right: 72px;
+  }
+
+  /* Mobile shell uses full height */
+  .mobile-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: var(--t-page);
+  }
+
+  /* Mobile Header (40px) */
+  .mobile-header {
+    height: 40px;
+    background: var(--t-surface);
+    border-bottom: 1px solid var(--t-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--space-8);
+    z-index: 10;
+    flex-shrink: 0;
+  }
+
+  .mobile-header-title {
+    font-size: 14px;
+    font-weight: 700;
+    font-family: var(--t-font-heading);
+    color: var(--t-ink);
+    flex: 1;
+    text-align: center;
+  }
+
+  .mobile-header-buttons {
+    display: flex;
+    gap: var(--space-8);
+  }
+
+  .mobile-header-button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--t-subtle);
+    color: var(--t-ink);
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .mobile-header-button:active {
+    background: var(--t-border);
+  }
+
+  /* Screen Container (scrollable content area) */
+  .mobile-screen-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    background: var(--t-page);
+  }
+
+  /* Individual Screens */
+  .mobile-screen {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Calendar section (bounded height in dashboard) */
+  .mobile-calendar-section {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--t-border);
+    padding: var(--space-8);
+  }
+
+  /* Content sections with padding */
+  .mobile-content-section {
+    padding: var(--space-8) var(--space-8) 80px var(--space-8);
+  }
+
+  /* Bottom Tabs (60px) */
+  .mobile-tabs {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    background: var(--t-surface);
+    border-top: 1px solid var(--t-border);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 20;
+    gap: var(--space-8);
+  }
+
+  /* Tab Buttons */
+  .mobile-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    cursor: pointer;
+    color: var(--t-ink-muted);
+    font-size: 10px;
+    font-weight: 600;
+    transition: all 0.2s;
+    padding: var(--space-8);
+    background: none;
+    border: none;
+    min-height: 44px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .mobile-tab:active {
+    background: var(--t-subtle);
+  }
+
+  .mobile-tab.active {
+    color: var(--t-accent);
+  }
+
+  .mobile-tab-icon {
+    font-size: 18px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .mobile-tab-icon svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 1.5;
+  }
+
+  .mobile-tab-label {
+    font-size: 10px;
+    font-weight: 600;
+  }
+}
+
+/* ── To-Do / Habits shared pieces ────────────────────────────────────────── */
+
+/* The section band above a group of tasks. Colour is per-section and comes
+   from the call site; everything else is fixed by the design. */
+.task-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  padding: 4px 8px;
+  border: none;
+  font-family: inherit;
+}
+
+.task-section-count {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.task-section-toggle {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* The one floating add button, shared by To-Do and Habits so the two screens
+   cannot drift apart on the corner of the window they share. */
+.add-fab {
+  position: fixed;
+  bottom: 40px;
+  right: 32px;
+  width: 56px;
+  height: 56px;
+  background: var(--t-accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 28px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgb(168 85 247 / 0.3);
+  transition: all 0.2s;
+}
+
+.add-fab:hover {
+  background: var(--t-accent-hover);
+}
+
+.add-fab:active {
+  transform: scale(0.95);
+}
+
+/* ── Settings Page (Package 06) ──────────────────────────────────────────── */
+
+/*
+ * The settings card grid. A class rather than an inline `gridTemplateColumns`,
+ * because an inline style cannot respond to a media query and the design
+ * collapses this to one column at 768px.
+ */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A card that spans both columns (Account & Sign-in's table). */
+.span-2 {
+  grid-column: 1 / -1;
+}
+
+/* The full-width content column: a padded, independently scrolling flex child
+   of `.shell-content`. `.panel-main` additionally pins its height, because the
+   screen inside it (WeightPanel) sizes itself with `h-full` and would collapse
+   to nothing against an `auto` height. */
+.settings-main,
+.panel-main {
+  flex: 1;
+  min-width: 0;
+  padding: 32px;
+  overflow-y: auto;
+}
+
+.panel-main {
+  min-height: 0;
+  height: 100%;
+}
+
+@media (max-width: 768px) {
+  .settings-main,
+  .panel-main {
+    padding: 20px;
+  }
+}
+
+.settings-card {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  padding: 24px;
+}
+
+/* The page's own title block — the design's `.settings-header`. */
+.settings-header {
+  margin-bottom: 24px;
+}
+
+.settings-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--t-font-heading);
+  color: var(--t-ink);
+  margin: 0 0 6px 0;
+}
+
+.settings-header p {
+  font-size: 13px;
+  color: var(--t-ink-secondary);
+  margin: 0;
+}
+
+/* Profile avatar. Initials, not an image — there is nowhere to store one. */
+.avatar-box {
+  width: 64px;
+  height: 64px;
+  background: var(--t-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 600;
+  font-family: var(--t-font-heading);
+  flex-shrink: 0;
+}
+
+/* A row of `.seg-opt` buttons (Theme, Week starts on, Weight unit). */
+.seg-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The Account & Sign-in credential table. */
+.sw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.sw-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--t-border);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--t-ink-muted);
+  font-weight: 700;
+}
+
+.sw-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--t-subtle);
+  color: var(--t-ink);
+}
+
+.sw-table tr:last-child td {
+  border-bottom: none;
+}
+
+.type-pill {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.card-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--t-ink);
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* The hairline between rows belongs *between* them, so the last row in a card
+   drops it along with its trailing space. An inline style could not express
+   the :last-child half of that. */
+.setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--t-subtle);
+}
+
+.setting-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.setting-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--t-ink);
+}
+
+.setting-desc {
+  font-size: 11px;
+  color: var(--t-ink-muted);
+  margin-top: 2px;
+}
+
+.button-small {
+  /* The token, not the design's literal white — same value today, but it
+     survives a palette change instead of stranding one white chip. */
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  color: var(--t-ink);
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.button-small:hover {
+  border-color: var(--t-accent);
+  color: var(--t-accent);
+}
+
+.button-small:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button-primary {
+  background: var(--t-accent);
+  color: white;
+  border: 1px solid var(--t-accent);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.button-primary:hover {
+  background: var(--t-accent-hover);
+  border-color: var(--t-accent-hover);
+}
+
+.button-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button-danger {
+  border-color: var(--t-danger) !important;
+  color: var(--t-danger) !important;
+}
+
+.button-danger:hover {
+  background: rgb(239 68 68 / 0.1);
+}
+
+.input-text {
+  background: var(--t-surface);
+  /* 1px, matching Settings' `.input-text`. The 2px border belongs to the
+     auth card's inputs, which are a different, larger control. */
+  border: 1px solid var(--t-border);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--t-ink);
+  font-family: inherit;
+  width: 200px;
+  transition: all 0.2s;
+}
+
+/* Pointer focus gets the design's purple border and nothing else; a keyboard
+   focus additionally keeps the app-wide outline, which `outline: none` on the
+   broader `:focus` would otherwise have taken away from it. */
+.input-text:focus {
+  outline: none;
+  border-color: var(--t-accent);
+}
+
+.input-text:focus-visible {
+  outline: 2px solid var(--t-accent);
+  outline-offset: 2px;
+}
+
+.seg-opt {
+  padding: 7px 14px;
+  border: 1px solid var(--t-border);
+  background: var(--t-surface);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--t-ink-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.seg-opt:hover {
+  border-color: var(--t-accent);
+  color: var(--t-accent);
+}
+
+.seg-opt.active {
+  border-color: var(--t-accent);
+  color: var(--t-accent);
+  background: var(--t-accent-tint);
+}
+
+/* ── Add Modal ───────────────────────────────────────────────────────────── */
+
+/* The modal's entrance and the reveal of an optional field row. Here rather
+   than in a <style> tag inside AddModal, which re-inserted both rules into
+   the head on every mount. */
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(-4px); max-height: 0; }
+  to { opacity: 1; transform: none; max-height: 240px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes modalIn {
+    from { opacity: 1; transform: none; }
+    to { opacity: 1; transform: none; }
+  }
 }

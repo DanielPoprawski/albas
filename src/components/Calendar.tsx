@@ -1,6 +1,5 @@
 import { useApp } from '../context/AppContext';
 import CalendarNav from './calendar/CalendarNav';
-import CalendarCategories from './calendar/CalendarCategories';
 import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
@@ -15,7 +14,13 @@ export default function Calendar({ isMobile = false, onAdd }: CalendarProps) {
 
   return (
     <>
-      {!isMobile && <CalendarCategories />}
+      {/* The design puts a Categories list in the sidebar here, but there is
+          nothing to build it from: `category` exists on `Todo` only —
+          `CalendarEvent` has no such field — so the section could only ever
+          list invented names. It shipped as a self-described stub with
+          "Birthdays"/"School" and checkboxes that toggled nothing. Real
+          calendar categories mean a schema column, `sync.rs` TABLES and
+          `sharedLogic.ts` moving together; until then the slot stays empty. */}
       <div className="flex flex-col h-full min-h-0 bg-surface">
         {/* Mobile navigation — desktop header is in MonthViewDesktop */}
         {isMobile && (

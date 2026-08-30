@@ -6,11 +6,11 @@ import { colorHex } from '../../colors';
 import type { Todo } from '../../types';
 
 const CATEGORY_DEFS = {
-  work: { name: 'Work', color: '#a855f7' },
-  personal: { name: 'Personal', color: '#ec4899' },
-  shopping: { name: 'Shopping', color: '#10b981' },
-  health: { name: 'Health', color: '#06b6d4' },
-  finance: { name: 'Finance', color: '#f59e0b' },
+  work: { name: 'Work', color: 'var(--t-cat-purple)' },
+  personal: { name: 'Personal', color: 'var(--t-cat-pink)' },
+  shopping: { name: 'Shopping', color: 'var(--t-cat-green)' },
+  health: { name: 'Health', color: 'var(--t-cat-teal)' },
+  finance: { name: 'Finance', color: 'var(--t-cat-amber)' },
 } as const;
 
 interface TodoTaskRowProps {
@@ -53,7 +53,7 @@ function getCategoryColor(category: string): string {
     }
   }
   // Default color for uncategorized
-  return '#a855f7';
+  return 'var(--t-cat-purple)';
 }
 
 export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskRowProps) {
@@ -89,7 +89,7 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
       <button
         onClick={handleToggleImportant}
         className="flex-shrink-0 text-[17px] transition-colors"
-        style={{ color: task.important ? '#f59e0b' : '#e5e7eb' }}
+        style={{ color: task.important ? 'var(--t-cat-amber)' : 'var(--t-border)' }}
         title={task.important ? 'Unmark important' : 'Mark important'}
       >
         {task.important ? '★' : '☆'}

@@ -109,9 +109,6 @@ export default function WeekView() {
                     marginBottom: 2,
                     marginLeft: seg.startsHere ? 6 : 0,
                     marginRight: seg.endsHere ? 6 : 0,
-                    borderRadius: seg.startsHere && seg.endsHere ? 9999
-                      : seg.startsHere ? '9999px 0 0 9999px'
-                      : seg.endsHere ? '0 9999px 9999px 0' : 0,
                     backgroundColor: hex,
                     opacity: 0.65,
                   }}
@@ -134,9 +131,6 @@ export default function WeekView() {
                     marginBottom: 2,
                     marginLeft: seg.startsHere ? 4 : 0,
                     marginRight: seg.endsHere ? 4 : 0,
-                    borderRadius: seg.startsHere && seg.endsHere ? 6
-                      : seg.startsHere ? '6px 0 0 6px'
-                      : seg.endsHere ? '0 6px 6px 0' : 0,
                     backgroundColor: `${hex}cc`,
                     color: '#fff',
                     opacity: sharedOpacity(seg.item.event),

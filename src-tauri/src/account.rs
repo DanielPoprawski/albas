@@ -177,6 +177,49 @@ pub async fn auth_register_finish(
     .map_err(err)?
 }
 
+/// Adds *another* passkey to the account this device is already signed into.
+///
+/// Unlike `auth_register_*` there is no invite and no name: the bearer token
+/// already names the account, so the server resolves it from the
+/// `Authorization` header. Nothing local is rewritten on finish — the device
+/// keeps its existing token and session; the new credential is an extra way
+/// into the same account, not a new sign-in.
+#[tauri::command]
+pub async fn auth_add_passkey_start(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (base, token) = {
+            let db = app.state::<Db>();
+            let conn = db.0.lock().map_err(err)?;
+            stored_base_and_token(&conn)?
+        };
+        post_json(&format!("{base}/passkeys/start"), Some(&token), &json!({}))
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+pub async fn auth_add_passkey_finish(
+    app: tauri::AppHandle,
+    reg_id: String,
+    credential: Value,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (base, token) = {
+            let db = app.state::<Db>();
+            let conn = db.0.lock().map_err(err)?;
+            stored_base_and_token(&conn)?
+        };
+        post_json(
+            &format!("{base}/passkeys/finish"),
+            Some(&token),
+            &json!({ "regId": reg_id, "credential": credential }),
+        )
+    })
+    .await
+    .map_err(err)?
+}
+
 #[tauri::command]
 pub async fn auth_login_start(app: tauri::AppHandle, url: String) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || start(&app, &url, "login/start", json!({})))

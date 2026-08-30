@@ -313,6 +313,157 @@ pub(crate) async fn register_finish(
     Ok(Json(json!({ "name": name, "token": token })))
 }
 
+// ---------------------------------------------------------------------------
+// Self-service: adding another passkey to the account you are already signed
+// into. The invite path above stays — it is the only way to attach a key to an
+// account you cannot already open. This one is authenticated by the same
+// bearer token `/sync` uses, so no admin is involved.
+// ---------------------------------------------------------------------------
+
+fn unauthorized() -> Rejection {
+    (StatusCode::UNAUTHORIZED, "Not signed in.".into())
+}
+
+/// The account behind the presented bearer token, plus its name.
+fn signed_in(conn: &Connection, headers: &HeaderMap) -> Result<(i64, String), Rejection> {
+    let account_id = crate::account_for(conn, headers).ok_or_else(unauthorized)?;
+    let name: String = conn
+        .query_row("SELECT name FROM accounts WHERE id = ?1", [account_id], |r| r.get(0))
+        .optional()
+        .map_err(internal)?
+        .ok_or_else(unauthorized)?;
+    Ok((account_id, name))
+}
+
+/// Credential ids already on the account, read back out of the stored
+/// `Passkey` blobs so the types are whatever webauthn-rs itself produced. Sent
+/// as `exclude_credentials`, which makes an authenticator that already holds
+/// one of them refuse rather than silently create a duplicate.
+///
+/// A row whose JSON no longer parses is skipped rather than fatal: excluding
+/// is a convenience, and failing the whole ceremony over one unreadable row
+/// would lock the user out of adding a key at all.
+fn existing_credentials(conn: &Connection, account_id: i64) -> Result<Vec<CredentialID>, Rejection> {
+    let mut stmt = conn
+        .prepare("SELECT passkey_json FROM passkeys WHERE account_id = ?1")
+        .map_err(internal)?;
+    let rows = stmt
+        .query_map([account_id], |r| r.get::<_, String>(0))
+        .map_err(internal)?
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .map_err(internal)?;
+    Ok(rows
+        .iter()
+        .filter_map(|json| serde_json::from_str::<Passkey>(json).ok())
+        .map(|pk| pk.cred_id().clone())
+        .collect())
+}
+
+pub(crate) async fn add_passkey_start(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, Rejection> {
+    let webauthn = webauthn_of(&state)?;
+    let (info, exclude) = {
+        let guard = state.conn.lock().map_err(internal)?;
+        let (account_id, name) = signed_in(&guard, &headers)?;
+        let existing = existing_credentials(&guard, account_id)?;
+        (
+            RegInfo { name, invite_id: None, account_id: Some(account_id) },
+            (!existing.is_empty()).then_some(existing),
+        )
+    };
+    let (options, reg_state) = webauthn
+        .start_passkey_registration(random_uuid(), &info.name, &info.name, exclude)
+        .map_err(|e| internal(format!("could not start registration: {e:?}")))?;
+    let reg_id = random_token();
+    state.pending.put_reg(reg_id.clone(), info, reg_state);
+    Ok(Json(json!({ "regId": reg_id, "options": options })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AddPasskeyFinishReq {
+    reg_id: String,
+    credential: RegisterPublicKeyCredential,
+}
+
+/// Finishes a self-service registration. The token is re-checked against the
+/// pending ceremony's account: a ceremony started by one account must never be
+/// finishable with another account's token, or a race could bind a key to the
+/// wrong row set.
+///
+/// `complete_registration` mints a token for the new credential, but this
+/// device already has a working one and the new passkey is an *additional*
+/// credential, not a new session — so the minted token is dropped again inside
+/// the same request and never leaves the server. The device that later signs
+/// in with the new key mints its own.
+pub(crate) async fn add_passkey_finish(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<AddPasskeyFinishReq>,
+) -> Result<Json<Value>, Rejection> {
+    let webauthn = webauthn_of(&state)?;
+    let (info, reg_state) = state.pending.take_reg(&req.reg_id).ok_or((
+        StatusCode::GONE,
+        "This registration attempt expired — start again.".into(),
+    ))?;
+    let passkey = webauthn
+        .finish_passkey_registration(&req.credential, &reg_state)
+        .map_err(|e| (StatusCode::UNAUTHORIZED, format!("registration rejected: {e:?}")))?;
+    let cred_id_hex = crate::to_hex(passkey.cred_id().as_ref());
+    let passkey_json = serde_json::to_string(&passkey).map_err(internal)?;
+
+    let mut guard = state.conn.lock().map_err(internal)?;
+    let (account_id, _) = signed_in(&guard, &headers)?;
+    if info.account_id != Some(account_id) {
+        return Err(unauthorized());
+    }
+    let (name, token) =
+        complete_registration(&mut guard, &info, &cred_id_hex, &passkey_json, "passkey")?;
+    guard
+        .execute("DELETE FROM tokens WHERE token_hash = ?1", [token_hash(&token)])
+        .map_err(internal)?;
+    Ok(Json(json!({ "name": name, "credId": cred_id_hex })))
+}
+
+/// The passkeys really attached to the signed-in account.
+///
+/// The table stores no device name — the server never learns one — so `label`
+/// is derived from what it does store: a short prefix of the credential id.
+/// Inventing a friendlier name here would be inventing a fact.
+pub(crate) async fn list_passkeys(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, Rejection> {
+    let guard = state.conn.lock().map_err(internal)?;
+    let (account_id, _) = signed_in(&guard, &headers)?;
+    let mut stmt = guard
+        .prepare(
+            "SELECT cred_id, created_at FROM passkeys WHERE account_id = ?1 ORDER BY created_at",
+        )
+        .map_err(internal)?;
+    let rows = stmt
+        .query_map([account_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+        .map_err(internal)?
+        .collect::<rusqlite::Result<Vec<(String, i64)>>>()
+        .map_err(internal)?;
+    let out: Vec<Value> = rows
+        .into_iter()
+        .map(|(cred_id, created_at)| {
+            let label = format!("Passkey {}", short_cred(&cred_id));
+            json!({ "credId": cred_id, "label": label, "createdAt": created_at })
+        })
+        .collect();
+    Ok(Json(json!(out)))
+}
+
+/// A credential id is long and opaque; the first few characters are enough to
+/// tell two of them apart in a list.
+fn short_cred(cred_id: &str) -> String {
+    cred_id.chars().take(8).collect()
+}
+
 pub(crate) async fn login_start(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, Rejection> {
@@ -572,6 +723,65 @@ mod tests {
         assert_eq!(stored, owner);
         let n: i64 = c.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1, "attach must not create a second account");
+    }
+
+    /// The self-service shape: no invite, an account id from the bearer token.
+    /// It must attach, not create, and must not need an invite row.
+    #[test]
+    fn self_service_attach_needs_no_invite() {
+        let mut c = mem();
+        let owner = add_account(&c, "owner");
+        let info = RegInfo { name: "owner".into(), invite_id: None, account_id: Some(owner) };
+        complete_registration(&mut c, &info, "cred-self", "{}", "passkey").unwrap();
+        let stored: i64 = c
+            .query_row("SELECT account_id FROM passkeys WHERE cred_id = 'cred-self'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(stored, owner);
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    fn headers_for(token: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
+        h
+    }
+
+    #[test]
+    fn signed_in_resolves_the_token_and_rejects_strangers() {
+        let c = mem();
+        let owner = add_account(&c, "owner");
+        let token = mint_token(&c, owner, "device").unwrap();
+        assert_eq!(signed_in(&c, &headers_for(&token)).unwrap(), (owner, "owner".to_string()));
+        assert_eq!(
+            signed_in(&c, &headers_for("not-a-token")).unwrap_err().0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(signed_in(&c, &HeaderMap::new()).unwrap_err().0, StatusCode::UNAUTHORIZED);
+    }
+
+    /// `exclude_credentials` is a convenience, so an unreadable stored blob is
+    /// skipped rather than failing the whole ceremony.
+    #[test]
+    fn existing_credentials_skips_unparseable_rows() {
+        let c = mem();
+        let owner = add_account(&c, "owner");
+        c.execute(
+            "INSERT INTO passkeys (account_id, cred_id, passkey_json, created_at)
+             VALUES (?1, 'cred-bad', '{}', 0)",
+            [owner],
+        )
+        .unwrap();
+        assert!(existing_credentials(&c, owner).unwrap().is_empty());
+    }
+
+    #[test]
+    fn short_cred_is_a_prefix_and_never_panics_on_short_ids() {
+        assert_eq!(short_cred("0123456789abcdef"), "01234567");
+        assert_eq!(short_cred("ab"), "ab");
+        assert_eq!(short_cred(""), "");
     }
 
     #[test]

@@ -123,6 +123,14 @@ interface AppContextType {
   signedIn: boolean;
   /** Account name from passkey login; null for token-only setups. */
   syncAccount: string | null;
+  /**
+   * The bearer token this device authenticates to the sync server with, or
+   * null when signed out. Exposed so the fetch-based auth-method modules
+   * (`src/authMethods/`) can call authenticated endpoints without a Tauri
+   * round-trip; passkey ceremonies still go through Rust because they need
+   * the OS authenticator.
+   */
+  syncToken: string | null;
   /** Epoch millis of the last successful sync on this device, or null for never. */
   lastSync: number | null;
   /** True while a sync is in flight, whoever started it. */
@@ -138,11 +146,21 @@ interface AppContextType {
   welcomeDone: boolean;
 }
 
-const THEMES: ThemeName[] = ['dark', 'light', 'grey-high', 'grey-low'];
+/**
+ * The themes that exist. Two, not the four CLAUDE.md § Theming lists: the
+ * redesign draws `:root` (light) and `[data-theme='dark']` only, and
+ * `grey-high`/`grey-low` are gone for good.
+ *
+ * A stored value that isn't one of these — an install that last ran a
+ * four-theme build — falls through to the default rather than stamping an
+ * attribute nothing responds to. The default is **light**, because the
+ * redesign is a light-first design; it used to be dark.
+ */
+const THEMES: ThemeName[] = ['light', 'dark'];
 
 function readTheme(settings: Record<string, string>): ThemeName {
   const t = settings.theme as ThemeName | undefined;
-  return t && THEMES.includes(t) ? t : 'dark';
+  return t && THEMES.includes(t) ? t : 'light';
 }
 
 /**
@@ -449,6 +467,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleOwnerHidden,
       signedIn,
       syncAccount: settings.__sync_account?.trim() || null,
+      syncToken: settings.__sync_token?.trim() || null,
       lastSync,
       syncing,
       syncNow,

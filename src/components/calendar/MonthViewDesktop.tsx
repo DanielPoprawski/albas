@@ -13,6 +13,28 @@ import type { MonthLayoutProps } from './monthModel';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** A desktop cell has room for two chips and a bottom-pinned stack. */
+/*
+ * A chip's tint/hairline/ink trio, keyed by the event's own colour.
+ *
+ * One table rather than a copy inside each of the two chip loops — they had
+ * drifted apart before, and a category added to only one of them shows up as
+ * a chip that is tinted in the grid but not in the to-do row beneath it.
+ * Unmatched colours fall back to purple, the app accent.
+ */
+const CHIP_TINTS: Record<string, string> = {
+  '#a855f7': 'bg-cat-purple-tint border-cat-purple-line text-cat-purple-ink',
+  '#f59e0b': 'bg-cat-amber-tint border-cat-amber-line text-cat-amber-ink',
+  '#3b82f6': 'bg-cat-blue-tint border-cat-blue-line text-cat-blue-ink',
+  '#10b981': 'bg-cat-green-tint border-cat-green-line text-cat-green-ink',
+  '#ec4899': 'bg-cat-pink-tint border-cat-pink-line text-cat-pink-ink',
+  '#06b6d4': 'bg-cat-teal-tint border-cat-teal-line text-cat-teal-ink',
+  '#ef4444': 'bg-cat-red-tint border-cat-red-line text-cat-red-ink',
+};
+
+function chipTint(hex: string): string {
+  return CHIP_TINTS[hex] ?? CHIP_TINTS['#a855f7'];
+}
+
 export const PILL_CAP = 2;
 
 /*
@@ -128,7 +150,7 @@ export default function MonthViewDesktop({
           return (
             <div
               key={i}
-              className={`py-xs px-[var(--space-6)] text-center text-[9px] font-bold uppercase letter-spacing tracking-wider ${
+              className={`py-xs px-[var(--space-6)] text-center text-[9px] font-bold uppercase tracking-wider ${
                 isWeekendCol ? 'text-ink' : 'text-ink-muted'
               }`}
             >
@@ -150,7 +172,7 @@ export default function MonthViewDesktop({
                   <div
                     key={cell.dateStr}
                     className={`relative cursor-pointer px-[var(--space-6)] py-[5px] ${
-                      !cell.isCurrentMonth ? 'bg-[#eef0f2]' : 'bg-surface'
+                      !cell.isCurrentMonth ? 'bg-[var(--t-past-cell)]' : 'bg-surface'
                     } ${
                       !isLastCol ? 'border-r border-line' : ''
                     } ${
@@ -167,7 +189,7 @@ export default function MonthViewDesktop({
                       <span
                         className={`text-[11px] font-semibold ${
                           !cell.isCurrentMonth
-                            ? 'text-[#b0b5bd]'
+                            ? 'text-[var(--t-past-ink)]'
                             : cell.isWeekend
                             ? 'text-ink font-bold'
                             : 'text-ink-secondary'
@@ -187,24 +209,12 @@ export default function MonthViewDesktop({
                     <div className="flex flex-col gap-[2px] overflow-hidden mt-auto text-[10px]">
                       {cell.shownOccs.map(o => {
                         const hex = colorHex(o.event.colorKey);
-                        // Map color hex to category name for tinting
-                        const getCatClass = (hex: string) => {
-                          switch (hex) {
-                            case '#a855f7': return 'bg-[#f3e8ff] border-[#e9d5ff] text-[#6b21a8]';
-                            case '#f59e0b': return 'bg-[#fef3c7] border-[#fcd34d] text-[#92400e]';
-                            case '#3b82f6': return 'bg-[#dbeafe] border-[#bfdbfe] text-[#1e40af]';
-                            case '#10b981': return 'bg-[#dcfce7] border-[#bbf7d0] text-[#166534]';
-                            case '#ec4899': return 'bg-[#fce7f3] border-[#fbcfe8] text-[#831843]';
-                            case '#06b6d4': return 'bg-[#cffafe] border-[#a5f3fc] text-[#0e7490]';
-                            default: return 'bg-[#f3e8ff] border-[#e9d5ff] text-[#6b21a8]';
-                          }
-                        };
                         return (
                           <div
                             key={o.key}
                             onClick={e => { e.stopPropagation(); onEditEvent(o); }}
                             title={sharedTitleAttr(o.event)}
-                            className={`${CHIP_CLASS} border ${getCatClass(hex)} ${
+                            className={`${CHIP_CLASS} border ${chipTint(hex)} ${
                               o.event.sharedBy ? 'opacity-45' : ''
                             }`}
                           >
@@ -217,22 +227,11 @@ export default function MonthViewDesktop({
                       })}
                       {cell.shownOnce.map(todo => {
                         const hex = colorHex(todo.colorKey);
-                        const getCatClass = (hex: string) => {
-                          switch (hex) {
-                            case '#a855f7': return 'bg-[#f3e8ff] border-[#e9d5ff] text-[#6b21a8]';
-                            case '#f59e0b': return 'bg-[#fef3c7] border-[#fcd34d] text-[#92400e]';
-                            case '#3b82f6': return 'bg-[#dbeafe] border-[#bfdbfe] text-[#1e40af]';
-                            case '#10b981': return 'bg-[#dcfce7] border-[#bbf7d0] text-[#166534]';
-                            case '#ec4899': return 'bg-[#fce7f3] border-[#fbcfe8] text-[#831843]';
-                            case '#06b6d4': return 'bg-[#cffafe] border-[#a5f3fc] text-[#0e7490]';
-                            default: return 'bg-[#f3e8ff] border-[#e9d5ff] text-[#6b21a8]';
-                          }
-                        };
                         return (
                           <div
                             key={todo.id}
                             onClick={e => { e.stopPropagation(); onEditTodo(todo); }}
-                            className={`${CHIP_CLASS} border ${getCatClass(hex)} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                            className={`${CHIP_CLASS} border ${chipTint(hex)} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
                           >
                             {todo.name}
                           </div>

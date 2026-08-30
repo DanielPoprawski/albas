@@ -79,7 +79,53 @@ rows, tokens, passkeys and shares (devices keep their local data; it just
 stops syncing). Account names are 1–64 of `a-z A-Z 0-9 - _`. Note that with
 open signups, whether a name is taken is observable — treat names as public.
 
+### Self-service credentials
+
+Everything above is admin-gated. Three routes let a signed-in person manage
+their own credentials, authenticated by the same bearer token `/sync` uses —
+the token *is* the identity, so no invite is involved and no admin is needed.
+
+**Additional passkeys** — `POST /passkeys/start` and `POST /passkeys/finish`
+run the same ceremony as `/register/*`, but take `account_id` from the token
+instead of resolving a name and an invite. The start call sends the account's
+existing credential ids as `exclude_credentials`, so an authenticator refuses
+to silently enroll a second passkey for the same device. Finish re-checks that
+the presented token still resolves to the account the pending ceremony was
+started for, so one account cannot complete another's ceremony. `GET /passkeys`
+lists what is attached as `{credId, label, createdAt}` — the table stores no
+device name, so the label is derived from the credential id rather than
+invented.
+
+**Password** — `PUT /password` sets or changes one (Argon2id, PHC string in
+`accounts.password_hash`; minimum 12 characters), `DELETE /password` removes it
+but refuses with 409 if it is the account's only credential, and `GET
+/password` reports `{set: bool}` and nothing else. `POST /login/password` is
+the one unauthenticated route here: `{name, password, code?}` in, a minted
+token out, the same shape passkey login returns. Unknown account and wrong
+password give an identical 401 after an identical dummy verification, so the
+response does not reveal whether a name exists.
+
+**TOTP** — `POST /totp/enroll` generates a secret and returns it with an
+`otpauth://` URI (the QR is drawn client-side from that URI; the server renders
+no image), `POST /totp/confirm` verifies the first code and only then sets
+`totp_confirmed`, `GET /totp` reports `{enrolled, confirmed}` without ever
+echoing the secret, and `DELETE /totp` clears it. Re-enrolling while confirmed
+is refused with 409 — any device holding a token could otherwise mint itself a
+fresh QR without proving it has the current code.
+
+**TOTP is a second factor for password login only.** `login/password` calls
+`totp::verify_if_enrolled` after the password verifies; passkey login does not,
+deliberately. A passkey is already possession plus user verification, and the
+ceremony runs through the OS authenticator via a Tauri plugin that has nowhere
+to prompt for a typed code. An account with no confirmed secret is unaffected
+either way.
+
 **Upgrading an older server:** nothing to do beyond pulling the new image.
+Columns added to `accounts` after it first shipped (`grant_rev`,
+`password_hash`, `totp_secret`, `totp_confirmed`) are backfilled by
+`ensure_column` on every start — `CREATE TABLE IF NOT EXISTS` is a no-op on an
+existing table, so each such column needs one, and adding a column to `accounts`
+means adding a matching `ensure_column` call in `init_db`.
 A pre-account database is migrated in place — rows are assigned to the `owner`
 account (created from `ALBAS_SYNC_TOKEN`, which must still be set for that
 first start) with every `seq` preserved, so existing devices keep syncing with

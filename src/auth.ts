@@ -99,6 +99,32 @@ export async function createAccount(
   });
 }
 
+/**
+ * Adds another passkey to the account this device is already signed into.
+ *
+ * Same ceremony as `createAccount` — including the `residentKey: 'required'`
+ * insistence, since the new key must be usable for usernameless sign-in too —
+ * but the account comes from the stored bearer token rather than a name, and
+ * finishing changes nothing about this device's session.
+ */
+export async function addPasskey(
+  url: string,
+  onEvent: (e: PasskeyEvent) => void
+): Promise<{ name: string }> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const start = await invoke<StartRes & { regId: string }>('auth_add_passkey_start');
+  return ceremony(url, onEvent, async (wa, origin) => {
+    const pk = start.options.publicKey;
+    pk.authenticatorSelection = {
+      ...((pk.authenticatorSelection as object) ?? {}),
+      residentKey: 'required',
+      requireResidentKey: true,
+    };
+    const credential = await wa.register(origin, pk as never);
+    return invoke<{ name: string }>('auth_add_passkey_finish', { regId: start.regId, credential });
+  });
+}
+
 /** Answers a security key's PIN prompt (Linux). */
 export async function submitPin(pin: string): Promise<void> {
   const wa = await import('tauri-plugin-webauthn-api');

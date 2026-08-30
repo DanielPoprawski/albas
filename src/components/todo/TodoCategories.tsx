@@ -1,16 +1,19 @@
 import { useApp } from '../../context/AppContext';
 import type { Todo } from '../../types';
+import { TODO_CATEGORIES } from '../../colors';
 
-const CATEGORY_DEFS = {
-  work: { name: 'Work', color: '#a855f7' },
-  personal: { name: 'Personal', color: '#ec4899' },
-  shopping: { name: 'Shopping', color: '#10b981' },
-  health: { name: 'Health', color: '#06b6d4' },
-  finance: { name: 'Finance', color: '#f59e0b' },
-} as const;
+/**
+ * Derived from `TODO_CATEGORIES` in `src/colors.ts` rather than declared here.
+ * This list and the Add modal's used to be separate copies that disagreed —
+ * "Work" was purple here and blue there — so a category's colour depended on
+ * which screen you were looking at.
+ */
+const CATEGORY_DEFS = Object.fromEntries(
+  TODO_CATEGORIES.map(c => [c.label.toLowerCase(), { name: c.label, color: c.hex }]),
+) as Record<string, { name: string; color: string }>;
 
-type CategoryId = keyof typeof CATEGORY_DEFS;
-const CATEGORY_IDS: CategoryId[] = ['work', 'personal', 'shopping', 'health', 'finance'];
+type CategoryId = string;
+const CATEGORY_IDS: CategoryId[] = TODO_CATEGORIES.map(c => c.label.toLowerCase());
 
 interface TodoCategoriesProps {
   activeCategories: CategoryId[];
@@ -42,82 +45,65 @@ export default function TodoCategories({
 
   const allChecked = activeCategories.length === CATEGORY_IDS.length;
 
+  /* A plain sidebar section, matching the design and the reference
+     screenshot: a `sidebar-title` eyebrow over `.category-item` rows. The
+     design file also carries an unused `.categories-card` (bordered box with
+     a purple header); the rendered To-Do screen does not use it. */
   return (
-    <div className="border-l border-r border-b border-border">
-      {/* Header */}
-      <div
-        className="px-[var(--space-12)] py-[var(--space-10)] bg-accent-tint text-accent cursor-pointer flex items-center gap-[var(--space-6)]"
+    <>
+      <div className="sidebar-title">Categories</div>
+
+      <button
+        type="button"
+        className="category-item"
+        aria-pressed={allChecked}
+        onClick={() => onToggleCategory('all')}
       >
-        <span className="text-micro font-bold uppercase tracking-widest flex-1">
-          Categories
+        <span className={`category-check${allChecked ? ' checked' : ''}`}>
+          {allChecked && '✓'}
         </span>
-      </div>
+        <span className="category-name">All</span>
+      </button>
 
-      {/* Body */}
-      <div className="p-2 space-y-0.5">
-        {/* All */}
-        <div
-          onClick={() => onToggleCategory('all')}
-          className="flex items-center gap-[var(--space-10)] px-2 py-2 cursor-pointer hover:bg-subtle transition-colors"
-        >
-          <div
-            className="w-4 h-4 border border-border-strong flex items-center justify-center text-micro font-bold text-white flex-shrink-0"
-            style={{
-              backgroundColor: allChecked ? 'var(--t-accent)' : 'transparent',
-              borderColor: allChecked ? 'var(--t-accent)' : 'var(--t-border-strong)',
-            }}
+      {CATEGORY_IDS.map(catId => {
+        const def = CATEGORY_DEFS[catId];
+        const checked = checkedCategories[catId];
+        return (
+          <button
+            type="button"
+            key={catId}
+            className="category-item"
+            aria-pressed={checked}
+            onClick={() => onToggleCategory(catId)}
           >
-            {allChecked && '✓'}
-          </div>
-          <span className="text-ui text-ink flex-1">All</span>
-        </div>
-
-        {/* Categories */}
-        {CATEGORY_IDS.map(catId => {
-          const def = CATEGORY_DEFS[catId];
-          const checked = checkedCategories[catId];
-          const count = getCategoryCount(catId);
-          return (
-            <div
-              key={catId}
-              onClick={() => onToggleCategory(catId)}
-              className="flex items-center gap-[var(--space-10)] px-2 py-2 cursor-pointer hover:bg-subtle transition-colors"
+            <span
+              className={`category-check${checked ? ' checked' : ''}`}
+              // The tick takes the category's own colour rather than the
+              // accent, which is how a checked row reads as *that* category.
+              style={checked ? { background: def.color, borderColor: def.color } : undefined}
             >
-              <div
-                className="w-4 h-4 border border-border-strong flex items-center justify-center text-micro font-bold text-white flex-shrink-0"
-                style={{
-                  backgroundColor: checked ? def.color : 'transparent',
-                  borderColor: checked ? def.color : 'var(--t-border-strong)',
-                }}
-              >
-                {checked && '✓'}
-              </div>
-              <div className="w-2.5 h-2.5 flex-shrink-0" style={{ backgroundColor: def.color }} />
-              <span className="text-ui text-ink flex-1">{def.name}</span>
-              <span className="text-meta text-ink-muted">{count}</span>
-            </div>
-          );
-        })}
+              {checked && '✓'}
+            </span>
+            <span className="category-color" style={{ background: def.color }} />
+            <span className="category-name">{def.name}</span>
+            <span className="category-count">{getCategoryCount(catId)}</span>
+          </button>
+        );
+      })}
 
-        {/* Completed */}
-        <div
-          onClick={() => onToggleCategory('completed')}
-          className="flex items-center gap-[var(--space-10)] px-2 py-2 cursor-pointer hover:bg-subtle transition-colors"
-        >
-          <div
-            className="w-4 h-4 border border-border-strong flex items-center justify-center text-micro font-bold text-white flex-shrink-0"
-            style={{
-              backgroundColor: showCompleted ? 'var(--t-accent)' : 'transparent',
-              borderColor: showCompleted ? 'var(--t-accent)' : 'var(--t-border-strong)',
-            }}
-          >
-            {showCompleted && '✓'}
-          </div>
-          <span className="text-ui text-ink flex-1">Completed</span>
-          <span className="text-meta text-ink-muted">{completedCount}</span>
-        </div>
-      </div>
-    </div>
+      <button
+        type="button"
+        className="category-item"
+        aria-pressed={showCompleted}
+        onClick={() => onToggleCategory('completed')}
+      >
+        <span className={`category-check${showCompleted ? ' checked' : ''}`}>
+          {showCompleted && '✓'}
+        </span>
+        <span className="category-name">Completed</span>
+        <span className="category-count">{completedCount}</span>
+      </button>
+    </>
   );
 }
 

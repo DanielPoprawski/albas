@@ -26,6 +26,8 @@
 //! resume from, so a wrong device clock can never make a client skip a row.
 
 mod passkey;
+mod password;
+mod totp;
 
 use axum::{
     extract::{Path, State},
@@ -40,10 +42,18 @@ use std::sync::{Arc, Mutex};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS accounts (
-  id         INTEGER PRIMARY KEY,
-  name       TEXT    NOT NULL UNIQUE,
-  created_at INTEGER NOT NULL,
-  grant_rev  INTEGER NOT NULL DEFAULT 0
+  id             INTEGER PRIMARY KEY,
+  name           TEXT    NOT NULL UNIQUE,
+  created_at     INTEGER NOT NULL,
+  grant_rev      INTEGER NOT NULL DEFAULT 0,
+  -- Argon2id PHC string, or NULL when no password is set. Optional by design:
+  -- passkeys remain the primary credential and an account may never gain one.
+  password_hash  TEXT,
+  -- Base32 TOTP secret, set at enrollment. `totp_confirmed` only flips once a
+  -- code generated from it has verified, so a half-finished enrollment can
+  -- never lock anyone out.
+  totp_secret    TEXT,
+  totp_confirmed INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS tokens (
   id         INTEGER PRIMARY KEY,
@@ -246,6 +256,19 @@ async fn main() {
         .route("/login/start", post(passkey::login_start))
         .route("/login/finish", post(passkey::login_finish))
         .route("/invites", post(passkey::create_invite))
+        .route("/passkeys", get(passkey::list_passkeys))
+        .route("/passkeys/start", post(passkey::add_passkey_start))
+        .route("/passkeys/finish", post(passkey::add_passkey_finish))
+        .route(
+            "/password",
+            get(password::password_status)
+                .put(password::set_password)
+                .delete(password::clear_password),
+        )
+        .route("/login/password", post(password::login_password))
+        .route("/totp", get(totp::totp_status).delete(totp::disable_totp))
+        .route("/totp/enroll", post(totp::enroll_start))
+        .route("/totp/confirm", post(totp::enroll_confirm))
         .route("/.well-known/assetlinks.json", get(passkey::assetlinks))
         .with_state(state);
 
@@ -298,6 +321,20 @@ fn table_columns(conn: &Connection, table: &str) -> Result<Vec<String>, String> 
         .collect::<rusqlite::Result<Vec<String>>>()
         .map_err(|e| e.to_string())?;
     Ok(names)
+}
+
+/// Adds a column to an existing table if it is missing. `CREATE TABLE IF NOT
+/// EXISTS` is a no-op on a database that already has the table, so every column
+/// added after a table first shipped needs one of these — the columns are
+/// declared in `SCHEMA` for fresh databases and backfilled here for old ones.
+/// The definition must carry a default or be nullable; SQLite cannot add a
+/// NOT NULL column without one.
+fn ensure_column(conn: &Connection, table: &str, column: &str, def: &str) -> Result<(), String> {
+    if table_columns(conn, table)?.iter().any(|n| n == column) {
+        return Ok(());
+    }
+    conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {def};"))
+        .map_err(|e| e.to_string())
 }
 
 /// Creates the schema, upgrading older databases in the same transaction:
@@ -356,6 +393,14 @@ fn init_db(conn: &mut Connection, owner_token: Option<&str>) -> Result<(), Strin
             upsert_owner(&tx, token).map_err(|e| e.to_string())?;
         }
     }
+    // Columns added to `accounts` after it first shipped. Idempotent, and run
+    // on every path above — the two rebuild branches recreate the table from
+    // SCHEMA and so already have them, which is exactly what makes this safe
+    // to run unconditionally.
+    ensure_column(&tx, "accounts", "grant_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(&tx, "accounts", "password_hash", "TEXT")?;
+    ensure_column(&tx, "accounts", "totp_secret", "TEXT")?;
+    ensure_column(&tx, "accounts", "totp_confirmed", "INTEGER NOT NULL DEFAULT 0")?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -409,7 +454,7 @@ pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
 
 /// Maps a presented token to its account. Lookup is by SHA-256, so response
 /// timing reveals nothing useful about any stored credential.
-fn account_for(conn: &Connection, headers: &HeaderMap) -> Option<i64> {
+pub(crate) fn account_for(conn: &Connection, headers: &HeaderMap) -> Option<i64> {
     let token = bearer(headers)?;
     conn.query_row(
         "SELECT account_id FROM tokens WHERE token_hash = ?1",

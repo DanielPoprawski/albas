@@ -12,6 +12,7 @@ import HomeView from './HomeView';
 import RightPanel from './RightPanel';
 import TodoViewRedesign from './TodoViewRedesign';
 import HabitsView from './HabitsView';
+import WeightPanel from './WeightPanel';
 import Settings from './Settings';
 import Welcome from './Welcome';
 import { useApp } from '../context/AppContext';
@@ -26,19 +27,30 @@ import type { ActiveView } from '../types';
  * that the stored view type doesn't name yet, and Dashboard/To-Do read better
  * here than the old calendar/todos.
  */
-type Route = 'dashboard' | 'todo' | 'habits' | 'settings';
+type Route = 'dashboard' | 'todo' | 'habits' | 'weight' | 'settings';
 
 /** Route → the persisted view, where one exists. Habits has none yet. */
 const VIEW_OF: Partial<Record<Route, ActiveView>> = {
   dashboard: 'calendar',
   todo: 'todos',
+  weight: 'weight',
   settings: 'settings',
 };
 
+/**
+ * The persisted view → this shell's route.
+ *
+ * `'weight'` used to be folded into `habits`, so the two shared one stored
+ * value and navigating to Habits silently rewrote `activeView` to `'weight'`.
+ * Weight is now its own destination, which is the clean fix: every route with
+ * an `ActiveView` round-trips through `VIEW_OF` unchanged. `habits` is the one
+ * route with nothing to persist — `ActiveView` has no name for it — so it is
+ * simply not in either map and a restart lands on the dashboard.
+ */
 function routeOf(view: ActiveView): Route {
   if (view === 'todos') return 'todo';
+  if (view === 'weight') return 'weight';
   if (view === 'settings') return 'settings';
-  if (view === 'weight') return 'habits';
   return 'dashboard';
 }
 
@@ -98,6 +110,20 @@ const NAV: { route: Route; label: string; icon: ReactNode }[] = [
       <svg {...ICON}>
         <circle cx="12" cy="12" r="8" />
         <circle cx="12" cy="12" r="3" />
+      </svg>
+    ),
+  },
+  {
+    route: 'weight',
+    label: 'Weight',
+    // A dial: the arc of a scale's face with its needle. Drawn here in the
+    // same 15px/1.8-stroke vocabulary as its four neighbours rather than
+    // pulled from lucide, which nothing else in this file imports.
+    icon: (
+      <svg {...ICON}>
+        <path d="M3.5 17a9 9 0 1 1 17 0" />
+        <line x1="12" y1="17" x2="16" y2="10.5" />
+        <line x1="3.5" y1="17" x2="20.5" y2="17" />
       </svg>
     ),
   },
@@ -168,8 +194,13 @@ function Sidebar({
 
 /* ── Bottom taskbar ──────────────────────────────────────────────────────*/
 
-/** "Daniel Poprawski" → "DP"; a single word gives its first letter. */
-function initialsOf(name: string): string {
+/**
+ * "Daniel Poprawski" → "DP"; a single word gives its first letter.
+ *
+ * Exported because Settings' Profile avatar draws the same initials from the
+ * same account name, and two implementations would eventually disagree.
+ */
+export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
@@ -276,6 +307,28 @@ export default function AppShell() {
             children of it; single-column screens fill it. */}
         <SlotContext.Provider value={slotHost}>
           <div className="shell-content">
+            {/* Under 768px the sidebar and the bottom bar are both display:none
+                — HomeView brings its own header and tab bar, which is the whole
+                of the mobile chrome. That leaves every other route with no way
+                back, including a cold start whose persisted view was Settings,
+                so those routes get an explicit back bar here. It lives in the
+                shell rather than in each screen because it is the shell's
+                navigation that went missing. */}
+            {isMobile && route !== 'dashboard' && (
+              <div className="mobile-route-bar">
+                <button
+                  type="button"
+                  className="mobile-route-back"
+                  onClick={() => navigate('dashboard')}
+                >
+                  <span aria-hidden="true">←</span> Dashboard
+                </button>
+                <span className="mobile-route-title">
+                  {NAV.find(n => n.route === route)?.label}
+                </span>
+              </div>
+            )}
+
             {route === 'dashboard' && (isMobile ? <HomeView /> : <Calendar />)}
             {route === 'dashboard' && !isMobile && <RightPanel />}
 
@@ -284,8 +337,19 @@ export default function AppShell() {
             {/* Package 04 owns this screen; the shell only routes to it. */}
             {route === 'habits' && <HabitsView />}
 
+            {/* The weight tracker. It predates the redesign and still speaks
+                the legacy `--t-*` aliases, and it sizes itself with `h-full`,
+                so it needs the same padded scroll column Settings gets. */}
+            {route === 'weight' && (
+              <div className="panel-main">
+                <WeightPanel />
+              </div>
+            )}
+
             {route === 'settings' && (
-              <div className="flex-1 min-w-0 overflow-auto p-[var(--space-16)]">
+              // 32px, dropping to 20px under the breakpoint — the design's
+              // `.settings-main`, which a fixed utility padding could not do.
+              <div className="settings-main">
                 <Settings />
               </div>
             )}

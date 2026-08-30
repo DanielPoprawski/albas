@@ -6,18 +6,21 @@ import TodoCategories from './todo/TodoCategories';
 import TodoTaskRow from './todo/TodoTaskRow';
 import AddModal from './AddModal';
 import type { Todo } from '../types';
+import { TODO_CATEGORIES } from '../colors';
 
-/** All six category definitions with their accent colors */
-const CATEGORY_DEFS = {
-  work: { name: 'Work', color: '#a855f7' },
-  personal: { name: 'Personal', color: '#ec4899' },
-  shopping: { name: 'Shopping', color: '#10b981' },
-  health: { name: 'Health', color: '#06b6d4' },
-  finance: { name: 'Finance', color: '#f59e0b' },
-} as const;
+/**
+ * One source for the starter categories and their colours: `src/colors.ts`.
+ * This file, `todo/TodoCategories.tsx` and `AddModal.tsx` each used to declare
+ * their own copy, and the three disagreed — "Work" was purple in two of them
+ * and blue in the third, so a task's category changed colour as you moved
+ * between screens.
+ */
+const CATEGORY_DEFS: Record<string, { name: string; color: string }> = Object.fromEntries(
+  TODO_CATEGORIES.map(c => [c.label.toLowerCase(), { name: c.label, color: c.hex }]),
+);
 
-type CategoryId = keyof typeof CATEGORY_DEFS;
-const CATEGORY_IDS: CategoryId[] = ['work', 'personal', 'shopping', 'health', 'finance'];
+type CategoryId = string;
+const CATEGORY_IDS: CategoryId[] = TODO_CATEGORIES.map(c => c.label.toLowerCase());
 
 /** Sorting function: important first, then by due date, then by time added */
 function sortTasks(a: Todo, b: Todo): number {
@@ -55,6 +58,9 @@ export default function TodoViewRedesign() {
     finance: false,
   });
   const [editingTodo, setEditingTodo] = useState<Todo | undefined>();
+  // Separate from `editingTodo`: "add" has no todo to carry, so reusing that
+  // state for it (setEditingTodo(undefined)) rendered nothing at all.
+  const [adding, setAdding] = useState(false);
 
   // Filter to only tasks (not habits/chores)
   const tasks = todos.filter(t => t.schedule.type === 'once');
@@ -142,9 +148,12 @@ export default function TodoViewRedesign() {
           <input
             type="text"
             placeholder="Add a task"
-            className="flex-1 text-ui font-body bg-transparent border-none outline-none focus-visible:outline-none"
+            // Readonly: it opens the modal rather than accepting text. The
+            // focus ring stays — a keyboard user has no other way to tell this
+            // is the control they are on.
+            className="flex-1 text-ui font-body bg-transparent border-none"
             readOnly
-            onClick={() => setEditingTodo(undefined)}
+            onClick={() => setAdding(true)}
           />
         </div>
 
@@ -153,9 +162,9 @@ export default function TodoViewRedesign() {
           {allSectionTasks.length > 0 && (
             <div className="mb-[var(--space-24)]">
               {/* All Section Header */}
-              <div className="bg-accent text-white px-[var(--space-12)] py-[var(--space-10)] mb-[var(--space-6)] flex items-center gap-[var(--space-8)]">
-                <span className="text-micro font-bold uppercase tracking-widest">All</span>
-                <span className="text-micro font-bold opacity-75">{allSectionTasks.length}</span>
+              <div className="task-section-title bg-accent text-white">
+                All
+                <span className="task-section-count text-white/75">{allSectionTasks.length}</span>
               </div>
               {/* All Tasks */}
               <div className="space-y-[6px]">
@@ -176,16 +185,15 @@ export default function TodoViewRedesign() {
               {/* Section Header */}
               <button
                 onClick={() => handleToggleSection(section.id)}
-                className="w-full bg-white text-white px-[var(--space-12)] py-[var(--space-10)] mb-[var(--space-6)] flex items-center gap-[var(--space-8)] cursor-pointer transition-colors"
+                className="task-section-title text-white cursor-pointer"
                 style={{ backgroundColor: section.color }}
+                aria-expanded={!section.collapsed}
               >
-                <span className="text-micro font-bold opacity-75">
-                  {section.collapsed ? '＋' : '−'}
+                <span className="task-section-toggle" aria-hidden="true">
+                  {section.collapsed ? '+' : '−'}
                 </span>
-                <span className="text-micro font-bold uppercase tracking-widest flex-1 text-left">
-                  {section.name}
-                </span>
-                <span className="text-micro font-bold opacity-75">
+                <span className="flex-1 text-left">{section.name}</span>
+                <span className="task-section-count text-white/75">
                   {section.tasks.length}
                 </span>
               </button>
@@ -208,14 +216,22 @@ export default function TodoViewRedesign() {
           {showCompleted && completedVisible.length > 0 && (
             <div className="mb-[var(--space-24)]">
               {/* Completed Header */}
-              <div className="px-[var(--space-12)] py-[var(--space-10)] mb-[var(--space-6)] flex items-center gap-[var(--space-8)] bg-ink-muted bg-opacity-[0.08] border border-ink-muted border-opacity-[0.2]">
-                <span className="w-2 h-2 flex-shrink-0" style={{ backgroundColor: 'var(--t-ink-muted)' }} />
-                <span className="text-micro font-bold uppercase tracking-widest text-ink-muted flex-1">
-                  Completed
-                </span>
-                <span className="text-micro font-bold text-ink-muted">
-                  {completedVisible.length}
-                </span>
+              {/* The tint and hairline are derived from the muted ink with
+                  color-mix; Tailwind v3's `bg-opacity-*` was dropped in v4 and
+                  was silently painting this band a solid grey. */}
+              <div
+                className="task-section-title text-ink-muted border"
+                style={{
+                  background: 'color-mix(in srgb, var(--t-ink-muted) 8%, transparent)',
+                  borderColor: 'color-mix(in srgb, var(--t-ink-muted) 20%, transparent)',
+                }}
+              >
+                <span
+                  className="w-2 h-2 flex-shrink-0"
+                  style={{ backgroundColor: 'var(--t-ink-muted)' }}
+                />
+                <span className="flex-1">Completed</span>
+                <span className="task-section-count">{completedVisible.length}</span>
               </div>
               {/* Completed Tasks */}
               <div className="space-y-[6px] opacity-55">
@@ -240,13 +256,15 @@ export default function TodoViewRedesign() {
       </div>
 
       {editingTodo && <AddModal editTodo={editingTodo} onClose={() => setEditingTodo(undefined)} />}
+      {adding && <AddModal defaultType="task" onClose={() => setAdding(false)} />}
 
       {/* FAB Button */}
       <button
-        onClick={() => setEditingTodo(undefined)}
-        className="fixed bottom-[40px] right-[32px] w-14 h-14 bg-accent text-white flex items-center justify-center shadow-modal transition-all hover:bg-accent-hover active:scale-90"
+        onClick={() => setAdding(true)}
+        className="add-fab"
+        title="Add a to-do"
       >
-        <span className="text-2xl">+</span>
+        +
       </button>
     </>
   );

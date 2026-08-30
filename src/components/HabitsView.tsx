@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Bell } from 'lucide-react';
+import AddModal from './AddModal';
 import { useApp } from '../context/AppContext';
 import { fmt } from '../dates';
 import { isDueOn, isRepeating } from '../todoLogic';
@@ -239,6 +241,7 @@ function HabitCard({ habit }: { habit: HabitData }) {
 export default function HabitsView() {
   const { todos } = useApp();
   const today = fmt(new Date());
+  const [adding, setAdding] = useState(false);
 
   // Filter to repeating todos (habits)
   const habits: HabitData[] = todos
@@ -282,13 +285,12 @@ export default function HabitsView() {
   const weeklyRateOverall =
     habits.length > 0 ? Math.round((weekSum / (habits.length * 7)) * 100) : 0;
 
-  function handleAddHabit() {
-    // Stub: package 05 will implement the Add Modal
-    console.log('Add habit clicked');
-  }
 
   return (
-    <div className="h-full flex flex-col">
+    // `flex-1 min-w-0` + a white ground: this is the design's `.main-column`,
+    // and as a bare child of the shell's flex row it would otherwise size to
+    // its content and let the page grey show through.
+    <div className="flex-1 min-w-0 flex flex-col bg-surface overflow-hidden">
       {/* Header */}
       <div className="flex flex-col gap-[2px] px-[var(--space-24)] py-[var(--space-16)] border-b border-[var(--t-border)]">
         <h1
@@ -305,7 +307,7 @@ export default function HabitsView() {
       {/* Body - scrollable */}
       <div className="flex-1 overflow-y-auto px-[var(--space-24)] py-[var(--space-24)]">
         {/* Stats row */}
-        <div className="flex gap-[var(--space-16)] mb-[var(--space-20)]">
+        <div className="flex flex-col md:flex-row gap-[var(--space-16)] mb-[var(--space-20)]">
           <StatCard value={`${todayDoneCount}/${habits.length}`} label="Completed today" />
           <StatCard value={bestOverallStreak} label="Longest active streak" />
           <StatCard value={`${weeklyRateOverall}%`} label="Weekly completion rate" />
@@ -335,13 +337,14 @@ export default function HabitsView() {
 
       {/* FAB */}
       <button
-        onClick={handleAddHabit}
-        className="fixed bottom-[40px] right-[32px] w-[56px] h-[56px] bg-[var(--t-accent)] text-white text-[28px] flex items-center justify-center transition-all hover:bg-[var(--t-accent-hover)] active:scale-95 shadow-lg"
+        onClick={() => setAdding(true)}
+        className="add-fab"
         title="Add new habit"
-        style={{ boxShadow: '0 4px 12px rgba(168, 85, 247, 0.3)' }}
       >
         +
       </button>
+
+      {adding && <AddModal defaultType="habit" onClose={() => setAdding(false)} />}
     </div>
   );
 }

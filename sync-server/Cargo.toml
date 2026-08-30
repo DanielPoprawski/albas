@@ -14,6 +14,13 @@ sha2 = "0.10"
 getrandom = "0.2"
 # conditional-ui unlocks the discoverable (usernameless) authentication API
 webauthn-rs = { version = "0.5", features = ["conditional-ui"] }
+# Password hashing. RustCrypto's Argon2id with the default params; never
+# hand-roll this, and never swap it for a plain SHA — `token_hash` above is for
+# high-entropy tokens, which is a different problem from a chosen password.
+argon2 = "0.5"
+# TOTP secret generation, otpauth:// URI construction, and code verification.
+# The QR code is rendered client-side from the URI, so no image crate here.
+totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
 
 [profile.release]
 strip = true

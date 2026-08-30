@@ -22,7 +22,9 @@ function Checkbox({
       data-slot="checkbox"
       className={cn(
         "peer size-[18px] shrink-0 cursor-pointer border border-line-strong bg-surface",
-        "text-white transition-colors duration-150 outline-none",
+        // No `outline-none`: this is the app's only checkbox, and stripping
+        // the global focus-visible ring left it with no keyboard state at all.
+        "text-white transition-colors duration-150",
         "hover:border-accent",
         "data-[state=checked]:border-accent data-[state=checked]:bg-accent",
         "data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent",

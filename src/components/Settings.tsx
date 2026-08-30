@@ -1,229 +1,170 @@
-import { useEffect, useRef, useState } from 'react';
-import { KeyRound, UserPlus } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useApp } from '../context/AppContext';
 import type { SyncStatusInfo } from '../context/AppContext';
 import { inTauri } from '../persistence';
 import { parseIcs } from '../ics';
-import { inputClass, labelClass } from './forms/shared';
-import { Switch } from './ui/switch';
 import { usePasskeyAuth } from './auth/usePasskeyAuth';
 import PinDialog from './auth/PinDialog';
+import { Switch } from './ui/switch';
 import { DEFAULT_SYNC_URL, syncEndpoint } from '../syncServer';
-import type { FirstDayOfWeek, ShareGrant, ThemeName, WeightEntry, WeightUnit } from '../types';
+import { initialsOf } from './AppShell';
+import {
+  authMethods,
+  METHOD_PILL,
+  type AuthMethod,
+  type AuthMethodContext,
+  type AuthMethodRow,
+} from '../authMethods';
+import type {
+  FirstDayOfWeek,
+  ShareGrant,
+  ThemeName,
+  WeightEntry,
+  WeightUnit,
+} from '../types';
 
-const PRIMARY_BTN =
-  'px-md py-xs bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none';
-const GHOST_BTN =
-  'px-md py-xs rounded-lg font-semibold text-body-sm text-txt-muted border border-line hover:bg-fill-strong transition-colors';
-
-/** Mirrors the `WyzeStatus` struct returned by the `wyze_status` command. */
-interface WyzeStatus {
-  connected: boolean;
-  email: string | null;
-  lastSync: string | null;
-}
-
-type Status =
+type SyncState =
   | { kind: 'idle' }
-  | { kind: 'busy' }
-  | { kind: 'done'; imported: number; skipped: number }
+  | { kind: 'busy'; what: string }
+  | { kind: 'ok'; message: string }
   | { kind: 'error'; message: string };
 
-/** Swatch preview colours mirror each theme's chrome/sheet/accent from App.css. */
-const THEME_OPTIONS: { value: ThemeName; label: string; swatch: [string, string, string] }[] = [
-  { value: 'dark', label: 'Dark', swatch: ['#0a121e', '#0f2440', '#004ac6'] },
-  { value: 'light', label: 'Light', swatch: ['#ffffff', '#eef1f6', '#1d4ed8'] },
-  { value: 'grey-high', label: 'Grey · high contrast', swatch: ['#000000', '#141414', '#2563eb'] },
-  { value: 'grey-low', label: 'Grey · low contrast', swatch: ['#23262a', '#33373d', '#3f6fd8'] },
+/**
+ * The themes this build offers: two, not the four `CLAUDE.md` § Theming lists.
+ * `grey-high` and `grey-low` are dropped — the redesign never drew them and
+ * nobody asked for them back. There is deliberately no "Auto (System)": a
+ * theme here is a stored value that `applyTheme()` stamps onto <html>, and
+ * "follow the OS" is a fifth state with no `data-theme` to write.
+ *
+ * `AppContext`'s `THEMES` / `readTheme()` now validate against these same two,
+ * so a database still holding `grey-high`/`grey-low` fails that check and falls
+ * back to the default rather than selecting an option that no longer paints.
+ */
+const THEME_OPTIONS: { value: ThemeName; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
 ];
 
 export default function Settings() {
-  const { importEvents, theme, weightUnit, firstDayOfWeek, setSetting } = useApp();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [url, setUrl] = useState('');
-  const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const { setSetting, syncNow, reloadFromStore, syncToken } = useApp();
+  const [status, setStatus] = useState<SyncStatusInfo | null>(null);
+  const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' });
+  const [token, setToken] = useState('');
+  const [manual, setManual] = useState(false);
 
-  function runImport(text: string) {
-    const { events, skipped } = parseIcs(text);
-    if (events.length === 0) {
-      setStatus({ kind: 'error', message: 'No events found — is that an iCalendar (.ics) file?' });
-      return;
-    }
-    importEvents(events);
-    setStatus({ kind: 'done', imported: events.length, skipped });
-  }
+  const available = inTauri();
+  const auth = usePasskeyAuth();
+  const busy = syncState.kind === 'busy' || auth.state.kind === 'busy';
 
-  async function handleFile(file: File | undefined) {
-    if (!file) return;
-    setStatus({ kind: 'busy' });
+  useEffect(() => {
+    if (!available) return;
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        setStatus(await invoke<SyncStatusInfo>('sync_status'));
+      } catch {
+        // backend not ready
+      }
+    })();
+  }, [available, auth.state.kind]);
+
+  async function sync() {
+    setSyncState({ kind: 'busy', what: 'Syncing' });
     try {
-      runImport(await file.text());
+      const out = await syncNow();
+      await refreshStatus();
+      const parts = [`sent ${out.pushed}`, `received ${out.pulled}`];
+      if (out.skipped > 0) parts.push(`${out.skipped} skipped`);
+      setSyncState({
+        kind: out.skipped > 0 ? 'error' : 'ok',
+        message: out.skipped > 0 ? `Synced (${parts.join(', ')}). Skipped rows come from a newer version of Albas.` : `Synced - ${parts.join(', ')}.`,
+      });
     } catch (err) {
-      setStatus({ kind: 'error', message: `Couldn't read file: ${err}` });
+      setSyncState({ kind: 'error', message: String(err) });
     }
-    if (fileRef.current) fileRef.current.value = ''; // allow re-picking the same file
   }
 
-  async function handleUrl() {
-    const trimmed = url.trim();
-    if (!trimmed) return;
-    setStatus({ kind: 'busy' });
+  async function signOut() {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      runImport(await invoke<string>('fetch_ics', { url: trimmed }));
+      await invoke('sync_sign_out');
+      await reloadFromStore();
+      await refreshStatus();
+      setToken('');
+      setSyncState({ kind: 'idle' });
     } catch (err) {
-      setStatus({ kind: 'error', message: `Fetch failed: ${err}` });
+      setSyncState({ kind: 'error', message: String(err) });
+    }
+  }
+
+  async function refreshStatus() {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      setStatus(await invoke<SyncStatusInfo>('sync_status'));
+    } catch {
+      // backend not ready
+    }
+  }
+
+  async function connectManually() {
+    setSyncState({ kind: 'busy', what: 'Saving' });
+    try {
+      setSetting('__sync_url', syncEndpoint(DEFAULT_SYNC_URL));
+      setSetting('__sync_token', token.trim());
+      setSetting('__sync_account', '');
+      setSetting('__welcome_done', '1');
+      await refreshStatus();
+      setSyncState({ kind: 'idle' });
+      await sync();
+    } catch (err) {
+      setSyncState({ kind: 'error', message: String(err) });
     }
   }
 
   return (
-    <div className="h-full overflow-auto scrollbar-hide">
-      <h3 className="text-label-md text-txt-muted mb-md uppercase tracking-wider">Settings</h3>
+    <div style={{ width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
+      <div className="settings-header">
+        <h1>Settings</h1>
+        <p>Manage your account and preferences</p>
+      </div>
 
-      {/* Two columns from `lg` up. The cards are independent of one another, so
-          stacking them in one 34rem strip left most of a desktop window empty
-          and pushed Wyze below the fold. `items-start` keeps each card at its
-          own content height instead of stretching it to match its neighbour. */}
-      <div className="grid gap-md items-start grid-cols-1 lg:grid-cols-2 max-w-[72rem] pb-lg">
-        <div className="p-md rounded-xl bg-fill">
-          <h4 className="text-body-md font-semibold text-txt mb-xs">Appearance</h4>
-          <p className="text-body-sm text-txt-muted mb-md">
-            Applies immediately and is remembered across launches.
-          </p>
-          <div className="grid grid-cols-2 gap-sm">
-            {THEME_OPTIONS.map(({ value, label, swatch }) => (
-              <button
-                key={value}
-                onClick={() => setSetting('theme', value)}
-                className={`flex items-center gap-sm p-sm rounded-lg border transition-all text-left ${
-                  theme === value
-                    ? 'border-primary bg-fill-strong'
-                    : 'border-line hover:bg-fill-strong'
-                }`}
-              >
-                <span className="flex-shrink-0 flex rounded overflow-hidden border border-line">
-                  {swatch.map(c => (
-                    <span key={c} className="w-3 h-6 block" style={{ backgroundColor: c }} />
-                  ))}
-                </span>
-                <span className="text-body-sm text-txt">{label}</span>
-              </button>
-            ))}
-          </div>
+      <div className="cards-grid">
+        <ProfileCard />
 
-          <label className={`${labelClass} mt-md block`}>Weight unit</label>
-          <div className="flex gap-xs bg-fill-strong p-xs rounded-lg w-fit">
-            {(['lb', 'kg'] as WeightUnit[]).map(u => (
-              <button
-                key={u}
-                onClick={() => setSetting('weightUnit', u)}
-                className={`px-md py-xs rounded text-label-md font-semibold transition-colors ${
-                  weightUnit === u ? 'bg-primary text-on-primary' : 'text-txt-muted hover:text-txt'
-                }`}
-              >
-                {u}
-              </button>
-            ))}
-          </div>
+        {status?.configured && (
+          <SessionCard
+            syncState={syncState}
+            status={status}
+            onSync={sync}
+            onSignOut={signOut}
+            busy={busy}
+          />
+        )}
 
-          <label className={`${labelClass} mt-md block`}>Week starts on</label>
-          <div className="flex gap-xs bg-fill-strong p-xs rounded-lg w-fit">
-            {([[1, 'Monday'], [0, 'Sunday']] as [FirstDayOfWeek, string][]).map(([day, label]) => (
-              <button
-                key={day}
-                onClick={() => setSetting('firstDayOfWeek', String(day))}
-                className={`px-md py-xs rounded text-label-md font-semibold transition-colors ${
-                  firstDayOfWeek === day ? 'bg-primary text-on-primary' : 'text-txt-muted hover:text-txt'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-txt-muted mt-xs">
-            Changes the calendar and the weekly strips. A “N times per week” to-do
-            counts its completions inside this week, so its progress can shift.
-          </p>
-        </div>
+        <AccountSigninCard
+          auth={auth}
+          busy={busy}
+          token={token}
+          setToken={setToken}
+          manual={manual}
+          setManual={setManual}
+          onConnect={connectManually}
+          status={status}
+          syncToken={syncToken}
+        />
 
-        <div className="p-md rounded-xl bg-fill">
-          <h4 className="text-body-md font-semibold text-txt mb-xs">
-            Import from Google Calendar
-          </h4>
-          <p className="text-body-sm text-txt-muted mb-md">
-            Imported entries become regular Albas events (matched by ID, so importing
-            again updates instead of duplicating). Two ways to get your data:
-          </p>
+        <ThemeCard />
 
-          <div className="space-y-md">
-            <div>
-              <label className={labelClass}>From an exported file</label>
-              <p className="text-[11px] text-txt-muted mb-xs">
-                Google Calendar → gear icon → Settings → Import &amp; export → Export,
-                then unzip and pick the .ics file for a calendar.
-              </p>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="px-md py-xs bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all"
-              >
-                Choose .ics file…
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".ics,text/calendar"
-                className="hidden"
-                onChange={e => handleFile(e.target.files?.[0])}
-              />
-            </div>
+        <PreferencesCard />
 
-            <div>
-              <label className={labelClass}>From a calendar URL</label>
-              <p className="text-[11px] text-txt-muted mb-xs">
-                Google Calendar → Settings → your calendar → Integrate calendar →
-                "Secret address in iCal format". Keep this URL private.
-              </p>
-              <div className="flex gap-sm">
-                <input
-                  className={inputClass}
-                  placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
-                  value={url}
-                  onChange={e => setUrl(e.target.value)}
-                  disabled={!inTauri()}
-                />
-                <button
-                  type="button"
-                  onClick={handleUrl}
-                  disabled={!inTauri() || status.kind === 'busy'}
-                  className="px-md py-xs bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none flex-shrink-0"
-                >
-                  Import
-                </button>
-              </div>
-              {!inTauri() && (
-                <p className="text-[11px] text-txt-muted mt-xs">
-                  URL import needs the desktop app — use the file import in the browser.
-                </p>
-              )}
-            </div>
-          </div>
-
-          {status.kind === 'busy' && (
-            <p className="text-body-sm text-txt-muted mt-md">Importing…</p>
-          )}
-          {status.kind === 'done' && (
-            <p className="text-body-sm text-success mt-md">
-              Imported {status.imported} event{status.imported === 1 ? '' : 's'}
-              {status.skipped > 0 ? ` (${status.skipped} skipped)` : ''}.
-            </p>
-          )}
-          {status.kind === 'error' && (
-            <p className="text-body-sm text-danger mt-md">{status.message}</p>
-          )}
-        </div>
-
-        <AccountCard />
+        <ImportCard />
 
         <SharingCard />
 
@@ -235,259 +176,474 @@ export default function Settings() {
   );
 }
 
-type SyncState =
-  | { kind: 'idle' }
-  | { kind: 'busy'; what: string }
-  | { kind: 'ok'; message: string }
-  | { kind: 'error'; message: string };
-
-/**
- * Account + sync. Signing in is a passkey ceremony against `DEFAULT_SYNC_URL`,
- * which mints a token for this device; the older "paste a token" path is kept
- * behind a disclosure for accounts minted with `/accounts`.
+/* ── Profile ─────────────────────────────────────────────────────────────
  *
- * There is deliberately **no server field and no URL on display**. One hosted
- * server is the only one an account can exist on, so a URL here was never a
- * choice a person could make correctly — it was a way to mistype the product,
- * or to leave a localhost address wedged in front of the real one. What the
- * card shows is an account, or an invitation to have one.
+ * Read-only, deliberately. The only name Albas knows is the sync account's,
+ * which the server owns (it is the name other people share *to*); there is no
+ * local display-name setting, and `useApp()` exposes no way to read one back
+ * after writing it, so an editable field here would be a control that silently
+ * discards input. Signed out, there is no name at all — say so rather than
+ * inventing one.
  */
-function AccountCard() {
-  const { setSetting, reloadFromStore, syncNow } = useApp();
-  const auth = usePasskeyAuth();
-  const [status, setStatus] = useState<SyncStatusInfo | null>(null);
-  const [state, setState] = useState<SyncState>({ kind: 'idle' });
-  const [token, setToken] = useState('');
-  const [mode, setMode] = useState<'signin' | 'create'>('signin');
-  const [name, setName] = useState('');
-  const [invite, setInvite] = useState('');
-  const [manual, setManual] = useState(false);
-
-  const available = inTauri();
-  const busy = state.kind === 'busy' || auth.state.kind === 'busy';
-
-  async function refreshStatus() {
-    const { invoke } = await import('@tauri-apps/api/core');
-    setStatus(await invoke<SyncStatusInfo>('sync_status'));
-  }
-
-  useEffect(() => {
-    if (!available) return;
-    (async () => {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        setStatus(await invoke<SyncStatusInfo>('sync_status'));
-      } catch {
-        // backend not ready — the card still renders in its unconfigured state
-      }
-    })();
-    // A finished ceremony wrote credentials from Rust; pick them up here too.
-  }, [available, auth.state.kind]);
-
-  async function connectManually() {
-    setState({ kind: 'busy', what: 'Saving…' });
-    try {
-      // Written through setSetting so React state and SQLite agree. The `__`
-      // prefix keeps both keys out of the synced payload — the token must
-      // never be uploaded to the server it authenticates against.
-      setSetting('__sync_url', syncEndpoint(DEFAULT_SYNC_URL));
-      setSetting('__sync_token', token.trim());
-      setSetting('__sync_account', '');
-      setSetting('__welcome_done', '1');
-      await refreshStatus();
-      setState({ kind: 'idle' });
-      await sync();
-    } catch (err) {
-      setState({ kind: 'error', message: String(err) });
-    }
-  }
-
-  async function sync() {
-    setState({ kind: 'busy', what: 'Syncing…' });
-    try {
-      // `syncNow` owns the reload-after-pull and the shared `lastSync`, so the
-      // status bar's stamp moves with this button too.
-      const out = await syncNow();
-      await refreshStatus();
-      const parts = [`sent ${out.pushed}`, `received ${out.pulled}`];
-      if (out.skipped > 0) parts.push(`${out.skipped} skipped`);
-      setState({
-        kind: out.skipped > 0 ? 'error' : 'ok',
-        message:
-          out.skipped > 0
-            ? `Synced (${parts.join(', ')}). Skipped rows come from a newer version of Albas — update this device.`
-            : `Synced — ${parts.join(', ')}.`,
-      });
-    } catch (err) {
-      setState({ kind: 'error', message: String(err) });
-    }
-  }
-
-  async function signOut() {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('sync_sign_out');
-      await reloadFromStore();
-      await refreshStatus();
-      setToken('');
-      setState({ kind: 'idle' });
-    } catch (err) {
-      setState({ kind: 'error', message: String(err) });
-    }
-  }
+function ProfileCard() {
+  const { syncAccount, signedIn } = useApp();
+  const name = syncAccount ?? (signedIn ? 'Sync token' : 'Local (offline)');
 
   return (
-    <div className="p-md rounded-xl bg-fill">
-      <h4 className="text-body-md font-semibold text-txt mb-xs">Account &amp; sync</h4>
-      <p className="text-body-sm text-txt-muted mb-md">
-        An Albas account keeps your to-dos, events and weights in step across your
-        devices. It is optional: without one Albas is fully usable and everything
-        stays on this device. Edits are always made locally and reconciled on the
-        next sync, with the most recent edit winning.
-      </p>
+    <Card title="Profile">
+      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '20px' }}>
+        <div className="avatar-box">{syncAccount ? initialsOf(syncAccount) : '—'}</div>
+        <div>
+          <div className="setting-label">{name}</div>
+          <div className="setting-desc">
+            {syncAccount
+              ? 'Your account on the Albas sync server.'
+              : signedIn
+                ? 'Connected with a sync token; this device has no account name.'
+                : 'Albas works fully offline. An account is only needed for sync and sharing.'}
+          </div>
+        </div>
+      </div>
+      <div className="setting-item">
+        <div>
+          <div className="setting-label">Display name</div>
+          <div className="setting-desc">
+            Set when the account was created — renaming it would break every share
+            pointed at it, so it is fixed here.
+          </div>
+        </div>
+        <span className="setting-label">{syncAccount ?? '—'}</span>
+      </div>
+    </Card>
+  );
+}
 
-      {!available ? (
-        <p className="text-[11px] text-txt-muted">Sync needs the desktop or Android app.</p>
-      ) : status?.configured ? (
-        <>
-          <p className="text-body-sm text-txt mb-md">
-            {status.account
-              ? <>Signed in as <span className="font-semibold">{status.account}</span></>
-              : <>Connected with a sync token</>}
-            {status.lastSync && (
-              <span className="text-txt-muted">
-                {' · last synced '}
-                {new Date(Number(status.lastSync)).toLocaleString()}
-              </span>
-            )}
+function SessionCard({
+  syncState,
+  status,
+  onSync,
+  onSignOut,
+  busy,
+}: {
+  syncState: SyncState;
+  status: SyncStatusInfo | null;
+  onSync: () => void;
+  onSignOut: () => void;
+  busy: boolean;
+}) {
+  return (
+    <Card title="Session">
+      <SettingItem label="Sync" description={status?.lastSync ? `Last sync: ${new Date(Number(status.lastSync)).toLocaleString()}` : 'Never synced'}>
+        <button onClick={onSync} disabled={busy} className="button-small">
+          Sync Now
+        </button>
+      </SettingItem>
+      <SettingItem label="Log out" description="Sign out of this device">
+        <button onClick={onSignOut} className="button-small button-danger">
+          Log Out
+        </button>
+      </SettingItem>
+      {syncState.kind === 'ok' && <p style={{ fontSize: '12px', color: 'var(--t-success)', marginTop: '12px' }}>{syncState.message}</p>}
+      {syncState.kind === 'error' && <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{syncState.message}</p>}
+    </Card>
+  );
+}
+
+/* ── Account & Sign-in ───────────────────────────────────────────────────*/
+
+/** What one registered method resolved to. `undefined` while still loading. */
+type MethodState = { rows: AuthMethodRow[]; error: string | null } | undefined;
+
+/**
+ * Loads every registered method's credentials in parallel.
+ *
+ * Each method is tracked separately on purpose: one failing endpoint must not
+ * blank the table, so a rejection is recorded as that method's error and the
+ * others still render their rows.
+ */
+function useAuthMethods(ctx: AuthMethodContext, enabled: boolean) {
+  // `authMethods()` reads a module-level registry filled at import time, so the
+  // list is stable for the life of the app.
+  const methods = useMemo<AuthMethod[]>(() => authMethods(), []);
+  const [byId, setById] = useState<Record<string, MethodState>>({});
+
+  useEffect(() => {
+    if (!enabled) {
+      setById({});
+      return;
+    }
+    let cancelled = false;
+    setById({});
+    for (const m of methods) {
+      m.load(ctx)
+        .then(rows => {
+          if (!cancelled) setById(prev => ({ ...prev, [m.id]: { rows, error: null } }));
+        })
+        .catch(err => {
+          if (!cancelled) setById(prev => ({ ...prev, [m.id]: { rows: [], error: String(err) } }));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [methods, ctx, enabled]);
+
+  return { methods, byId };
+}
+
+function AccountSigninCard({
+  auth,
+  busy,
+  token,
+  setToken,
+  manual,
+  setManual,
+  onConnect,
+  status,
+  syncToken,
+}: {
+  auth: ReturnType<typeof usePasskeyAuth>;
+  busy: boolean;
+  token: string;
+  setToken: (t: string) => void;
+  manual: boolean;
+  setManual: (m: boolean) => void;
+  onConnect: () => void;
+  status: SyncStatusInfo | null;
+  syncToken: string | null;
+}) {
+  const configured = !!status?.configured;
+
+  // A counter, not a boolean: `refresh()` must re-run the loads even when the
+  // token and server are unchanged, and a new object identity is what the
+  // effect below keys on.
+  const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+  const ctx = useMemo<AuthMethodContext>(
+    () => ({ token: syncToken, server: DEFAULT_SYNC_URL, refresh }),
+    // `tick` is deliberately a dependency: it is what makes `refresh()` bite.
+    [syncToken, refresh, tick]
+  );
+
+  const { methods, byId } = useAuthMethods(ctx, configured);
+
+  const rows = methods.flatMap(m => (byId[m.id]?.rows ?? []).map(r => ({ ...r, methodId: m.id })));
+  const loading = configured && methods.some(m => byId[m.id] === undefined);
+  const title = loading
+    ? 'Account & Sign-in'
+    : `Account & Sign-in (${rows.length} method${rows.length === 1 ? '' : 's'})`;
+
+  return (
+    <Card title={configured ? title : 'Account & Sign-in'} span>
+      {!configured ? (
+        <div style={{ paddingTop: '16px', paddingBottom: '16px' }}>
+          <p style={{ fontSize: '12px', color: 'var(--t-ink-secondary)', marginBottom: '16px' }}>
+            Your passkey - a security key, fingerprint or face unlock - is the whole sign-in; there is no password. Accounts are free.
           </p>
-          <div className="flex gap-sm">
-            <button onClick={sync} disabled={busy} className={PRIMARY_BTN}>
-              Sync now
-            </button>
-            <button onClick={signOut} className={GHOST_BTN}>
-              Sign out
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <button onClick={() => auth.signIn()} disabled={busy} className="button-primary">
+              Sign in with passkey
             </button>
           </div>
-          <p className="text-[11px] text-txt-muted mt-sm">
-            Signing out clears this device's credentials and anything shared with you.
-            Your own data stays on this device.
-          </p>
-        </>
-      ) : (
-        <>
-          <div className="flex flex-col gap-sm">
-            <p className="text-body-sm text-txt-muted">
-              Your passkey — a security key, fingerprint or face unlock — is the
-              whole sign-in; there is no password. Accounts are free.
-            </p>
-
-            {mode === 'create' && (
-              <>
-                <div>
-                  <label className={labelClass}>Account name</label>
-                  <input
-                    className={inputClass}
-                    autoComplete="off"
-                    placeholder="letters, digits, - or _"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    disabled={busy}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Invite code (only to add a passkey to an account you already have)</label>
-                  <input
-                    className={inputClass}
-                    autoComplete="off"
-                    value={invite}
-                    onChange={e => setInvite(e.target.value)}
-                    disabled={busy}
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="flex gap-sm">
-              {mode === 'signin' ? (
-                <>
-                  <button
-                    onClick={() => auth.signIn()}
-                    disabled={busy}
-                    className={`${PRIMARY_BTN} flex items-center gap-xs`}
-                  >
-                    <KeyRound size={14} /> Sign in with passkey
-                  </button>
-                  <button onClick={() => setMode('create')} disabled={busy} className={`${GHOST_BTN} flex items-center gap-xs`}>
-                    <UserPlus size={14} /> Create account
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => auth.createAccount(name.trim(), invite.trim() || null)}
-                    disabled={busy || name.trim() === ''}
-                    className={PRIMARY_BTN}
-                  >
-                    Create account
-                  </button>
-                  <button onClick={() => setMode('signin')} disabled={busy} className={GHOST_BTN}>
-                    Back
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
           <button
-            onClick={() => setManual(m => !m)}
-            className="text-[11px] text-txt-muted hover:text-txt transition-colors mt-md"
+            onClick={() => setManual(!manual)}
+            style={{ fontSize: '11px', color: 'var(--t-ink-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
           >
-            {manual ? '▾' : '▸'} Advanced: connect with a sync token
+            {manual ? 'v' : '>'} Advanced: connect with a sync token
           </button>
           {manual && (
-            <div className="mt-sm">
-              <label className={labelClass}>Sync token</label>
+            <div style={{ marginTop: '12px' }}>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--t-ink)', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>Sync token</label>
               <input
-                className={inputClass}
+                className="input-text"
+                style={{ marginBottom: '8px', display: 'block' }}
                 type="password"
                 autoComplete="off"
                 value={token}
-                onChange={e => setToken(e.target.value)}
+                onChange={(e) => setToken(e.target.value)}
               />
-              <p className="text-[11px] text-txt-muted mt-xs">
-                For accounts minted with <code>/accounts</code>, rather than with a passkey.
-                The token is the only credential, so it is sent to {DEFAULT_SYNC_URL} over
-                https and nowhere else.
-              </p>
-              <button
-                onClick={connectManually}
-                disabled={busy || token.trim() === ''}
-                className={`${PRIMARY_BTN} mt-sm`}
-              >
+              <button onClick={onConnect} disabled={busy || token.trim() === ''} className="button-primary">
                 Connect
               </button>
             </div>
           )}
+        </div>
+      ) : (
+        <>
+          <table className="sw-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const pill = METHOD_PILL[row.type];
+                return (
+                  <tr key={`${row.methodId}:${row.key}`}>
+                    <td>
+                      {row.name}
+                      {row.detail && (
+                        <span className="setting-desc" style={{ marginTop: 0, marginLeft: '8px' }}>
+                          {row.detail}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <span className="type-pill" style={{ background: pill.bg, color: pill.color }}>
+                        {row.type}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!loading && rows.length === 0 && (
+                <tr>
+                  <td colSpan={2} style={{ color: 'var(--t-ink-muted)' }}>
+                    No sign-in methods are attached to this account yet.
+                  </td>
+                </tr>
+              )}
+              {loading && (
+                <tr>
+                  <td colSpan={2} style={{ color: 'var(--t-ink-muted)' }}>Loading…</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* One line per method that failed to load. The table above keeps
+              whatever the other methods did return. */}
+          {methods.map(m => {
+            const error = byId[m.id]?.error;
+            return error ? (
+              <p key={m.id} style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>
+                {m.id}: {error}
+              </p>
+            ) : null;
+          })}
+
+          {/* The action row — each method's own control for adding/changing it. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start', marginTop: '20px' }}>
+            {methods.map(m => (m.Action ? <m.Action key={m.id} ctx={ctx} /> : null))}
+          </div>
         </>
       )}
-
-      {auth.state.kind === 'busy' && <p className="text-body-sm text-txt-muted mt-md">{auth.state.what}</p>}
-      {auth.state.kind === 'error' && <p className="text-body-sm text-danger mt-md">{auth.state.message}</p>}
-      {state.kind === 'busy' && <p className="text-body-sm text-txt-muted mt-md">{state.what}</p>}
-      {state.kind === 'ok' && <p className="text-body-sm text-success mt-md">{state.message}</p>}
-      {state.kind === 'error' && <p className="text-body-sm text-danger mt-md">{state.message}</p>}
-
-      {auth.pin && (
-        <PinDialog
-          attemptsRemaining={auth.pin.attemptsRemaining}
-          onSubmit={auth.submitPin}
-          onCancel={auth.cancelPin}
-        />
-      )}
-    </div>
+      {auth.state.kind === 'busy' && <p style={{ fontSize: '12px', color: 'var(--t-ink-secondary)', marginTop: '12px' }}>{auth.state.what}</p>}
+      {auth.state.kind === 'error' && <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{auth.state.message}</p>}
+      {auth.pin && <PinDialog attemptsRemaining={auth.pin.attemptsRemaining} onSubmit={auth.submitPin} onCancel={auth.cancelPin} />}
+    </Card>
   );
 }
+
+/* ── Appearance ──────────────────────────────────────────────────────────*/
+
+/**
+ * Light / Dark, wired to the real path: the current value is read from
+ * `useApp().theme` (which derives it from the persisted `theme` setting), and
+ * a click goes through `setSetting`, whose `theme` branch calls `applyTheme`
+ * to stamp `data-theme` on <html> and mirror it to localStorage for the
+ * pre-mount script in index.html.
+ *
+ * No local `useState`: the context is the source of truth, so the selection
+ * survives leaving and re-entering the page and can never disagree with what
+ * is actually applied.
+ */
+function ThemeCard() {
+  const { theme, setSetting } = useApp();
+
+  return (
+    <Card title="Theme">
+      <div className="seg-group">
+        {THEME_OPTIONS.map(({ value, label }) => (
+          <button
+            key={value}
+            onClick={() => setSetting('theme', value)}
+            className={`seg-opt${theme === value ? ' active' : ''}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="setting-desc" style={{ marginTop: '12px' }}>
+        Applies immediately and is remembered across launches.
+      </p>
+    </Card>
+  );
+}
+
+/* ── Preferences ─────────────────────────────────────────────────────────*/
+
+/**
+ * Weight unit and week start. Both are live settings threaded through the
+ * whole calendar (`firstDayOfWeek` is a trailing argument on a dozen date
+ * helpers), so they are read from `useApp()` rather than local state.
+ */
+function PreferencesCard() {
+  const { weightUnit, firstDayOfWeek, setSetting } = useApp();
+
+  return (
+    <Card title="Preferences">
+      <div style={{ marginBottom: '16px' }}>
+        <div className="setting-label" style={{ marginBottom: '8px' }}>Weight unit</div>
+        <div className="seg-group">
+          {(['lb', 'kg'] as WeightUnit[]).map(u => (
+            <button
+              key={u}
+              onClick={() => setSetting('weightUnit', u)}
+              className={`seg-opt${weightUnit === u ? ' active' : ''}`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+        <p className="setting-desc" style={{ marginTop: '8px' }}>
+          Readings are always stored in kilograms; this only changes how they are shown.
+        </p>
+      </div>
+
+      <div>
+        <div className="setting-label" style={{ marginBottom: '8px' }}>Week starts on</div>
+        <div className="seg-group">
+          {([[1, 'Monday'], [0, 'Sunday']] as [FirstDayOfWeek, string][]).map(([day, label]) => (
+            <button
+              key={day}
+              onClick={() => setSetting('firstDayOfWeek', String(day))}
+              className={`seg-opt${firstDayOfWeek === day ? ' active' : ''}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="setting-desc" style={{ marginTop: '8px' }}>
+          Changes the calendar and the weekly strips. A “N times per week” to-do counts
+          its completions inside this week, so its progress can shift.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
+/* ── Calendar import ─────────────────────────────────────────────────────*/
+
+type ImportState =
+  | { kind: 'idle' }
+  | { kind: 'busy' }
+  | { kind: 'done'; imported: number; skipped: number }
+  | { kind: 'error'; message: string };
+
+function ImportCard() {
+  const { importEvents } = useApp();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [url, setUrl] = useState('');
+  const [state, setState] = useState<ImportState>({ kind: 'idle' });
+
+  function runImport(text: string) {
+    const { events, skipped } = parseIcs(text);
+    if (events.length === 0) {
+      setState({ kind: 'error', message: 'No events found — is that an iCalendar (.ics) file?' });
+      return;
+    }
+    importEvents(events);
+    setState({ kind: 'done', imported: events.length, skipped });
+  }
+
+  async function handleFile(file: File | undefined) {
+    if (!file) return;
+    setState({ kind: 'busy' });
+    try {
+      runImport(await file.text());
+    } catch (err) {
+      setState({ kind: 'error', message: `Couldn't read file: ${err}` });
+    }
+    if (fileRef.current) fileRef.current.value = ''; // allow re-picking the same file
+  }
+
+  async function handleUrl() {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setState({ kind: 'busy' });
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      runImport(await invoke<string>('fetch_ics', { url: trimmed }));
+    } catch (err) {
+      setState({ kind: 'error', message: `Fetch failed: ${err}` });
+    }
+  }
+
+  return (
+    <Card title="Calendar import">
+      <p className="setting-desc" style={{ marginBottom: '16px' }}>
+        Imported entries become regular Albas events, matched by ID — importing again
+        updates instead of duplicating.
+      </p>
+
+      <div style={{ marginBottom: '16px' }}>
+        <div className="setting-label">From an exported file</div>
+        <p className="setting-desc" style={{ marginBottom: '8px' }}>
+          Google Calendar → Settings → Import &amp; export → Export, then unzip and pick
+          the .ics file for a calendar.
+        </p>
+        <button type="button" onClick={() => fileRef.current?.click()} className="button-primary">
+          Choose .ics file…
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".ics,text/calendar"
+          style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files?.[0])}
+        />
+      </div>
+
+      <div>
+        <div className="setting-label">From a calendar URL</div>
+        <p className="setting-desc" style={{ marginBottom: '8px' }}>
+          Google Calendar → Settings → your calendar → Integrate calendar → “Secret
+          address in iCal format”. Keep this URL private.
+        </p>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            className="input-text"
+            style={{ flex: 1, minWidth: 0, width: 'auto' }}
+            placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            disabled={!inTauri()}
+          />
+          <button
+            type="button"
+            onClick={handleUrl}
+            disabled={!inTauri() || state.kind === 'busy'}
+            className="button-primary"
+            style={{ flexShrink: 0 }}
+          >
+            Import
+          </button>
+        </div>
+        {!inTauri() && (
+          <p className="setting-desc" style={{ marginTop: '8px' }}>
+            URL import needs the desktop app — use the file import in the browser.
+          </p>
+        )}
+      </div>
+
+      {state.kind === 'busy' && <p className="setting-desc" style={{ marginTop: '12px' }}>Importing…</p>}
+      {state.kind === 'done' && (
+        <p style={{ fontSize: '12px', color: 'var(--t-success)', marginTop: '12px' }}>
+          Imported {state.imported} event{state.imported === 1 ? '' : 's'}
+          {state.skipped > 0 ? ` (${state.skipped} skipped)` : ''}.
+        </p>
+      )}
+      {state.kind === 'error' && (
+        <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{state.message}</p>
+      )}
+    </Card>
+  );
+}
+
+/* ── Sharing ─────────────────────────────────────────────────────────────*/
 
 interface SharesRes {
   outgoing: ShareGrant[];
@@ -554,83 +710,82 @@ function SharingCard() {
   if (!available) return null;
 
   return (
-    <div className="p-md rounded-xl bg-fill">
-      <h4 className="text-body-md font-semibold text-txt mb-xs">Sharing</h4>
-      <p className="text-body-sm text-txt-muted mb-md">
+    <Card title="Sharing">
+      <p className="setting-desc" style={{ marginBottom: '16px' }}>
         Let another account on this server see your calendar or your to-dos and habits.
-        Sharing is <span className="font-semibold">read-only</span> — they can't edit or
-        check anything off. Weight data is never shared.
+        Sharing is <strong>read-only</strong> — they can't edit or check anything off.
+        Weight data is never shared.
       </p>
 
-      <label className={labelClass}>You share with</label>
-      {shares?.outgoing.length === 0 && (
-        <p className="text-[11px] text-txt-muted mb-sm">Nobody yet.</p>
-      )}
-      <div className="space-y-xs mb-md">
+      <div className="setting-label">You share with</div>
+      {shares?.outgoing.length === 0 && <p className="setting-desc">Nobody yet.</p>}
+      <div style={{ marginTop: '8px', marginBottom: '16px' }}>
         {shares?.outgoing.map(g => (
-          <div key={g.name} className="flex items-center gap-sm p-xs rounded-lg bg-fill-strong">
-            <span className="text-body-sm text-txt flex-1 min-w-0 truncate">{g.name}</span>
-            <label className="flex items-center gap-xs text-[11px] text-txt-muted">
-              <Switch
-                checked={g.calendar}
-                onCheckedChange={v => setShare(g.name, v, g.todos)}
-              />
+          <div
+            key={g.name}
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 8px', background: 'var(--t-subtle)', marginBottom: '4px' }}
+          >
+            <span className="setting-label" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {g.name}
+            </span>
+            <label className="setting-desc" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: 0 }}>
+              <Switch checked={g.calendar} onCheckedChange={v => setShare(g.name, v, g.todos)} />
               Calendar
             </label>
-            <label className="flex items-center gap-xs text-[11px] text-txt-muted">
-              <Switch
-                checked={g.todos}
-                onCheckedChange={v => setShare(g.name, g.calendar, v)}
-              />
+            <label className="setting-desc" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: 0 }}>
+              <Switch checked={g.todos} onCheckedChange={v => setShare(g.name, g.calendar, v)} />
               To-dos &amp; habits
             </label>
           </div>
         ))}
       </div>
 
-      <label className={labelClass}>Share with someone</label>
-      <div className="flex gap-sm">
+      <div className="setting-label">Share with someone</div>
+      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
         <input
-          className={inputClass}
+          className="input-text"
+          style={{ flex: 1, minWidth: 0, width: 'auto' }}
           autoComplete="off"
           placeholder="their account name"
           value={newName}
           onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') addShare(); }}
+          onKeyDown={e => { if (e.key === 'Enter') void addShare(); }}
         />
         <button
-          onClick={addShare}
+          onClick={() => void addShare()}
           disabled={state.kind === 'busy' || newName.trim() === ''}
-          className={`${PRIMARY_BTN} flex-shrink-0`}
+          className="button-primary"
+          style={{ flexShrink: 0 }}
         >
           Share
         </button>
       </div>
-      <p className="text-[11px] text-txt-muted mt-xs">
+      <p className="setting-desc" style={{ marginTop: '8px' }}>
         Starts with the calendar shared; switch either category off any time. Turning both
         off removes the share entirely.
       </p>
 
-      <div className="mt-md pt-md border-t border-line">
-        <label className={labelClass}>Shared with you</label>
+      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--t-border)' }}>
+        <div className="setting-label">Shared with you</div>
         {shares?.incoming.length === 0 ? (
-          <p className="text-[11px] text-txt-muted">
+          <p className="setting-desc">
             Nothing yet. Ask them to share with your account name in their Settings.
           </p>
         ) : (
-          <div className="space-y-xs">
+          <div style={{ marginTop: '8px' }}>
             {shares?.incoming.map(g => (
-              <div key={g.name} className="flex items-center gap-sm p-xs rounded-lg bg-fill-strong">
-                <span className="text-body-sm text-txt flex-1 min-w-0 truncate">
+              <div
+                key={g.name}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 8px', background: 'var(--t-subtle)', marginBottom: '4px' }}
+              >
+                <span className="setting-label" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {g.name}
-                  <span className="text-[11px] text-txt-muted">
+                  <span className="setting-desc" style={{ marginTop: 0 }}>
                     {' · '}
-                    {[g.calendar && 'calendar', g.todos && 'to-dos & habits']
-                      .filter(Boolean)
-                      .join(', ')}
+                    {[g.calendar && 'calendar', g.todos && 'to-dos & habits'].filter(Boolean).join(', ')}
                   </span>
                 </span>
-                <label className="flex items-center gap-xs text-[11px] text-txt-muted">
+                <label className="setting-desc" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: 0 }}>
                   <Switch
                     checked={!hiddenOwners.includes(g.name)}
                     onCheckedChange={() => toggleOwnerHidden(g.name)}
@@ -641,27 +796,37 @@ function SharingCard() {
             ))}
           </div>
         )}
-        <button onClick={refreshIncoming} disabled={state.kind === 'busy'} className={`${GHOST_BTN} mt-sm`}>
+        <button
+          onClick={() => void refreshIncoming()}
+          disabled={state.kind === 'busy'}
+          className="button-small"
+          style={{ marginTop: '12px' }}
+        >
           Refresh
         </button>
       </div>
 
-      {state.kind === 'busy' && <p className="text-body-sm text-txt-muted mt-md">{state.what}</p>}
-      {state.kind === 'error' && <p className="text-body-sm text-danger mt-md">{state.message}</p>}
-    </div>
+      {state.kind === 'busy' && <p className="setting-desc" style={{ marginTop: '12px' }}>{state.what}</p>}
+      {state.kind === 'error' && (
+        <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{state.message}</p>
+      )}
+    </Card>
   );
 }
 
-type WyzeState =
-  | { kind: 'idle' }
-  | { kind: 'busy'; what: string }
-  | { kind: 'ok'; message: string }
-  | { kind: 'error'; message: string };
+/* ── Wyze scale ──────────────────────────────────────────────────────────*/
+
+/** Mirrors the `WyzeStatus` struct returned by the `wyze_status` command. */
+interface WyzeStatus {
+  connected: boolean;
+  email: string | null;
+  lastSync: string | null;
+}
 
 function WyzeCard() {
   const { importWeights } = useApp();
   const [status, setStatus] = useState<WyzeStatus | null>(null);
-  const [state, setState] = useState<WyzeState>({ kind: 'idle' });
+  const [state, setState] = useState<SyncState>({ kind: 'idle' });
   const [form, setForm] = useState({ email: '', password: '', keyId: '', apiKey: '' });
 
   const available = inTauri();
@@ -677,6 +842,24 @@ function WyzeCard() {
       }
     })();
   }, [available]);
+
+  async function sync() {
+    setState({ kind: 'busy', what: 'Syncing…' });
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const count = await invoke<number>('wyze_sync', { days: 90 });
+      // Rust wrote straight to SQLite, so pull the rows back into React state.
+      const data = await invoke<{ weights: WeightEntry[] }>('load_state');
+      importWeights(data.weights.filter(w => w.source === 'wyze'));
+      setStatus(await invoke<WyzeStatus>('wyze_status'));
+      setState({
+        kind: 'ok',
+        message: count === 0 ? 'No readings in the last 90 days.' : `Synced ${count} reading${count === 1 ? '' : 's'}.`,
+      });
+    } catch (err) {
+      setState({ kind: 'error', message: String(err) });
+    }
+  }
 
   async function connect() {
     setState({ kind: 'busy', what: 'Saving…' });
@@ -697,24 +880,6 @@ function WyzeCard() {
     }
   }
 
-  async function sync() {
-    setState({ kind: 'busy', what: 'Syncing…' });
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const count = await invoke<number>('wyze_sync', { days: 90 });
-      // Rust wrote straight to SQLite, so pull the rows back into React state.
-      const data = await invoke<{ weights: WeightEntry[] }>('load_state');
-      importWeights(data.weights.filter(w => w.source === 'wyze'));
-      setStatus(await invoke<WyzeStatus>('wyze_status'));
-      setState({
-        kind: 'ok',
-        message: count === 0 ? 'No readings in the last 90 days.' : `Synced ${count} reading${count === 1 ? '' : 's'}.`,
-      });
-    } catch (err) {
-      setState({ kind: 'error', message: String(err) });
-    }
-  }
-
   async function disconnect() {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -730,119 +895,88 @@ function WyzeCard() {
     form.email.trim() !== '' && form.password !== '' &&
     form.keyId.trim() !== '' && form.apiKey.trim() !== '';
 
+  const field = (label: string, key: keyof typeof form, type = 'text') => (
+    <div>
+      <div className="setting-label" style={{ marginBottom: '4px' }}>{label}</div>
+      <input
+        className="input-text"
+        style={{ width: '100%' }}
+        type={type}
+        autoComplete="off"
+        value={form[key]}
+        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+      />
+    </div>
+  );
+
   return (
-    <div className="p-md rounded-xl bg-fill">
-      <h4 className="text-body-md font-semibold text-txt mb-xs">Wyze Scale</h4>
-      <p className="text-body-sm text-txt-muted mb-md">
-        Pulls your weight and body-fat readings into the Weight view. Wyze has no public
-        API, so this signs in as the phone app does — it needs an API Key alongside your
-        login, which doubles as the second factor.
+    <Card title="Wyze scale">
+      <p className="setting-desc" style={{ marginBottom: '16px' }}>
+        Pulls your weight and body-fat readings in. Wyze has no public API, so this signs
+        in as the phone app does — it needs an API Key alongside your login, which doubles
+        as the second factor.
       </p>
 
       {!available ? (
-        <p className="text-[11px] text-txt-muted">
-          Wyze sync needs the desktop or Android app.
-        </p>
+        <p className="setting-desc">Wyze sync needs the desktop or Android app.</p>
       ) : status?.connected ? (
         <>
-          <p className="text-body-sm text-txt mb-md">
-            Connected as <span className="font-semibold">{status.email}</span>
+          <p className="setting-label" style={{ marginBottom: '12px' }}>
+            Connected as {status.email}
             {status.lastSync && (
-              <span className="text-txt-muted">
+              <span className="setting-desc" style={{ marginTop: 0 }}>
                 {' · last synced '}
                 {new Date(Number(status.lastSync)).toLocaleString()}
               </span>
             )}
           </p>
-          <div className="flex gap-sm">
-            <button
-              onClick={sync}
-              disabled={state.kind === 'busy'}
-              className="px-md py-xs bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none"
-            >
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => void sync()} disabled={state.kind === 'busy'} className="button-primary">
               Sync now
             </button>
-            <button
-              onClick={disconnect}
-              className="px-md py-xs rounded-lg font-semibold text-body-sm text-txt-muted border border-line hover:bg-fill-strong transition-colors"
-            >
+            <button onClick={() => void disconnect()} className="button-small">
               Disconnect
             </button>
           </div>
         </>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-sm">
-            <div>
-              <label className={labelClass}>Email</label>
-              <input
-                className={inputClass}
-                type="email"
-                autoComplete="off"
-                value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Password</label>
-              <input
-                className={inputClass}
-                type="password"
-                autoComplete="off"
-                value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Key ID</label>
-              <input
-                className={inputClass}
-                autoComplete="off"
-                value={form.keyId}
-                onChange={e => setForm(f => ({ ...f, keyId: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>API Key</label>
-              <input
-                className={inputClass}
-                autoComplete="off"
-                value={form.apiKey}
-                onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
-              />
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+            {field('Email', 'email', 'email')}
+            {field('Password', 'password', 'password')}
+            {field('Key ID', 'keyId')}
+            {field('API Key', 'apiKey')}
           </div>
-          <p className="text-[11px] text-txt-muted mt-sm">
+          <p className="setting-desc" style={{ marginTop: '12px' }}>
             Generate a Key ID and API Key at developer-api-console.wyze.com → Create API Key.
             Credentials are stored in your OS keyring on desktop; on Android they live in the
             app's private database, which is sandboxed but not encrypted.
           </p>
           <button
-            onClick={connect}
+            onClick={() => void connect()}
             disabled={!canConnect || state.kind === 'busy'}
-            className="mt-md px-md py-xs bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none"
+            className="button-primary"
+            style={{ marginTop: '16px' }}
           >
             Connect
           </button>
         </>
       )}
 
-      {state.kind === 'busy' && <p className="text-body-sm text-txt-muted mt-md">{state.what}</p>}
-      {state.kind === 'ok' && <p className="text-body-sm text-success mt-md">{state.message}</p>}
-      {state.kind === 'error' && <p className="text-body-sm text-danger mt-md">{state.message}</p>}
-    </div>
+      {state.kind === 'busy' && <p className="setting-desc" style={{ marginTop: '12px' }}>{state.what}</p>}
+      {state.kind === 'ok' && <p style={{ fontSize: '12px', color: 'var(--t-success)', marginTop: '12px' }}>{state.message}</p>}
+      {state.kind === 'error' && <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{state.message}</p>}
+    </Card>
   );
 }
+
+/* ── About ───────────────────────────────────────────────────────────────*/
 
 /**
  * The one place the running version is visible. `__APP_VERSION__` is injected
  * by Vite from package.json (see `define` in vite.config.ts), which is the
  * single source every other version file is derived from — so if this number
  * is right, the bundle, the installer and the APK all agree.
- *
- * Deliberately does *not* show the server URL. Nowhere in the app does any
- * more — there is one server, it is a constant, and a person reading About
- * wants to know which build they are running, not which host it talks to.
  */
 function AboutCard() {
   // No Tauri platform check — `os` would be a plugin and an async call for one
@@ -854,12 +988,52 @@ function AboutCard() {
       : 'Desktop app';
 
   return (
-    <div className="p-md rounded-xl bg-fill">
-      <h4 className="text-body-md font-semibold text-txt mb-xs">About</h4>
-      <p className="text-body-sm text-txt-muted">
-        Albas <span className="font-semibold text-txt">v{__APP_VERSION__}</span>
-        <span> · {platform}</span>
-      </p>
+    <Card title="About">
+      <div className="setting-item">
+        <div>
+          <div className="setting-label">Albas v{__APP_VERSION__}</div>
+          <div className="setting-desc">{platform}</div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ── Shared card chrome ──────────────────────────────────────────────────*/
+
+function Card({
+  title,
+  span = false,
+  children,
+}: {
+  title: string;
+  span?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`settings-card${span ? ' span-2' : ''}`}>
+      <h3 className="card-title">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function SettingItem({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="setting-item">
+      <div>
+        <div className="setting-label">{label}</div>
+        <div className="setting-desc">{description}</div>
+      </div>
+      {children}
     </div>
   );
 }

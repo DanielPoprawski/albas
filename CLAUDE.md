@@ -105,7 +105,7 @@ The repo includes two separate web projects:
 
 1. **`web/` — Public web console** at `albas.danni-dev.com` (alongside `/api` sync endpoint). Read-only user interface for synced data. Bun-based, deployed to production. Currently a blank template; implementation is planned after the app redesign lands.
 
-2. **Admin console** — Restricted-access console running on a friend's VM, reachable only via Cloudflare tunnel. Staff-only interface for server administration, user management, and debugging. Part of the redesign (screen 8 in `design_handoff_albas_redesign/`); separate deployment and auth model from the public web console.
+2. **Admin console** — Restricted-access console running on a friend's VM, reachable only via Cloudflare tunnel. Staff-only interface for server administration, user management, and debugging. Lives in `web/` (`AdminConsole.tsx`, still on mock data) with its own `package.json`, `tsconfig.json` and lockfile — the root `tsconfig.json` is `"include": ["src"]`, so it is genuinely outside this app's build and route table. Separate deployment and auth model from the public web console. Its redesign mock lived in the v1.10 design handoff, which has been deleted now that the redesign has landed (recoverable from git history).
 
 ## Domain and origins
 The **public app and web console share one origin**, `albas.danni-dev.com` — the JSON API under `/api`,
@@ -184,15 +184,41 @@ Recorded so a future session doesn't relitigate settled questions.
 
 ## TODO LIST
 1. To-do reminders only fire on the due day; consider firing at the to-do's `time` when one is set.
+2. `WeightPanel.tsx` still uses the pre-redesign token aliases, so the Weight route looks a
+   generation older than the four beside it. Cosmetic, not broken.
+3. Settings' display name is read-only: `useApp()` exposes no generic settings *reader*, so a
+   `setSetting('displayName', …)` could be written and never read back. An editable field
+   needs a settings accessor on `AppContext` first.
+4. `AddModal`'s create path offers a fixed five categories while the data model treats
+   `category` as free text derived from use. You can pick an existing one but not make a new
+   one there — only the edit path (`TodoForm`) can.
+5. `CalendarEvent` has no `location` field. The Add modal's "Where" folds into the
+   description as a leading `Location:` line rather than inventing a schema column, which
+   would mean touching the schema, `sync.rs` `TABLES` and `sharedLogic.ts` together.
+6. The `habits` route is unpersisted because `ActiveView` has no name for it, so a restart
+   from Habits lands on the dashboard.
 
-## Typography and the app mark
-**Titles are Slabo 27px, everything else is Inter.** The `@font-face` in `App.css` bundles `public/Slabo27px-Regular.ttf` (self-hosted, so an offline Android build has its headings on first paint); `--font-title` in the `@theme` block exposes it as the `font-title` utility. It is on the `TopBar` `<h1>` and the four `DialogTitle`s — *not* on the small uppercase eyebrow labels, which are drawn at 10–12px with letter-spacing and would fall apart in a face cut for one optical size.
+## Typography and the app mark (v1.10 redesign)
+**Outfit for body/UI, Sora for headings, the wordmark and card titles.** Both are
+self-hosted from `public/Outfit/` and `public/Sora/` via the `@font-face` pair at the top of
+`App.css`, and exposed as `--t-font-body` / `--t-font-heading`. **Nothing is fetched from
+fonts.googleapis.com** — the `<link>` is out of `index.html`, which matters for an offline
+Android build's first paint. Inter survives only as a fallback name in the stack.
 
-Two things are load-bearing:
-- **The `* { font-family: Inter }` rule must stay inside `@layer base`.** Unlayered declarations outrank *every* layered one regardless of specificity, so as a bare `*` it beat `.font-title` and no heading could opt out.
-- **The TTF ships one weight (400), so `font-title` call sites also pass `font-normal`** — otherwise `font-bold`, or the `--text-headline-*--font-weight` baked into the size utility, makes the browser synthesise a smeared faux-bold serif.
+- The `* { font-family: var(--t-font-body) }` rule must stay inside `@layer base`. Unlayered
+  declarations outrank *every* layered one regardless of specificity, so as a bare `*` it
+  would beat `.font-heading` and no title could opt out.
+- `--font-title` is kept as an alias of `--t-font-heading`, so the pre-redesign `font-title`
+  call sites (`RemindersField`, `PinDialog`, `CalendarNav`, `EventForm`) land on Sora
+  unedited. Both faces are variable, so `font-bold` is real weight, not synthesised — the
+  old Slabo single-weight caveat is gone with Slabo.
+- `public/Slabo27px-Regular.ttf` is now unreferenced; it is kept only because deleting a
+  tracked asset is a separate decision.
 
-`public/icon.svg` is the app mark; the stock `vite.svg`/`tauri.svg` are deleted. It's the favicon in `index.html` and the source for every platform icon — regenerate with `bun run tauri icon public/icon.svg`, which rewrites `src-tauri/icons/` *and* the Android `mipmap-*` launchers (it also emits an unused `icons/ios/` set).
+`public/icon.svg` is the app mark. It's the favicon in `index.html`, the source for every
+platform icon (`bun run tauri icon public/icon.svg` rewrites `src-tauri/icons/` *and* the
+Android `mipmap-*` launchers), and the sidebar logo redraws its three strokes inline in
+`AppShell.tsx`.
 
 ## Icons — lucide (v1.7.1)
 **Every icon in the app is a lucide-react component.** The Material Symbols webfont is gone: the `<link>` is out of `index.html`, `.material-symbols-outlined` is out of `App.css`, and there is no `Sym` helper left in `components/ui/`. Reintroducing a glyph-name string anywhere is a regression.
@@ -223,18 +249,44 @@ Three concepts:
 
 Colors are hex strings picked from a palette + native color-wheel input (`src/colors.ts`; legacy named keys resolve via `colorHex()`).
 
-## Theming (v1.4)
-Four themes: `dark` (default), `light`, `grey-high`, `grey-low`, selected in Settings and applied as `data-theme` on `<html>`.
+## Theming (v1.10)
+**Two themes: `light` (default) and `dark`**, selected in Settings and applied as
+`data-theme` on `<html>`. The v1.4 four-theme set is gone — `grey-high` and `grey-low` were
+dropped with the redesign and `ThemeName` is now `'light' | 'dark'`. A database still
+holding a dropped name fails `readTheme`'s `THEMES.includes` check and falls back to
+`light`.
 
-`src/App.css` defines a `@theme inline` block mapping Tailwind color names to `--t-*` custom properties, so utilities emit `var(--t-…)` and a runtime theme swap repaints everything — including every existing `bg-primary` call site, since the accent is aliased onto the old M3 names. **Never hardcode a hex or `bg-white/N` in a component**; use the tokens.
+`src/App.css` defines ~74 `--t-*` custom properties on `:root` (light) and redefines the ~50
+that change under `[data-theme='dark']`. A `@theme inline` block maps Tailwind's colour
+names onto them, so utilities emit `var(--t-…)` and a runtime swap repaints everything.
+**Never hardcode a hex in a component** — a literal cannot repaint, which is the entire
+reason the theme swap works at all. The one legitimate exception is colour *data*: the
+`PALETTE` and `CATEGORIES` arrays in `AddModal.tsx` are user-chosen values stored as hex in
+SQLite, not chrome.
 
-Two surface worlds with separate text scales:
-- **chrome** (`bg-chrome`, `bg-elevated`, `text-txt`/`-muted`/`-faint`, `bg-fill`/`-strong`/`-stronger`, `border-line`) — sidebar, top bar, panels, modals.
-- **sheet** (`bg-sheet`, `bg-sheet-header`, `border-sheet-line`/`-border`, `text-sheet-txt`/`-muted`/`-faint`) — the calendar card. As of v1.4 the sheet *follows* the theme instead of inverting it: a dark surface just above `app-bg` in `dark`/`grey-low`, near-black in `grey-high`, white only in `light`. `--t-grid-line` is the sheet's own cell border and must flip with it.
+Things that are load-bearing and easy to get wrong:
+- **The sheet follows the theme, it does not invert it.** Most `--t-sheet*` tokens are
+  aliases of `--t-surface`/`--t-subtle` and move for free. The three carrying literals must
+  be restated in the dark block: `--t-grid-line` (or the month grid loses its cell borders),
+  `--t-past-x` (a dark ink X is invisible on a dark sheet), and `--t-past-cell`/`-ink`.
+- **The `--t-cat-*` ramps are not uniformly darkened.** The mark keeps its hue so a category
+  is recognisably itself across themes; `-tint` becomes a low-lightness version sitting just
+  above `--t-surface`; `-line` goes one step *brighter* than its tint where light goes one
+  step darker; and `-ink` **flips outright** — darkest-of-ramp in light, lightest in dark, or
+  every chip label disappears.
+- **`--t-accent-deep` has two conflicting roles**: text on `--t-accent-tint`, and the far end
+  of the Welcome gate's gradient. A light lavender satisfies both in dark.
+- **`color-scheme` is set per theme** (`light` on `:root`, `dark` in the dark block). This is
+  what keeps native date/time pickers legible — the redesign's event form is full of them.
+  Don't reintroduce a hardcoded `colorScheme: 'dark'` inline.
+- Radius is **0 everywhere**, enforced by an unlayered `*,*::before,*::after{border-radius:0}`
+  reset plus every `--radius-*` key zeroed. Unlayered so it outranks the utilities layer. The
+  one thing that beats it is an **inline** `style={{borderRadius}}` — that is exactly how the
+  calendar chips regressed once; don't write one.
 
-Because the sheet is dark in three of four themes, tinted chips behind a user-chosen colour use `PILL_BG_ALPHA` (`src/colors.ts`) rather than a hardcoded alpha — the old `1a` washed out to nothing.
-
-The theme is mirrored to `localStorage['albas-theme']` purely so the inline script in `index.html` can paint before React mounts; SQLite (`meta` table, `setting:` prefix) stays the source of truth.
+The theme is mirrored to `localStorage['albas-theme']` purely so the inline script in
+`index.html` can paint before React mounts; it validates against the two live names, and
+SQLite (`meta`, `setting:` prefix) stays the source of truth.
 
 ## UI primitives — shadcn/ui (v1.6)
 Overlays and form controls are Radix primitives generated by shadcn into `src/components/ui/`. They were adopted for *behaviour* — focus trap, Escape, scroll lock, `aria-*`, listbox typeahead — **not** for theming: the `--t-*` system above predates them and stays the single source of truth.
@@ -258,7 +310,7 @@ Cost: the first Radix component is ~39 kB gz (it pays for the shared dismissable
 ## Responsive / Android
 `useIsMobile()` (`src/useMedia.ts`) is a `matchMedia('(max-width: 767px)')` hook — narrowing the desktop window exercises the exact mobile layout, so test there first.
 
-Below the breakpoint: the icon rail becomes an off-canvas drawer (a `Sheet`, opened by the hamburger in `TopBar`), `RightPanel` is dropped, and tapping a month tile drills into that day's Day view instead of opening the add modal. The calendar view gets `p-0` from `AppShell` so the month grid goes edge-to-edge, and there is **no nav row at all** — `CalendarNav` rides in `TopBar` beside the title (see below).
+Below the breakpoint (v1.10): `.sidebar` and `.bottom-bar` are hidden and `HomeView` supplies the mobile chrome on the dashboard route; every other route gets the shell's `.mobile-route-bar` (see "The shell"). `RightPanel` is dropped, and tapping a month tile drills into that day's Day view instead of opening the add modal. The old `TopBar` hamburger/`Sheet` drawer is **gone** along with `TopBar.tsx` itself — a `Sheet` drawer is no longer mounted under 768px, so don't write a hamburger expecting one.
 
 **The month grid is split by layout, not by platform.** It diverged far enough that in-line `isMobile` ternaries were most of the component's complexity, so it's now four files in `src/components/calendar/`:
 - `monthModel.ts` — `getCalendarDays` plus `useMonthModel(opts)`, which derives *everything* both layouts draw (week buckets, bar lanes and the `MAX_BAR_LANES` overflow-to-pills fallback, period washes, due dots, per-cell pill selection and `hiddenCount`). `MonthModelOptions` — `pillCap`, `minWeeks`, `dueDots` — is the *entire* difference between the two layouts; it's an object rather than positional args precisely so adding a fourth doesn't renumber the call sites. **All grid logic belongs here** — a fix applied to one layout only is the failure mode this split exists to prevent.
@@ -280,18 +332,38 @@ Below the breakpoint: the icon rail becomes an off-canvas drawer (a `Sheet`, ope
 ## One list, one title (v1.4)
 - **There is no Agenda panel.** `DayPanel` was deleted and the day's events live only on the calendar (Day view). `TodoPanel` is the single list surface, used both as the main view and as the whole of `RightPanel`. Re-adding a second list is what caused a habit to render twice.
 - **Habits belong to the calendar, not to every view** (v1.7.1). `AppShell` mounts `RightPanel` for `activeView === 'calendar'` only — it used to render beside Settings and Weight too — and `TodoPanel` takes a `habits` prop, on in the panel and off in the To-Do view. A habit is never *done*, so in a list of things left to do it was only padding the top; and its week strip is most of a 280px panel but nothing in a full-width view. `TodoPanel`'s empty-state check counts only what that surface would show, or the To-Do view goes blank for someone who has only habits.
-- **The title lives in `TopBar`**, built by `calendarTitle()` in `src/dates.ts`; `Calendar` renders navigation only. Month and week views omit the year in the current year — the phone title shares its row with the nav, so a week range that keeps it truncates. Don't reintroduce an `<h2>` in `Calendar` — the month name would render twice.
+- **The title used to live in `TopBar`, which no longer exists** (see "The shell" above); `calendarTitle()` in `src/dates.ts` still builds it and the shell renders it. The rule below still holds
+- **Historic note**, built by `calendarTitle()` in `src/dates.ts`; `Calendar` renders navigation only. Month and week views omit the year in the current year — the phone title shares its row with the nav, so a week range that keeps it truncates. Don't reintroduce an `<h2>` in `Calendar` — the month name would render twice.
 - **Navigation is `calendar/CalendarNav.tsx`**, and it owns the stepping logic for all three modes. `Calendar` renders it as a row above the sheet on desktop; on mobile `TopBar` renders it `compact` beside the title and `Calendar` renders no row at all. Both call sites mount the same component — putting the arrows in one and the mode switch in the other is how the two get out of sync.
 - **The mode switch has two shapes, not one dropdown** (v1.7.1). Desktop is `ModeButtons`: three buttons plus Today, because all three modes are constant destinations and a menu hid two of them behind a click and a read. Mobile is `ModeModal`: a calendar-icon button opening a `Dialog` with a labelled row per mode. Today lives *inside* that modal on mobile and is the only way back there.
 - **Mobile drops the prev/next arrows in month view** — the grid is swipeable, and the arrows were a second control for a gesture already there, on the row where space is tightest. Week and day view keep them, because neither is swipeable. If you ever make those swipeable, the arrows go too.
 
-## Desktop status bar
-A thin strip along the whole bottom edge, in the spirit of Obsidian's: `src/components/StatusBar.tsx`, mounted by `AppShell` for `!isMobile` only. A phone spends that edge on the FAB and the system gesture bar, so there is no mobile equivalent.
+## The shell: sidebar, bottom taskbar, routing (v1.10)
+`src/components/AppShell.tsx` owns the whole desktop chrome. `Sidebar.tsx`, `TopBar.tsx` and
+`StatusBar.tsx` are **deleted** — the shell absorbed all three, and nothing imports them.
 
-- **It runs the full width, under the rail** — so `Sidebar`'s rail is `calc(100% - STATUS_BAR_H)` tall rather than the bar stopping short of it. `STATUS_BAR_H` is exported from `StatusBar.tsx` and read by the two layouts that must reserve the row: the rail's height and `main`'s `paddingBottom` (which is also what keeps the desktop FAB off the bar). Changing the height means changing only that constant.
-- **`StatusItem` is `forwardRef`, and that is load-bearing.** Modules that open a drop-up are wrapped in `DropdownMenuTrigger asChild`, and Radix anchors the popper on the child's ref — React 18 drops a ref passed to a plain function component, and the trigger then looks dead. Menus open with `side="top"`; nothing else fits above the bottom edge.
-- The only module so far is the account: name from `syncAccount` (or "Sync token" for token-only setups, "Not signed in" otherwise), with Settings and Sign out in the drop-up. Sign-out is the same `sync_sign_out` + `reloadFromStore()` pair Settings uses; errors are left to Settings → Account & sync, which has room to report them.
-- This is `dropdown-menu.tsx`'s first importer — it was previously generated-but-unused.
+- **Routing is a local `Route` union**, not `ActiveView`: `dashboard | todo | habits | weight
+  | settings`. `VIEW_OF` maps each to the persisted `ActiveView` where one exists and
+  `routeOf()` maps back. `habits` is deliberately unpersisted — `ActiveView` has no name for
+  it — so a restart from Habits lands on the dashboard.
+- **Weight is the fifth sidebar item.** The redesign's mock had four and never covered
+  weight, which left `WeightPanel` importerless and the entire Wyze scale backend unreachable
+  behind a Settings card that still worked. The fifth item is a deliberate deviation from the
+  design. `WeightPanel` still speaks the pre-redesign token aliases (`text-txt`,
+  `bg-fill-strong`), which are still defined — it renders, but it looks like an older screen.
+- **`SidebarSlot`** portals a page-specific second section (To-Do's Categories, the
+  calendar's) under Menu. The target is held as *state*, not a ref: a ref set during the
+  shell's own render is still null on the consumer's first pass and nothing re-renders it.
+- **The bottom taskbar** (`BottomBar`) runs the full width: version left, sync state and
+  account right. Identical on every route because it belongs to the shell, not a screen.
+  `initialsOf()` is exported from here — Settings' avatar uses the same one.
+- **Mobile navigation lives in two places, and that is the trap.** Under 768px `.sidebar` and
+  `.bottom-bar` are both `display:none`, because `HomeView` brings the entire mobile chrome —
+  its own header and tab row. But `HomeView` only mounts on `dashboard`. A phone on `todo`,
+  `habits`, `weight` or `settings` — *including a cold start whose persisted `activeView` was
+  `settings`* — would otherwise render with no navigation at all. `.mobile-route-bar` in the
+  shell is the back bar that covers those routes. If you add a route, it gets the bar for
+  free; if you add mobile chrome to a screen, don't assume the shell's is showing.
 
 ## First day of the week (v1.4)
 `firstDayOfWeek` (settings blob, `0` = Sunday, `1` = Monday, default Monday) is threaded explicitly — there is no module-level global. `weekOf()` and `getCalendarDays()` take it as a trailing parameter defaulting to `1`, as do `isDueOn` / `doneCountIn` / `streakOf` / `statusLabel` / `repeatLabel` (`todoLogic.ts`), `weeklyRows` (`weightLogic.ts`), `calendarTitle`, and `remindDueTodos`. **A missing argument silently means Monday**, so new call sites must pass it from `useApp()`.
@@ -324,7 +396,52 @@ Optional, off until configured in Settings → Account & sync. SQLite stays the 
 - **Login is discoverable/usernameless**: the account is found by credential id, so the registration-time user UUID is a throwaway. `src/auth.ts` forces `residentKey: 'required'` before `register` — webauthn-rs only *prefers* it and a security key may downgrade, which would silently break sign-in later.
 - **Registration is open by default** (`ALBAS_SYNC_SIGNUPS=invite` locks it down). Invites remain for one irreplaceable job: attaching a passkey to an account that already exists needs an invite naming it exactly — otherwise open signup would let anyone claim the `owner` account.
 - Signing in mints a token and **resets every sync watermark** plus the shared cache (`account.rs`): they were scoped to whatever account this device synced before.
-- `src/components/auth/usePasskeyAuth.ts` is the one flow-state hook (Welcome and Settings both use it). Linux security keys ask for a PIN mid-ceremony via plugin events → `PinDialog`.
+- `src/components/auth/usePasskeyAuth.ts` is the one flow-state hook (Welcome and Settings
+  both use it). Its `run()` takes `adoptsSession`: a login marks the welcome screen done and
+  reloads everything Rust wrote behind React's back, while adding a passkey to the session
+  you are already in must do neither. See "Sign-in methods" below. Linux security keys ask for a PIN mid-ceremony via plugin events → `PinDialog`.
+
+## Sign-in methods (v1.10)
+Three now exist. **Passkeys remain primary**; the other two are additions, not replacements,
+and the app must still be fully usable with no account at all.
+
+**The registry is the extension point.** `src/authMethods/registry.ts` defines `AuthMethod`
+(`id`, `order`, `load(ctx)`, optional `Action`); `src/authMethods/index.ts` is a barrel whose
+**import list is fixed** — `./passkey`, `./password`, `./totp` — so adding a method never
+means editing a file someone else is editing. Settings renders `authMethods()` and never
+names a method itself.
+
+The contract that matters: **`load()` returns credentials that really exist.** This table is
+the user's record of how their account can be opened, so a method that is unimplemented, or
+half-enrolled, contributes **zero rows** rather than an aspirational one. That rule is why
+the redesign's fabricated table (Google / iCloud Keychain / Face ID / …) is gone, and why an
+unconfirmed TOTP secret does not appear.
+
+- **Passkeys** — ceremonies go through Tauri because they need the OS authenticator.
+  Self-service `POST /passkeys/start` + `/finish` register an *additional* passkey using the
+  bearer token for identity, so no admin invite is involved; finish re-checks the token still
+  resolves to the account the ceremony started for. The start call sends existing credential
+  ids as `exclude_credentials`. `complete_registration` always mints a token, so the
+  add-passkey path deletes it immediately — the device keeps the session it already has, and
+  no unused credential is left on the server. `GET /passkeys` labels rows from the credential
+  id, because the table stores no device name and inventing one would be a lie.
+- **Password** — plain `fetch`, no Tauri. Argon2id via the `argon2` crate into
+  `accounts.password_hash`; **never** `token_hash`, which is a bare SHA for high-entropy
+  tokens. Unknown account and wrong password return an identical 401 after an identical dummy
+  verification. `DELETE /password` refuses with 409 if it is the only credential.
+- **TOTP** — plain `fetch`, `totp-rs` server-side, QR rendered **client-side** from the
+  `otpauth://` URI with `qrcode.react` (no image crate). `totp_confirmed` only flips after a
+  code verifies, so an abandoned enrollment can't lock anyone out. Re-enrolling while
+  confirmed is 409.
+- **TOTP is a second factor for password login only.** `login/password` calls
+  `totp::verify_if_enrolled`; passkey login deliberately does not. A passkey is already
+  possession plus user verification, and its ceremony runs through a Tauri plugin with
+  nowhere to prompt for a typed code. The UI says so rather than implying broader protection.
+
+**Adding a column to `accounts` means adding an `ensure_column` call in `init_db`.**
+`CREATE TABLE IF NOT EXISTS` is a no-op on an existing table, so a column declared only in
+`SCHEMA` never reaches a database that already exists. `grant_rev` had exactly this bug
+before v1.10 and is now backfilled alongside the three new columns.
 
 ## Read-only sharing (v1.8)
 An account can expose its calendar and/or to-dos to another, one-way and read-only.
@@ -349,669 +466,3 @@ The app has two distinct layers that communicate via Tauri's IPC bridge:
 - **Backend** (`src-tauri/src/`): Rust. `lib.rs` defines Tauri commands registered with `invoke_handler`; `main.rs` calls `run()`. To expose a new Rust function to the frontend, annotate it with `#[tauri::command]` and add it to `generate_handler![]` in `lib.rs`.
 
 Frontend calls Rust via `invoke()` from `@tauri-apps/api`. Tauri capabilities (permissions) are configured in `src-tauri/capabilities/default.json`.
-
-I'm building a React-based Tauri productivity app called "Albas" with integrated calendar, to-do list, and habit tracker. I have a design from Google Stitch that I'll paste below.
-
-## Requirements:
-1. **Convert to React Components** - Transform the HTML/CSS into proper, reusable React components (not a single file)
-2. **Component Structure**:
-   - Calendar component (month view, clickable dates)
-   - To-Do list with add/edit/delete functionality
-   - Habit tracker with streak tracking
-   - Sidebar navigation
-   - Main layout shell
-
-3. **Interconnected Features**:
-   - To-dos can be assigned to calendar dates
-   - Habits appear on calendar when due
-   - Clicking a date shows tasks and habits for that day
-   - State management (use React hooks) to sync all three
-
-4. **Tauri Ready**:
-   - Use standard React hooks (useState, useContext for shared state)
-   - No external state libraries yet (keep it simple)
-   - Structure so it's easy to add Tauri commands later
-
-5. **Keep the Design**:
-   - Use the Stitch color scheme and styling
-   - Maintain the glassmorphism cards
-   - Keep the dark mode aesthetic
-   - Material Symbols icons (as they appear in the design)
-
-6. **Add Interactivity**:
-   - Add button should open a modal/form to create items
-   - Click habit checkboxes to mark complete
-   - Click tasks to toggle complete
-   - Date clicks show daily view
-
-## Design Code:
-<!-- Annotated Mobile Dashboard Refined -->
-<!DOCTYPE html>
-
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>FocusFlow | Dashboard</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            "colors": {
-                    "surface-tint": "#0053db",
-                    "on-secondary-container": "#00714d",
-                    "primary-fixed-dim": "#b4c5ff",
-                    "on-error-container": "#93000a",
-                    "surface-variant": "#d3e4fe",
-                    "on-secondary-fixed": "#002113",
-                    "primary": "#004ac6",
-                    "on-primary-fixed-variant": "#003ea8",
-                    "tertiary": "#ad0033",
-                    "error-container": "#ffdad6",
-                    "on-tertiary-container": "#ffecec",
-                    "on-tertiary-fixed-variant": "#92002a",
-                    "on-primary-fixed": "#00174b",
-                    "inverse-surface": "#213145",
-                    "on-tertiary": "#ffffff",
-                    "surface-container-high": "#dce9ff",
-                    "on-error": "#ffffff",
-                    "inverse-on-surface": "#eaf1ff",
-                    "surface-dim": "#cbdbf5",
-                    "outline-variant": "#c3c6d7",
-                    "outline": "#737686",
-                    "primary-container": "#2563eb",
-                    "inverse-primary": "#b4c5ff",
-                    "tertiary-container": "#d22348",
-                    "on-tertiary-fixed": "#40000d",
-                    "on-secondary": "#ffffff",
-                    "surface": "#f8f9ff",
-                    "secondary": "#006c49",
-                    "on-secondary-fixed-variant": "#005236",
-                    "secondary-container": "#6cf8bb",
-                    "on-primary": "#ffffff",
-                    "surface-container-low": "#eff4ff",
-                    "error": "#ba1a1a",
-                    "primary-fixed": "#dbe1ff",
-                    "secondary-fixed-dim": "#4edea3",
-                    "surface-container": "#e5eeff",
-                    "on-surface": "#0b1c30",
-                    "surface-container-lowest": "#ffffff",
-                    "surface-bright": "#f8f9ff",
-                    "on-surface-variant": "#434655",
-                    "secondary-fixed": "#6ffbbe",
-                    "tertiary-fixed-dim": "#ffb2b7",
-                    "background": "#f8f9ff",
-                    "on-primary-container": "#eeefff",
-                    "surface-container-highest": "#d3e4fe",
-                    "tertiary-fixed": "#ffdadb",
-                    "on-background": "#0b1c30"
-            },
-            "borderRadius": {
-                    "DEFAULT": "0.25rem",
-                    "lg": "0.5rem",
-                    "xl": "0.75rem",
-                    "full": "9999px"
-            },
-            "spacing": {
-                    "xs": "4px",
-                    "base": "8px",
-                    "md": "24px",
-                    "sm": "12px",
-                    "gutter": "24px",
-                    "margin": "32px",
-                    "lg": "40px",
-                    "xl": "64px"
-            },
-            "fontFamily": {
-                    "body-md": ["Inter", "sans-serif"],
-                    "label-md": ["Inter", "sans-serif"],
-                    "body-sm": ["Inter", "sans-serif"],
-                    "headline-lg-mobile": ["Inter", "sans-serif"],
-                    "headline-lg": ["Inter", "sans-serif"],
-                    "headline-xl": ["Inter", "sans-serif"]
-            },
-            "fontSize": {
-                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
-                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
-                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
-                    "headline-lg-mobile": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
-                    "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
-                    "headline-xl": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
-            }
-          },
-        },
-      }
-    </script>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
-        }
-        .glass-card {
-            backdrop-filter: blur(16px);
-            background: rgba(11, 28, 48, 0.4);
-            border: 1px solid rgba(195, 198, 215, 0.08);
-        }
-        body {
-            background-color: #0b1c30;
-            overscroll-behavior-y: contain;
-        }
-        .multi-day-event {
-            position: relative;
-            z-index: 5;
-        }
-        .multi-day-event::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 24px;
-            transform: translateY(-50%);
-            background: rgba(37, 99, 235, 0.2);
-            z-index: -1;
-        }
-        .multi-day-start::before {
-            border-top-left-radius: 9999px;
-            border-bottom-left-radius: 9999px;
-            background: rgba(37, 99, 235, 0.6) !important;
-            left: 4px;
-        }
-        .multi-day-end::before {
-            border-top-right-radius: 9999px;
-            border-bottom-right-radius: 9999px;
-            background: rgba(37, 99, 235, 0.6) !important;
-            right: 4px;
-        }
-        .multi-day-mid::before {
-            left: 0;
-            right: 0;
-        }
-    </style>
-</head>
-<body class="font-body-md text-on-surface bg-on-background selection:bg-primary-container/30">
-<!-- Collapsed Side Navigation (Icon Only) -->
-<aside class="fixed left-0 top-0 w-14 backdrop-blur-md border-r border-outline-variant/10 flex flex-col items-center py-md gap-lg z-50 bg-on-background h-[calc(100%-64px)]">
-<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center mb-base">
-<span class="material-symbols-outlined text-on-primary-container" style="font-variation-settings: 'FILL' 1;">bolt</span>
-</div>
-<div class="flex flex-col gap-md">
-<button class="w-10 h-10 flex items-center justify-center rounded-xl text-primary-fixed-dim bg-primary-container/20">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">calendar_today</span>
-</button>
-<button class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface-variant hover:bg-surface-variant/20 transition-colors">
-<span class="material-symbols-outlined">check_circle</span>
-</button>
-<button class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface-variant hover:bg-surface-variant/20 transition-colors">
-<span class="material-symbols-outlined">repeat</span>
-</button>
-<button class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface-variant hover:bg-surface-variant/20 transition-colors">
-<span class="material-symbols-outlined">insights</span>
-</button>
-</div>
-</aside>
-<!-- Main Content -->
-<main class="ml-14 pb-32 min-h-screen relative z-10 px-gutter">
-<!-- Header -->
-<header class="pt-lg pb-md">
-<div class="flex justify-between items-end">
-<div>
-<h1 class="text-headline-lg text-on-background font-bold tracking-tight">October 2023</h1>
-<p class="text-body-sm text-on-surface-variant/80">Tuesday, Oct 17</p>
-</div>
-<div class="flex gap-xs"><button class="p-xs text-on-surface-variant/40 hover:text-on-surface-variant transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button><button class="p-xs text-on-surface-variant/40 hover:text-on-surface-variant transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button></div>
-</div>
-</header>
-<!-- Calendar View -->
-<section class="mb-lg">
-<div class="glass-card rounded-2xl p-md">
-<div class="grid grid-cols-7 text-center mb-sm">
-<span class="text-[10px] font-bold text-on-surface-variant/60 tracking-widest">S</span>
-<span class="text-[10px] font-bold text-on-surface-variant/60 tracking-widest">M</span>
-<span class="text-[10px] font-bold text-on-surface-variant/60 tracking-widest">T</span>
-<span class="text-[10px] font-bold text-on-surface-variant/60 tracking-widest">W</span>
-<span class="text-[10px] font-bold text-on-surface-variant/60 tracking-widest">T</span>
-<span class="text-[10px] font-bold text-on-surface-variant/60 tracking-widest">F</span>
-<span class="text-[10px] font-bold text-on-surface-variant/60 tracking-widest">S</span>
-</div>
-<div class="grid grid-cols-7 text-center gap-y-sm"><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant/20 text-body-md">30</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">1</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md relative">2<div class="absolute bottom-2 w-1.5 h-1.5 rounded-full bg-secondary"></div></div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">3</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">4</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">5</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md relative">6<div class="absolute bottom-2 flex gap-[2px]"><div class="w-1.5 h-1.5 rounded-full bg-primary-container"></div><div class="w-1.5 h-1.5 rounded-full bg-tertiary"></div></div></div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md multi-day-event multi-day-start">8</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md multi-day-event multi-day-mid">9</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md multi-day-event multi-day-end">10</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">11</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">12</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">13</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">14</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">15</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">16</div><div class="h-16 flex flex-col items-center justify-center relative"><span class="w-10 h-10 flex items-center justify-center bg-primary text-white rounded-full font-bold text-body-md shadow-lg shadow-primary/20">17</span></div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md bg-secondary-container/10 rounded-lg">18</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">19</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md bg-tertiary-container/10 rounded-lg">20</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">21</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">22</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">23</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">24</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">25</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">26</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">27</div><div class="h-16 flex flex-col items-center justify-center text-on-surface-variant text-body-md">28</div></div>
-</div>
-</section>
-<!-- Habit Tracker (Refined to match Desktop style) -->
-<section>
-<div class="flex justify-between items-baseline mb-md">
-<h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em]">Habit Tracking</h3>
-<button class="text-primary-fixed-dim text-[10px] font-bold uppercase tracking-wider">Analysis</button>
-</div>
-<div class="glass-card rounded-2xl p-md space-y-lg"><div><div class="flex items-center gap-xs mb-sm"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="text-[10px] font-bold text-secondary uppercase tracking-[0.15em]">Hydration</span></div><div class="flex justify-between items-center"><div class="flex flex-col"><span class="text-headline-lg-mobile font-bold text-on-background">2.5L</span><span class="text-[10px] text-on-surface-variant/60 font-medium">Daily Goal: 3L</span></div><div class="flex gap-4"><span class="material-symbols-outlined text-secondary text-[20px]">check</span><span class="material-symbols-outlined text-secondary text-[20px]">check</span><span class="material-symbols-outlined text-on-surface-variant/20 text-[20px]">close</span><span class="material-symbols-outlined text-on-surface-variant/20 text-[20px]">close</span><span class="material-symbols-outlined text-on-surface-variant/20 text-[20px]">close</span></div></div></div><div><div class="flex items-center gap-xs mb-sm"><span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span><span class="text-[10px] font-bold text-primary-container uppercase tracking-[0.15em]">Deep Work</span></div><div class="flex justify-between items-center"><div class="flex flex-col"><span class="text-headline-lg-mobile font-bold text-on-background">4.0h</span><span class="text-[10px] text-on-surface-variant/60 font-medium">Daily Goal: 4h</span></div><div class="flex gap-4"><span class="material-symbols-outlined text-primary-container text-[20px]">check</span><span class="material-symbols-outlined text-primary-container text-[20px]">check</span><span class="material-symbols-outlined text-primary-container text-[20px]">check</span><span class="material-symbols-outlined text-primary-container text-[20px]">check</span></div></div></div><div><div class="flex items-center gap-xs mb-sm"><span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span><span class="text-[10px] font-bold text-tertiary uppercase tracking-[0.15em]">Meditation</span></div><div class="flex justify-between items-center"><div class="flex flex-col"><span class="text-headline-lg-mobile font-bold text-on-background">10m</span><span class="text-[10px] text-on-surface-variant/60 font-medium">Daily Goal: 15m</span></div><div class="flex gap-4"><span class="material-symbols-outlined text-tertiary text-[20px]">check</span><span class="material-symbols-outlined text-on-surface-variant/20 text-[20px]">close</span><span class="material-symbols-outlined text-on-surface-variant/20 text-[20px]">close</span></div></div></div></div>
-</section>
-</main>
-<!-- Refined Floating Action Button -->
-<button class="fixed bottom-24 right-6 w-12 h-12 bg-primary text-on-primary rounded-full shadow-xl z-50 flex items-center justify-center active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[24px]">add</span>
-</button>
-<!-- Refined Subtle Bottom Navigation -->
-<nav class="fixed bottom-0 left-0 w-full h-16 bg-surface-dim/40 backdrop-blur-xl border-t border-outline-variant/5 z-40 flex justify-around items-center px-lg">
-<button class="flex flex-col items-center gap-0.5 text-primary-fixed-dim transition-opacity opacity-100">
-<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">calendar_today</span>
-<span class="text-[9px] font-bold uppercase tracking-widest">Plan</span>
-</button>
-<button class="flex flex-col items-center gap-0.5 text-on-surface-variant transition-opacity opacity-40 hover:opacity-100">
-<span class="material-symbols-outlined text-[20px]">check_circle</span>
-<span class="text-[9px] font-bold uppercase tracking-widest">Tasks</span>
-</button>
-<button class="flex flex-col items-center gap-0.5 text-on-surface-variant transition-opacity opacity-40 hover:opacity-100">
-<span class="material-symbols-outlined text-[20px]">repeat</span>
-<span class="text-[9px] font-bold uppercase tracking-widest">Habits</span>
-</button>
-<button class="flex flex-col items-center gap-0.5 text-on-surface-variant transition-opacity opacity-40 hover:opacity-100">
-<span class="material-symbols-outlined text-[20px]">settings</span>
-<span class="text-[9px] font-bold uppercase tracking-widest">Setup</span>
-</button>
-</nav>
-<script>
-    // Subtle interactions
-    document.querySelectorAll('.glass-card').forEach(card => {
-        card.addEventListener('touchstart', () => {
-            card.style.background = 'rgba(11, 28, 48, 0.5)';
-        });
-        card.addEventListener('touchend', () => {
-            card.style.background = 'rgba(11, 28, 48, 0.4)';
-        });
-    });
-</script>
-</body></html>
-
-<!-- Refined FocusFlow Dashboard -->
-<!DOCTYPE html>
-
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>FocusFlow | Productivity Dashboard</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            "colors": {
-                    "surface-tint": "#0053db",
-                    "on-secondary-container": "#00714d",
-                    "primary-fixed-dim": "#b4c5ff",
-                    "on-error-container": "#93000a",
-                    "surface-variant": "#d3e4fe",
-                    "on-secondary-fixed": "#002113",
-                    "primary": "#004ac6",
-                    "on-primary-fixed-variant": "#003ea8",
-                    "tertiary": "#ad0033",
-                    "error-container": "#ffdad6",
-                    "on-tertiary-container": "#ffecec",
-                    "on-tertiary-fixed-variant": "#92002a",
-                    "on-primary-fixed": "#00174b",
-                    "inverse-surface": "#213145",
-                    "on-tertiary": "#ffffff",
-                    "surface-container-high": "#dce9ff",
-                    "on-error": "#ffffff",
-                    "inverse-on-surface": "#eaf1ff",
-                    "surface-dim": "#cbdbf5",
-                    "outline-variant": "#c3c6d7",
-                    "outline": "#737686",
-                    "primary-container": "#2563eb",
-                    "inverse-primary": "#b4c5ff",
-                    "tertiary-container": "#d22348",
-                    "on-tertiary-fixed": "#40000d",
-                    "on-secondary": "#ffffff",
-                    "surface": "#f8f9ff",
-                    "secondary": "#006c49",
-                    "on-secondary-fixed-variant": "#005236",
-                    "secondary-container": "#6cf8bb",
-                    "on-primary": "#ffffff",
-                    "surface-container-low": "#eff4ff",
-                    "error": "#ba1a1a",
-                    "primary-fixed": "#dbe1ff",
-                    "secondary-fixed-dim": "#4edea3",
-                    "surface-container": "#e5eeff",
-                    "on-surface": "#0b1c30",
-                    "surface-container-lowest": "#ffffff",
-                    "surface-bright": "#f8f9ff",
-                    "on-surface-variant": "#434655",
-                    "secondary-fixed": "#6ffbbe",
-                    "tertiary-fixed-dim": "#ffb2b7",
-                    "background": "#f8f9ff",
-                    "on-primary-container": "#eeefff",
-                    "surface-container-highest": "#d3e4fe",
-                    "tertiary-fixed": "#ffdadb",
-                    "on-background": "#0b1c30",
-                    "deep-navy": "#0a121e"
-            },
-            "borderRadius": {
-                    "DEFAULT": "0.25rem",
-                    "lg": "0.5rem",
-                    "xl": "0.75rem",
-                    "full": "9999px"
-            },
-            "spacing": {
-                    "xs": "4px",
-                    "base": "8px",
-                    "md": "24px",
-                    "sm": "12px",
-                    "gutter": "24px",
-                    "margin": "32px",
-                    "lg": "40px",
-                    "xl": "64px"
-            },
-            "fontFamily": {
-                    "body-md": ["Inter"],
-                    "label-md": ["Inter"],
-                    "body-sm": ["Inter"],
-                    "headline-lg-mobile": ["Inter"],
-                    "headline-lg": ["Inter"],
-                    "headline-xl": ["Inter"]
-            },
-            "fontSize": {
-                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
-                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
-                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
-                    "headline-lg-mobile": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
-                    "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
-                    "headline-xl": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
-            }
-          },
-        },
-      }
-    </script>
-<style>
-        body {
-            background-color: #0b1c30;
-            font-family: 'Inter', sans-serif;
-            color: #eaf1ff;
-        }
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .glass-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .calendar-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            height: calc(100vh - 120px);
-        }
-        .calendar-cell {
-            border-right: 1px solid rgba(0, 0, 0, 0.05);
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-            transition: background-color 0.2s;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
-        .calendar-cell:hover {
-            background: rgba(0, 0, 0, 0.02);
-        }
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-        }
-    </style>
-</head>
-<body class="overflow-hidden bg-on-background">
-<!-- Top Navigation (Shell Implementation) -->
-<header class="bg-deep-navy w-full h-16 fixed top-0 left-0 z-40 border-b border-outline-variant/10 shadow-sm flex justify-between items-center px-margin w-full max-w-[1440px] mx-auto">
-<div class="flex items-center gap-md ml-xl">
-<span class="font-headline-lg text-headline-lg font-bold text-primary-fixed-dim">Albas</span>
-<div class="hidden md:flex gap-sm ml-xl">
-<span class="font-body-md text-body-md text-primary-fixed-dim font-bold border-b-2 border-primary pb-1 cursor-pointer">Calendar</span>
-<span class="font-body-md text-body-md text-outline-variant font-medium hover:bg-white/5 transition-colors cursor-pointer active:scale-95 px-2 rounded">Projects</span>
-<span class="font-body-md text-body-md text-outline-variant font-medium hover:bg-white/5 transition-colors cursor-pointer active:scale-95 px-2 rounded">Analytics</span>
-</div>
-</div>
-<div class="flex items-center gap-md"></div>
-</header>
-<div class="flex pt-16 h-screen">
-<!-- Left Sidebar (SideNavBar Implementation) - Updated to Deep Navy -->
-<aside class="fixed left-0 top-0 h-full w-16 z-50 bg-deep-navy border-r border-outline-variant/10 flex flex-col p-base space-y-xs items-center pt-2">
-<div class="px-md py-md mb-md hidden">
-<h1 class="font-headline-lg text-headline-lg font-bold text-primary">FocusFlow</h1>
-<p class="font-label-md text-label-md text-on-surface-variant">Productivity Suite</p>
-</div>
-<nav class="space-y-xs mt-4">
-<div class="bg-primary text-white rounded-lg font-semibold flex items-center gap-sm px-md py-sm cursor-pointer hover:translate-x-1 duration-200 shadow-lg">
-<span class="material-symbols-outlined">calendar_today</span>
-<span class="font-label-md text-label-md hidden">Calendar</span>
-</div>
-<div class="text-outline-variant hover:bg-white/10 flex items-center gap-sm px-md py-sm rounded-lg cursor-pointer transition-all hover:translate-x-1 duration-200">
-<span class="material-symbols-outlined">check_circle</span>
-<span class="font-label-md text-label-md hidden">Tasks</span>
-</div>
-<div class="text-outline-variant hover:bg-white/10 flex items-center gap-sm px-md py-sm rounded-lg cursor-pointer transition-all hover:translate-x-1 duration-200">
-<span class="material-symbols-outlined">repeat</span>
-<span class="font-label-md text-label-md hidden">Habits</span>
-</div>
-<div class="text-outline-variant hover:bg-white/10 flex items-center gap-sm px-md py-sm rounded-lg cursor-pointer transition-all hover:translate-x-1 duration-200">
-<span class="material-symbols-outlined">settings</span>
-<span class="font-label-md text-label-md hidden">Settings</span>
-</div>
-</nav>
-</aside>
-<!-- Main Content (Central Calendar Workspace) -->
-<main class="ml-16 mr-[280px] flex-1 bg-on-background p-md overflow-hidden">
-<div class="max-w-[1440px] mx-auto h-full flex flex-col">
-<!-- Calendar Header -->
-<div class="flex items-center justify-between mb-md">
-<div class="flex items-center gap-md">
-<h2 class="font-headline-xl text-headline-xl text-on-primary">October 2024</h2>
-<div class="flex bg-white/10 rounded-lg p-xs">
-<button class="p-xs hover:bg-white/20 rounded transition-colors">
-<span class="material-symbols-outlined text-outline-variant">chevron_left</span>
-</button>
-<button class="px-sm text-label-md font-label-md text-on-primary">Today</button>
-<button class="p-xs hover:bg-white/20 rounded transition-colors">
-<span class="material-symbols-outlined text-outline-variant">chevron_right</span>
-</button>
-</div>
-</div>
-<div class="flex items-center gap-sm bg-white/10 p-xs rounded-lg">
-<button class="px-md py-xs rounded bg-surface-bright text-primary font-semibold text-label-md shadow-sm">Month</button>
-<button class="px-md py-xs rounded text-outline-variant font-medium text-label-md hover:text-on-primary">Week</button>
-<button class="px-md py-xs rounded text-outline-variant font-medium text-label-md hover:text-on-primary">Day</button>
-</div>
-</div>
-<!-- Calendar Content - High Contrast Light Background -->
-<div class="flex-1 bg-surface-bright rounded-xl border border-outline-variant/30 overflow-hidden shadow-2xl">
-<!-- Weekdays Row -->
-<div class="grid grid-cols-7 bg-surface-container/50 border-b border-outline-variant/30">
-<div class="py-sm text-center font-label-md text-label-md text-outline">MON</div>
-<div class="py-sm text-center font-label-md text-label-md text-outline">TUE</div>
-<div class="py-sm text-center font-label-md text-label-md text-outline">WED</div>
-<div class="py-sm text-center font-label-md text-label-md text-outline">THU</div>
-<div class="py-sm text-center font-label-md text-label-md text-outline">FRI</div>
-<div class="py-sm text-center font-label-md text-label-md text-on-surface font-bold">SAT</div>
-<div class="py-sm text-center font-label-md text-label-md text-on-surface font-bold">SUN</div>
-</div>
-<!-- Days Grid -->
-<div class="calendar-grid scrollbar-hide overflow-y-auto bg-white text-on-surface">
-<div class="calendar-cell p-sm opacity-40"><div>30</div></div>
-<div class="calendar-cell p-sm"><div>1</div></div>
-<div class="calendar-cell p-sm">
-<div>2</div>
-<div class="mt-auto p-xs bg-secondary/10 border-l-4 border-secondary rounded text-[10px] text-on-secondary-fixed-variant font-bold">
-<span class="block opacity-60 font-normal mb-1">09:00 AM</span>
-            Team Sync
-        </div>
-</div>
-<div class="calendar-cell p-sm"><div>3</div></div>
-<div class="calendar-cell p-sm">
-<div>4</div>
-<div class="mt-auto p-xs bg-primary/10 border-l-4 border-primary rounded text-[10px] text-on-primary-fixed-variant font-bold">
-<span class="block opacity-60 font-normal mb-1">02:00 PM</span>
-            Project Review
-        </div>
-</div>
-<div class="calendar-cell p-sm font-bold"><div>5</div></div>
-<div class="calendar-cell p-sm font-bold"><div>6</div></div>
-<div class="calendar-cell p-sm"><div>7</div></div>
-<div class="calendar-cell p-sm"><div>8</div></div>
-<div class="calendar-cell p-sm">
-<div>9</div>
-<div class="mt-auto p-xs bg-tertiary/10 border-l-4 border-tertiary rounded text-[10px] text-on-tertiary-fixed-variant font-bold">
-<span class="block opacity-60 font-normal mb-1">08:00 AM</span>
-            Meditation
-        </div>
-</div>
-<div class="calendar-cell p-sm"><div>10</div></div>
-<div class="calendar-cell p-sm"><div>11</div></div>
-<div class="calendar-cell p-sm font-bold"><div>12</div></div>
-<div class="calendar-cell p-sm font-bold"><div>13</div></div>
-<div class="calendar-cell p-sm"><div>14</div></div>
-<div class="calendar-cell p-sm bg-primary-container/5">
-<div>15</div>
-<div class="mt-auto p-xs bg-primary/20 border-l-4 border-primary rounded text-[10px] text-primary font-bold">Today</div>
-</div>
-<!-- Multi-day Event Row Start -->
-<div class="calendar-cell p-sm bg-secondary/10 relative border-t-2 border-on-surface border-b-2">
-<div class="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-on-surface"></div>
-<div class="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-on-surface"></div>
-<div class="text-[10px] font-bold text-on-secondary-fixed-variant bg-white px-1 absolute top-[-7px] left-2">Product Launch</div>
-<div>16</div>
-</div>
-<div class="calendar-cell p-sm bg-secondary/10 border-t-2 border-on-surface border-b-2">
-<div>17</div>
-</div>
-<div class="calendar-cell p-sm bg-secondary/10 relative border-t-2 border-on-surface border-b-2">
-<div class="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-on-surface"></div>
-<div class="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-on-surface"></div>
-<div>18</div>
-</div>
-<!-- Multi-day Event Row End -->
-<div class="calendar-cell p-sm font-bold"><div>19</div></div>
-<div class="calendar-cell p-sm font-bold"><div>20</div></div>
-<div class="calendar-cell p-sm"><div>21</div></div>
-<div class="calendar-cell p-sm"><div>22</div></div>
-<div class="calendar-cell p-sm"><div>23</div></div>
-<div class="calendar-cell p-sm"><div>24</div></div>
-<div class="calendar-cell p-sm"><div>25</div></div>
-<div class="calendar-cell p-sm font-bold"><div>26</div></div>
-<div class="calendar-cell p-sm font-bold"><div>27</div></div>
-<div class="calendar-cell p-sm"><div>28</div></div>
-<div class="calendar-cell p-sm"><div>29</div></div>
-<div class="calendar-cell p-sm"><div>30</div></div>
-<div class="calendar-cell p-sm"><div>31</div></div>
-<div class="calendar-cell p-sm opacity-40"><div>1</div></div>
-<div class="calendar-cell p-sm opacity-40 font-bold"><div>2</div></div>
-<div class="calendar-cell p-sm opacity-40 font-bold"><div>3</div></div>
-</div>
-</div>
-</div>
-</main>
-<!-- Right Utility Sidebar - Updated to Deep Navy -->
-<aside class="fixed right-0 top-16 h-[calc(100%-64px)] w-[280px] z-30 bg-deep-navy border-l border-outline-variant/10 flex flex-col py-md px-sm">
-<!-- Habit Tracker Section -->
-<div class="mb-lg px-xs">
-<div class="flex items-center justify-between mb-md">
-<h3 class="font-label-md text-label-md text-outline-variant uppercase tracking-wider">Habit Tracker</h3>
-<span class="material-symbols-outlined text-outline-variant text-[18px] cursor-pointer">more_horiz</span>
-</div>
-<div class="space-y-md">
-<div>
-<div class="flex items-center justify-between mb-xs"><span class="text-[10px] font-bold uppercase tracking-wider text-secondary opacity-70">Deep Work</span></div>
-<div class="flex justify-between">
-<div class="w-6 h-6 flex items-center justify-center text-secondary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-secondary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-secondary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-secondary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-secondary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-</div>
-</div>
-<div>
-<div class="flex items-center justify-between mb-xs"><span class="text-[10px] font-bold uppercase tracking-wider text-tertiary opacity-70">Meditation</span></div>
-<div class="flex justify-between">
-<div class="w-6 h-6 flex items-center justify-center text-tertiary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-tertiary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-tertiary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-</div>
-</div>
-<div>
-<div class="flex items-center justify-between mb-xs"><span class="text-[10px] font-bold uppercase tracking-wider text-primary opacity-70">Reading</span></div>
-<div class="flex justify-between">
-<div class="w-6 h-6 flex items-center justify-center text-primary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-primary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-primary opacity-40"><span class="material-symbols-outlined text-[16px] font-bold">check</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-<div class="w-6 h-6 flex items-center justify-center text-white/20"><span class="material-symbols-outlined text-[16px]">close</span></div>
-</div>
-</div>
-</div>
-</div>
-<!-- To-Do List -->
-<div class="px-xs">
-<h3 class="font-label-md text-label-md text-outline-variant mb-md uppercase tracking-wider">Tasks</h3>
-<div class="space-y-xs">
-<div class="group flex items-start gap-sm p-sm rounded-lg hover:bg-white/5 transition-all cursor-pointer">
-<div class="mt-xs h-5 w-5 border-2 border-primary-fixed-dim rounded flex items-center justify-center">
-<span class="material-symbols-outlined text-primary-fixed-dim text-[14px] font-bold opacity-0 group-hover:opacity-100">check</span>
-</div>
-<div>
-<p class="font-body-sm text-body-sm text-inverse-on-surface">Finalize Q4 roadmap</p>
-<p class="font-label-md text-[10px] text-outline-variant">FocusFlow Project</p>
-</div>
-</div>
-<div class="group flex items-start gap-sm p-sm rounded-lg hover:bg-white/5 transition-all cursor-pointer">
-<div class="mt-xs h-5 w-5 border-2 border-outline-variant/30 rounded flex items-center justify-center"></div>
-<div>
-<p class="font-body-sm text-body-sm text-inverse-on-surface">Client meeting prep</p>
-<p class="font-label-md text-[10px] text-outline-variant">Marketing</p>
-</div>
-</div>
-<div class="group flex items-start gap-sm p-sm rounded-lg hover:bg-white/5 transition-all cursor-pointer">
-<div class="mt-xs h-5 w-5 border-2 border-primary rounded flex items-center justify-center bg-primary">
-<span class="material-symbols-outlined text-on-primary text-[14px] font-bold">check</span>
-</div>
-<div>
-<p class="font-body-sm text-body-sm text-outline-variant line-through opacity-60">Inbox Zero</p>
-<p class="font-label-md text-[10px] text-outline-variant">General</p>
-</div>
-</div>
-</div>
-</div>
-</aside>
-</div>
-<!-- Floating Action Button -->
-<button class="fixed bottom-md right-[300px] w-14 h-14 bg-primary text-on-primary rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50">
-<span class="material-symbols-outlined text-[32px]">add</span>
-</button>
-<script>
-    // Simple check functionality toggle (visual only)
-    document.querySelectorAll('.group .h-5').forEach(checkbox => {
-        checkbox.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const icon = this.querySelector('.material-symbols-outlined');
-            if (this.classList.contains('bg-primary')) {
-                this.classList.remove('bg-primary');
-                if (icon) icon.classList.add('opacity-0');
-                this.nextElementSibling.querySelector('p').classList.remove('line-through', 'opacity-60');
-            } else {
-                this.classList.add('bg-primary');
-                if (icon) icon.classList.remove('opacity-0');
-                this.nextElementSibling.querySelector('p').classList.add('line-through', 'opacity-60');
-            }
-        });
-    });
-</script>
-</body></html>
-
-Please structure this as a properly organized React project with clear component separation, prop interfaces, and shared state management.
-
-This should be made with Tauri, React, Tailwind, TSX, 

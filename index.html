@@ -4,16 +4,25 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <!-- Icons are lucide-react as of v1.7.1 — inline SVG, bundled, no webfont.
-         Inter is all that's left to fetch. -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- No webfont is fetched. Icons are inline lucide SVG, and the redesign's
+         two faces (Outfit, Sora) are self-hosted from public/ — see the
+         @font-face pair in src/App.css. Inter survives only as a fallback in
+         the stack, so there is nothing left to download. -->
     <title>Albas</title>
     <script>
       // Paint the saved theme before React mounts. SQLite is the source of
-      // truth, but reading it is async — this mirror avoids a flash of dark.
+      // truth, but reading it is async — this mirror avoids a flash of the
+      // wrong palette.
+      //
+      // The stored value is validated against the two themes that exist, and
+      // must stay in step with THEMES in src/context/AppContext.tsx. An
+      // install that last ran the four-theme build still has 'grey-high' or
+      // 'grey-low' in here; stamping one would set a data-theme no CSS block
+      // answers, so it is ignored and :root (light) paints instead — the same
+      // fallback readTheme() reaches a few milliseconds later.
       try {
         var t = localStorage.getItem('albas-theme');
-        if (t) document.documentElement.dataset.theme = t;
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
       } catch (e) {}
     </script>
   </head>

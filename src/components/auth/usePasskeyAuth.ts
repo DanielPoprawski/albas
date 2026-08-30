@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { cancelCeremony, createAccount, signIn, submitPin, type PasskeyEvent } from '../../auth';
+import {
+  addPasskey,
+  cancelCeremony,
+  createAccount,
+  signIn,
+  submitPin,
+  type PasskeyEvent,
+} from '../../auth';
 import { DEFAULT_SYNC_URL } from '../../syncServer';
 
 export type AuthState =
@@ -31,24 +38,39 @@ export function usePasskeyAuth() {
     else setState({ kind: 'error', message: e.message });
   };
 
-  async function run(what: string, fn: () => Promise<{ name: string }>) {
+  /**
+   * `adoptsSession` is what separates a login from adding a credential. A
+   * login lands this device on an account, so it marks the welcome screen done
+   * and reloads everything the Rust side wrote behind React's back. Adding a
+   * passkey to the session you are already in changes nothing local — doing
+   * either of those would be stomping state that is already correct.
+   */
+  async function run(
+    what: string,
+    fn: () => Promise<{ name: string }>,
+    adoptsSession = true
+  ): Promise<boolean> {
     setState({ kind: 'busy', what });
     try {
       const res = await fn();
       setPin(null);
-      setState({ kind: 'busy', what: 'Syncing…' });
-      setSetting('__welcome_done', '1');
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('sync_now');
-      } catch {
-        // signed in but the first sync failed — the next launch retries
+      if (adoptsSession) {
+        setState({ kind: 'busy', what: 'Syncing…' });
+        setSetting('__welcome_done', '1');
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('sync_now');
+        } catch {
+          // signed in but the first sync failed — the next launch retries
+        }
+        await reloadFromStore();
       }
-      await reloadFromStore();
       setState({ kind: 'done', name: res.name });
+      return true;
     } catch (err) {
       setPin(null);
       setState({ kind: 'error', message: String(err) });
+      return false;
     }
   }
 
@@ -61,6 +83,8 @@ export function usePasskeyAuth() {
       ),
     createAccount: (name: string, invite: string | null) =>
       run('Creating your passkey…', () => createAccount(DEFAULT_SYNC_URL, name, invite, onEvent)),
+    addPasskey: () =>
+      run('Creating your passkey…', () => addPasskey(DEFAULT_SYNC_URL, onEvent), false),
     submitPin: async (p: string) => {
       setPin(null); // an invalidPin event reopens the dialog with the attempt count
       try {
