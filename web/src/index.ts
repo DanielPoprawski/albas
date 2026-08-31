@@ -1,5 +1,5 @@
 import { serve } from "bun";
-import index from "./index.html";
+import index from "../index.html";
 import admin from "../admin.html";
 
 // In production, nginx proxies "/api/*" straight to sync-server and this

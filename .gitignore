@@ -7,16 +7,27 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & builds
 node_modules
 dist
 dist-ssr
 *.local
+target/
+
+# Android build artifacts
+src-tauri/gen/android/build/
+src-tauri/gen/android/.gradle/
 
 # Android release signing. gen/android IS tracked, so these have to be named
 # explicitly — the keystore and its passwords must never be committed.
 src-tauri/gen/android/keystore.properties
 *.jks
 *.keystore
+
+# Environment & config
+.env
+.env.local
+.mcp.json
 
 # Editor directories and files
 .vscode/*

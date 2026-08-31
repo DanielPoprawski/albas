@@ -1,0 +1,43 @@
+# Dependencies & builds
+node_modules/
+target/
+dist/
+dist-ssr/
+*.local
+
+# Android build artifacts
+src-tauri/gen/
+
+# Environment & secrets
+.env
+.env.local
+*.jks
+*.keystore
+src-tauri/gen/android/keystore.properties
+
+# Generated & temporary
+*.log
+*.lock
+.DS_Store
+
+# Large/binary files & assets
+*.zip
+*.apk
+*.deb
+*.rpm
+*.AppImage
+public/Outfit/
+public/Sora/
+
+# Design files (large, not code)
+designs/
+
+# IDE & editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.sw?
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

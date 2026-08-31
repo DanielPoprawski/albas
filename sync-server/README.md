@@ -195,6 +195,61 @@ cp nginx/tls.conf nginx/conf.d/albas.conf           # now the cert exists
 docker compose -f docker-compose.yml -f docker-compose.nginx.yml restart nginx
 ```
 
+### The server is a checkout of this repo
+
+Clone the whole repo on the server and run compose from `sync-server/` inside
+it, so config changes arrive by `git pull` instead of by hand-copied files that
+drift from what is committed. Two things stay outside git and have to be put
+there once:
+
+- **`sync-server/.env`** — holds `ALBAS_SYNC_TOKEN` and friends. Never committed.
+- **`sync-server/nginx/conf.d/albas.conf`** — a copy of `bootstrap.conf` or
+  `tls.conf`. `conf.d/` is what compose mounts; `nginx/` is what git tracks.
+
+`docker compose pull` cannot deliver either of those, or any config file: it
+fetches container images, and the compose files and nginx config are host files
+bind-mounted *into* stock containers at run time.
+
+**Migrating an existing deployment into a checkout**, without losing the
+database or the TLS certificates:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nginx.yml down   # no -v
+git clone git@github.com:DanielPoprawski/albas.git ~/albas
+cp ~/albas-sync/.env ~/albas/sync-server/.env
+mkdir -p ~/albas/sync-server/nginx/conf.d
+cp ~/albas-sync/nginx/conf.d/albas.conf ~/albas/sync-server/nginx/conf.d/
+cd ~/albas/sync-server
+docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d
+```
+
+The volumes survive that move only because `docker-compose.yml` pins
+`name: albas-sync`. Compose namespaces named volumes by project name, which
+otherwise defaults to the directory name — so the same stack under a directory
+called `sync-server` would come up against an empty database and an empty
+certbot volume rather than report an error. Confirm with `docker volume ls`:
+the names are `albas-sync_albas-sync-data`, `albas-sync_certbot-etc` and
+`albas-sync_certbot-www` both before and after. Keep `-v` off that `down`.
+
+Once it is up, `~/albas-sync` can be deleted — but keep it until the site
+answers and a sync round-trips.
+
+### Deploying the public site
+
+nginx serves the built site from `../web/dist` relative to the compose files —
+the repo's own `web/dist`, mounted read-only at `/srv/albas`. `dist/` is
+gitignored, so `git pull` never brings it; rsync it from a build:
+
+```bash
+cd web && bun run build                        # -> web/dist
+rsync -a --delete dist/ user@host:albas/web/dist/
+```
+
+No nginx restart is needed — the mount is a directory, so new files are visible
+immediately. Only `index.html` and `admin.html` are re-fetched; the `chunk-*`
+files are content-hashed and served `immutable`, so a stale one can never be
+picked up.
+
 **One origin serves everything**: the JSON API under `/api`, Android's
 assetlinks at the domain root, and the public splash/login/register page plus
 `/admin` at `/`. That is deliberate — same-origin means the console never needs a CORS layer, and it puts
@@ -217,6 +272,22 @@ Three things in those templates are load-bearing:
 Then in Albas: **Settings → Account & sync**. The current server is baked in as
 the default, so signing in with a passkey needs no URL typed at all; the field
 stays editable for anyone self-hosting their own.
+
+### Publishing a new image
+
+```bash
+./scripts/publish.sh
+```
+
+Runs the tests, builds `linux/amd64`, and pushes `:latest`, `:<short-sha>` and
+`:<Cargo.toml version>` to GHCR. Then on the server, `docker compose pull &&
+docker compose up -d`.
+
+The GitHub Actions workflow does the same thing but is **manual only**
+(`workflow_dispatch`). It builds `linux/arm64` as well, under QEMU emulation,
+which takes around twenty minutes — worth it when an ARM image is actually
+needed (a Pi-class home box), not on every push. It also publishes without
+running the crate's tests; the script does not.
 
 ### Building instead of pulling
 

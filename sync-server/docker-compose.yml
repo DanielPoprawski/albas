@@ -1,3 +1,9 @@
+# Pinned rather than inherited from the directory name. Compose namespaces the
+# named volumes below by project — with the default, moving this file (say, into
+# a git checkout at albas/sync-server/) would silently switch to an empty
+# database and an empty certbot volume rather than fail.
+name: albas-sync
+
 services:
   albas-sync:
     image: ghcr.io/danielpoprawski/albas-sync:latest
