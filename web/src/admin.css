@@ -754,3 +754,61 @@ table.data-table tbody tr:last-child td {
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
+
+/* Admin token gate */
+.gate-container {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.gate-card {
+  width: 380px;
+  padding: 32px;
+  border: 1px solid var(--border);
+  background: white;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+}
+
+.gate-title {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.gate-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.gate-error {
+  font-size: 11px;
+  color: #991b1b;
+  background: #fef2f2;
+  border-left: 3px solid #dc2626;
+  padding: 8px 10px;
+  margin-top: 14px;
+}
+
+.panel-error {
+  font-size: 12px;
+  color: #991b1b;
+  background: #fef2f2;
+  border-left: 3px solid #dc2626;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.panel-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 24px 0;
+  text-align: center;
+}

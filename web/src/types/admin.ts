@@ -1,51 +1,45 @@
-export interface Account {
-  id: number;
-  name: string;
-  created_at: number;
-  grant_rev: number;
-  tokens: Token[];
-  passkeys: Passkey[];
-  row_count: number;
-}
+// Mirrors sync-server's admin JSON responses (see sync-server/README.md,
+// "Admin console"). Keep in sync when main.rs's admin structs change.
 
 export interface Token {
   id: number;
-  account_id: number;
+  accountId: number;
   label: string;
-  created_at: number;
+  createdAt: number;
 }
 
 export interface Passkey {
   id: number;
-  account_id: number;
-  cred_id: string;
-  created_at: number;
+  accountId: number;
+  credId: string;
+  createdAt: number;
+}
+
+export interface Account {
+  id: number;
+  name: string;
+  createdAt: number;
+  grantRev: number;
+  tokens: Token[];
+  passkeys: Passkey[];
+  rowCount: number;
 }
 
 export interface Share {
-  owner_id: number;
-  grantee_id: number;
-  owner_name: string;
-  grantee_name: string;
+  ownerId: number;
+  granteeId: number;
+  ownerName: string;
+  granteeName: string;
   calendar: boolean;
   todos: boolean;
 }
 
-export interface Invite {
-  id: number;
-  code_hash: string;
-  name: string | null;
-  created_at: number;
-  expires_at: number;
-  used_at: number | null;
-}
-
 export interface SyncRow {
-  account_id: number;
-  account_name: string;
+  accountId: number;
+  accountName: string;
   tbl: string;
   pk: string;
-  updated_at: number;
+  updatedAt: number;
   deleted: boolean;
   seq: number;
 }

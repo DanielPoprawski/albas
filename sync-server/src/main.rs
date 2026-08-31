@@ -24,13 +24,31 @@
 //! it is only as good as that device's clock — fine for deciding which of two
 //! edits wins. `seq` is assigned here, strictly increasing, and is what clients
 //! resume from, so a wrong device clock can never make a client skip a row.
+//!
+//! Admin console (`/admin/*`, all `admin_ok`-gated): the self-service `/shares`
+//! trio is scoped to whichever account the bearer token identifies, which an
+//! admin token is not — it names no account. So the admin console gets its own
+//! routes rather than reusing those: `/admin/shares` lists every grant on the
+//! server, `/admin/shares/:owner/:grantee` edits or revokes one by name, and
+//! `/admin/rows` browses the row store directly, filterable by account/table.
+//! `GET /accounts` (unchanged path) now returns each account's tokens, passkeys
+//! and row count inline instead of just `{name, created_at}`, since that is
+//! what the console's Accounts panel needs and nothing else calls this route.
+//!
+//! **Invites are not getting further admin support.** The product direction
+//! (2026-08) is open signup only — anyone with the site link can create an
+//! account — so there is deliberately no `/admin/invites` listing or revoke
+//! endpoint here, and the console has no Invites panel. `POST /invites` in
+//! `passkey.rs` still exists for `ALBAS_SYNC_SIGNUPS=invite` deployments and
+//! for attaching a passkey to an existing account, but is not wired into the
+//! console. See root `CLAUDE.md`, "Project direction".
 
 mod passkey;
 mod password;
 mod totp;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     routing::{delete, get, post, put},
     Json, Router,
@@ -181,9 +199,34 @@ struct CreatedAccount {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AccountInfo {
+struct TokenInfo {
+    id: i64,
+    account_id: i64,
+    label: String,
+    created_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyInfo {
+    id: i64,
+    account_id: i64,
+    cred_id: String,
+    created_at: i64,
+}
+
+/// `GET /accounts` response shape. Named for what the admin console shows,
+/// not for `AccountInfo`'s old, thinner one — nothing else consumes this route.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountDetail {
+    id: i64,
     name: String,
     created_at: i64,
+    grant_rev: i64,
+    tokens: Vec<TokenInfo>,
+    passkeys: Vec<PasskeyInfo>,
+    row_count: i64,
 }
 
 #[derive(Deserialize)]
@@ -251,6 +294,12 @@ async fn main() {
         .route("/accounts/:name", delete(delete_account))
         .route("/shares", get(shares_get))
         .route("/shares/:name", put(shares_put).delete(shares_delete))
+        .route("/admin/shares", get(admin_shares_get))
+        .route(
+            "/admin/shares/:owner/:grantee",
+            put(admin_share_put).delete(admin_share_delete),
+        )
+        .route("/admin/rows", get(admin_rows))
         .route("/register/start", post(passkey::register_start))
         .route("/register/finish", post(passkey::register_finish))
         .route("/login/start", post(passkey::login_start))
@@ -670,19 +719,46 @@ pub(crate) fn name_ok(name: &str) -> bool {
 async fn list_accounts(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<Vec<AccountInfo>>, StatusCode> {
+) -> Result<Json<Vec<AccountDetail>>, StatusCode> {
     admin_ok(&state, &headers)?;
     let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let mut stmt = guard
-        .prepare("SELECT name, created_at FROM accounts ORDER BY created_at")
+        .prepare("SELECT id, name, created_at, grant_rev FROM accounts ORDER BY created_at")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let accounts = stmt
-        .query_map([], |r| {
-            Ok(AccountInfo { name: r.get(0)?, created_at: r.get(1)? })
-        })
-        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+    let accounts: Vec<(i64, String, i64, i64)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .and_then(|rows| rows.collect())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(accounts))
+
+    let mut out = Vec::with_capacity(accounts.len());
+    for (id, name, created_at, grant_rev) in accounts {
+        let mut tstmt = guard
+            .prepare("SELECT id, label, created_at FROM tokens WHERE account_id = ?1 ORDER BY created_at")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let tokens = tstmt
+            .query_map([id], |r| {
+                Ok(TokenInfo { id: r.get(0)?, account_id: id, label: r.get(1)?, created_at: r.get(2)? })
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let mut pstmt = guard
+            .prepare("SELECT id, cred_id, created_at FROM passkeys WHERE account_id = ?1 ORDER BY created_at")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let passkeys = pstmt
+            .query_map([id], |r| {
+                Ok(PasskeyInfo { id: r.get(0)?, account_id: id, cred_id: r.get(1)?, created_at: r.get(2)? })
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let row_count: i64 = guard
+            .query_row("SELECT COUNT(*) FROM rows WHERE account_id = ?1", [id], |r| r.get(0))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        out.push(AccountDetail { id, name, created_at, grant_rev, tokens, passkeys, row_count });
+    }
+    Ok(Json(out))
 }
 
 /// Removes the account and everything anchored to it — rows, tokens, passkeys,
@@ -810,6 +886,183 @@ fn set_share(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminShare {
+    owner_id: i64,
+    grantee_id: i64,
+    owner_name: String,
+    grantee_name: String,
+    calendar: bool,
+    todos: bool,
+}
+
+/// Every grant on the server, not just the caller's — `set_share`'s `me` comes
+/// from the bearer token, which an admin token does not resolve to any
+/// account, so this is a separate route rather than a mode of `/shares`.
+async fn admin_shares_get(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AdminShare>>, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut stmt = guard
+        .prepare(
+            "SELECT s.owner_id, s.grantee_id, o.name, g.name, s.calendar, s.todos
+             FROM shares s
+             JOIN accounts o ON o.id = s.owner_id
+             JOIN accounts g ON g.id = s.grantee_id
+             ORDER BY o.name, g.name",
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let out = stmt
+        .query_map([], |r| {
+            Ok(AdminShare {
+                owner_id: r.get(0)?,
+                grantee_id: r.get(1)?,
+                owner_name: r.get(2)?,
+                grantee_name: r.get(3)?,
+                calendar: r.get::<_, i64>(4)? != 0,
+                todos: r.get::<_, i64>(5)? != 0,
+            })
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(out))
+}
+
+async fn admin_share_put(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((owner, grantee)): Path<(String, String)>,
+    Json(body): Json<ShareBody>,
+) -> Result<StatusCode, StatusCode> {
+    admin_set_share(&state, &headers, &owner, &grantee, body.calendar, body.todos)
+}
+
+async fn admin_share_delete(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((owner, grantee)): Path<(String, String)>,
+) -> Result<StatusCode, StatusCode> {
+    admin_set_share(&state, &headers, &owner, &grantee, false, false)
+}
+
+/// Admin counterpart of `set_share`: the pair is named explicitly by the admin
+/// (there is no bearer identity to derive an owner from), otherwise the same
+/// upsert-or-delete-plus-`grant_rev`-bump rule.
+fn admin_set_share(
+    state: &AppState,
+    headers: &HeaderMap,
+    owner_name: &str,
+    grantee_name: &str,
+    calendar: bool,
+    todos: bool,
+) -> Result<StatusCode, StatusCode> {
+    admin_ok(state, headers)?;
+    let mut guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tx = guard.transaction().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let owner: Option<i64> = tx
+        .query_row("SELECT id FROM accounts WHERE name = ?1", [owner_name], |r| r.get(0))
+        .optional()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let grantee: Option<i64> = tx
+        .query_row("SELECT id FROM accounts WHERE name = ?1", [grantee_name], |r| r.get(0))
+        .optional()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let (Some(owner), Some(grantee)) = (owner, grantee) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if owner == grantee {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    if !calendar && !todos {
+        tx.execute(
+            "DELETE FROM shares WHERE owner_id = ?1 AND grantee_id = ?2",
+            params![owner, grantee],
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    } else {
+        tx.execute(
+            "INSERT INTO shares (owner_id, grantee_id, calendar, todos) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(owner_id, grantee_id) DO UPDATE SET
+               calendar = excluded.calendar, todos = excluded.todos",
+            params![owner, grantee, calendar as i64, todos as i64],
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+    tx.execute("UPDATE accounts SET grant_rev = grant_rev + 1 WHERE id = ?1", [grantee])
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct RowsQuery {
+    account: Option<String>,
+    table: Option<String>,
+    limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminRow {
+    account_id: i64,
+    account_name: String,
+    tbl: String,
+    pk: String,
+    updated_at: i64,
+    deleted: bool,
+    seq: i64,
+}
+
+/// Browses the row store directly — table/pk/seq/tombstone only, never the
+/// payload, matching the console's "never parses payloads" schema note.
+/// `account`/`table` of `"all"` or empty are treated as no filter.
+async fn admin_rows(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<RowsQuery>,
+) -> Result<Json<Vec<AdminRow>>, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let limit = q.limit.unwrap_or(200).clamp(1, 1000);
+    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut sql = String::from(
+        "SELECT r.account_id, a.name, r.tbl, r.pk, r.updated_at, r.deleted, r.seq
+         FROM rows r JOIN accounts a ON a.id = r.account_id WHERE 1=1",
+    );
+    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(account) = q.account.as_deref().filter(|s| !s.is_empty() && *s != "all") {
+        sql.push_str(" AND a.name = ?");
+        binds.push(Box::new(account.to_string()));
+    }
+    if let Some(table) = q.table.as_deref().filter(|s| !s.is_empty() && *s != "all") {
+        sql.push_str(" AND r.tbl = ?");
+        binds.push(Box::new(table.to_string()));
+    }
+    sql.push_str(" ORDER BY r.seq DESC LIMIT ?");
+    binds.push(Box::new(limit));
+
+    let mut stmt = guard.prepare(&sql).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let param_refs: Vec<&dyn rusqlite::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    let out = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(AdminRow {
+                account_id: r.get(0)?,
+                account_name: r.get(1)?,
+                tbl: r.get(2)?,
+                pk: r.get(3)?,
+                updated_at: r.get(4)?,
+                deleted: r.get::<_, i64>(5)? != 0,
+                seq: r.get(6)?,
+            })
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(out))
 }
 
 #[cfg(test)]
@@ -1173,5 +1426,153 @@ mod tests {
         grant(&c, alice, bob, true, false);
         assert_eq!(rev(bob), 2);
         assert_eq!(rev(alice), 0, "the owner's own rev is untouched");
+    }
+
+    fn admin_state(c: Connection, admin_token: Option<&str>) -> Arc<AppState> {
+        Arc::new(AppState {
+            conn: Mutex::new(c),
+            admin_token: admin_token.map(str::to_string),
+            signups: Signups::Open,
+            webauthn: None,
+            assetlinks: None,
+            pending: passkey::Pending::default(),
+        })
+    }
+
+    fn admin_headers() -> HeaderMap {
+        auth_headers("admin-test-token-000000")
+    }
+
+    /// The console's Accounts panel needs tokens, passkeys and a row count
+    /// inline — this is the whole reason `list_accounts` grew past
+    /// `{name, created_at}`.
+    #[tokio::test]
+    async fn admin_list_accounts_includes_tokens_passkeys_and_rows() {
+        let c = mem(None);
+        let alice = make_account(&c, "alice");
+        mint_token(&c, alice, "laptop").unwrap();
+        c.execute(
+            "INSERT INTO passkeys (account_id, cred_id, passkey_json, created_at) VALUES (?1, 'cred1', '{}', 0)",
+            [alice],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO rows (account_id, tbl, pk, payload, updated_at, deleted, seq)
+             VALUES (?1, 'habits', 'h1', '{}', 0, 0, 1)",
+            [alice],
+        )
+        .unwrap();
+
+        let state = admin_state(c, Some("admin-test-token-000000"));
+        match list_accounts(State(state.clone()), HeaderMap::new()).await {
+            Err(status) => assert_eq!(status, StatusCode::UNAUTHORIZED),
+            Ok(_) => panic!("expected admin_ok to reject an unauthenticated request"),
+        }
+
+        let out = list_accounts(State(state), admin_headers()).await.unwrap().0;
+        let acct = out.iter().find(|a| a.name == "alice").unwrap();
+        assert_eq!(acct.tokens.len(), 1);
+        assert_eq!(acct.tokens[0].label, "laptop");
+        assert_eq!(acct.passkeys.len(), 1);
+        assert_eq!(acct.row_count, 1);
+    }
+
+    /// The admin trio operates on an explicit owner/grantee pair rather than a
+    /// bearer identity, lists every grant on the server, and still bumps the
+    /// grantee's `grant_rev` like the self-service routes do.
+    #[tokio::test]
+    async fn admin_shares_list_edit_and_revoke() {
+        let c = mem(None);
+        let alice = make_account(&c, "alice");
+        let _bob = make_account(&c, "bob");
+        let state = admin_state(c, Some("admin-test-token-000000"));
+
+        let status = admin_share_put(
+            State(state.clone()),
+            admin_headers(),
+            Path(("alice".to_string(), "bob".to_string())),
+            Json(ShareBody { calendar: true, todos: false }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let list = admin_shares_get(State(state.clone()), admin_headers()).await.unwrap().0;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].owner_name, "alice");
+        assert_eq!(list[0].grantee_name, "bob");
+        assert!(list[0].calendar && !list[0].todos);
+
+        let rev_of = |c: &Connection, id: i64| -> i64 {
+            c.query_row("SELECT grant_rev FROM accounts WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+        };
+        {
+            let guard = state.conn.lock().unwrap();
+            let bob_id: i64 =
+                guard.query_row("SELECT id FROM accounts WHERE name = 'bob'", [], |r| r.get(0)).unwrap();
+            assert_eq!(rev_of(&guard, bob_id), 1);
+        }
+
+        let status =
+            admin_share_delete(State(state.clone()), admin_headers(), Path(("alice".to_string(), "bob".to_string())))
+                .await
+                .unwrap();
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let list = admin_shares_get(State(state.clone()), admin_headers()).await.unwrap().0;
+        assert!(list.is_empty());
+
+        let missing = admin_share_put(
+            State(state),
+            admin_headers(),
+            Path(("alice".to_string(), "nobody".to_string())),
+            Json(ShareBody { calendar: true, todos: true }),
+        )
+        .await;
+        assert_eq!(missing.unwrap_err(), StatusCode::NOT_FOUND);
+        let _ = alice;
+    }
+
+    #[tokio::test]
+    async fn admin_rows_filters_by_account_and_table() {
+        let c = mem(None);
+        let alice = make_account(&c, "alice");
+        let bob = make_account(&c, "bob");
+        for (acct, tbl, pk) in [(alice, "habits", "h1"), (alice, "events", "e1"), (bob, "habits", "h2")] {
+            c.execute(
+                "INSERT INTO rows (account_id, tbl, pk, payload, updated_at, deleted, seq)
+                 VALUES (?1, ?2, ?3, '{}', 0, 0, (SELECT COALESCE(MAX(seq), 0) + 1 FROM rows))",
+                params![acct, tbl, pk],
+            )
+            .unwrap();
+        }
+        let state = admin_state(c, Some("admin-test-token-000000"));
+
+        let all = admin_rows(State(state.clone()), admin_headers(), Query(RowsQuery { account: None, table: None, limit: None }))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(all.len(), 3);
+
+        let alice_only = admin_rows(
+            State(state.clone()),
+            admin_headers(),
+            Query(RowsQuery { account: Some("alice".into()), table: None, limit: None }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(alice_only.len(), 2);
+        assert!(alice_only.iter().all(|r| r.account_name == "alice"));
+
+        let habits_only = admin_rows(
+            State(state),
+            admin_headers(),
+            Query(RowsQuery { account: None, table: Some("habits".into()), limit: None }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(habits_only.len(), 2);
+        assert!(habits_only.iter().all(|r| r.tbl == "habits"));
     }
 }

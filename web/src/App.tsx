@@ -1,39 +1,50 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { APITester } from "./APITester";
+import { useEffect, useState } from "react";
 import "./index.css";
-
-import logo from "./logo.svg";
-import reactLogo from "./react.svg";
+import { getSession, type Session } from "./lib/api";
+import { PATH_OF, screenOfPath, type Screen } from "./screens";
+import { Splash } from "./components/auth/Splash";
+import { LoginScreen } from "./components/auth/LoginScreen";
+import { RegisterForm } from "./components/auth/RegisterForm";
+import { OfflineInfo } from "./components/auth/OfflineInfo";
+import { SignedIn } from "./components/auth/SignedIn";
 
 export function App() {
-  return (
-    <div className="container mx-auto p-8 text-center relative z-10">
-      <div className="flex justify-center items-center gap-8 mb-8">
-        <img
-          src={logo}
-          alt="Bun Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#646cffaa] scale-120"
-        />
-        <img
-          src={reactLogo}
-          alt="React Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#61dafbaa] [animation:spin_20s_linear_infinite]"
-        />
-      </div>
-      <Card>
-        <CardHeader className="gap-4">
-          <CardTitle className="text-3xl font-bold">Bun + React</CardTitle>
-          <CardDescription>
-            Edit <code className="rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono">src/App.tsx</code> and save to
-            test HMR
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <APITester />
-        </CardContent>
-      </Card>
-    </div>
-  );
+  const [screen, setScreen] = useState<Screen>(() => screenOfPath(window.location.pathname));
+  const [session, setSession] = useState<Session | null>(() => getSession());
+
+  useEffect(() => {
+    const onPopState = () => setScreen(screenOfPath(window.location.pathname));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const navigate = (next: Screen) => {
+    window.history.pushState(null, "", PATH_OF[next]);
+    setScreen(next);
+  };
+
+  if (session) {
+    return (
+      <SignedIn
+        session={session}
+        onSignedOut={() => {
+          setSession(null);
+          navigate("splash");
+        }}
+      />
+    );
+  }
+
+  switch (screen) {
+    case "login":
+      return <LoginScreen onNavigate={navigate} onSignedIn={setSession} />;
+    case "register":
+      return <RegisterForm onNavigate={navigate} onSignedIn={setSession} />;
+    case "offline":
+      return <OfflineInfo onNavigate={navigate} />;
+    default:
+      return <Splash onNavigate={navigate} />;
+  }
 }
 
 export default App;

@@ -1,33 +1,71 @@
-# Albas Web Console — Implementation Guide
+# Albas Web — Implementation Guide
 
 ## Overview
 
-The web console is a **read-only** Bun + React interface for Albas synced data, served at `albas.danni-dev.com/`. It must remain stateless, fetch everything from `/api/sync`, and never parse app data — same principle as `sync-server/` itself.
+`web/` is a Bun + React app serving **two** distinct surfaces on `albas.danni-dev.com`:
+
+1. **The public site** (`/`, `/login`, `/register`, `/offline`) — splash screen, passkey
+   sign-in (primary) with password+TOTP as a backup method, passkey registration, and an
+   offline-usage explainer. Built from `App.tsx` / `frontend.tsx`, styled from
+   `designs/Albas Splash & Auth.dc.html`.
+2. **The admin console** (`/admin`) — staff-only server administration: accounts, sharing
+   grants, and a read-only browse of the sync `rows` table. Built from `AdminConsole.tsx` /
+   `admin-frontend.tsx`, styled from `designs/Albas Admin Console.dc.html`, gated by
+   `ALBAS_SYNC_ADMIN_TOKEN` rather than an account.
+
+A **read-only viewer of a signed-in account's own synced calendar/todo data** (browsing your
+events and to-dos from a browser) is still on the roadmap but is a separate, later piece of
+work — not part of this build. The public site today stops at "signed in, here's your
+session, log out." Don't build a data-fetching dashboard here without checking that plan is
+still current.
 
 ## Key Constraints
 
-- **Read-only:** No mutations; every data structure is immutable, sourced from `/sync`. State is append-only.
-- **No server-side rendering of user data:** Never embed rows in HTML templates. Fetch them, render them client-side.
-- **Same origin as the sync server:** No CORS layer, WebAuthn RP ID is this exact domain, not a subdomain or apex.
-- **Token handling:** Bearer token (minted on passkey login) stored in `localStorage`, validated on page load, discarded on logout. Never expose it in URLs or logs.
-- **Theme consistency:** Use the same `--t-*` design tokens as the main app. Both respond to `data-theme` or `prefers-color-scheme`.
+- **Same origin as the sync server.** No CORS layer, and the WebAuthn RP ID is this exact
+  domain — not a subdomain or the apex. See root `CLAUDE.md`, "Domain and origins".
+- **Token handling:** the public site's session token (minted on passkey/password login)
+  lives in `localStorage['albas-session']`. The admin console's token is a *different*
+  credential (`ALBAS_SYNC_ADMIN_TOKEN`, entered once) in `localStorage['albas-admin-token']`.
+  Never mix the two — an admin token is not an account session and vice versa.
+- **Passkey login is discoverable (usernameless).** `POST /login/start` takes no body and no
+  username; the authenticator itself identifies the account from a resident credential. Don't
+  add an "Account Name" field to the passkey login form — there is nothing on the server to
+  check it against, and the real ceremony doesn't use one. (Registration and password login
+  *do* take a name — only discoverable login is usernameless.)
+- **No hardcoded data, anywhere.** Every account name, token, share, or row shown must come
+  from a real `sync-server` response.
 
 ## Project Layout
 
 ```
 web/
 ├── src/
-│   ├── index.ts              # Bun entry point; serves index.html and routes API calls
-│   ├── frontend.tsx          # React root component
-│   ├── pages/                # Page components (Dashboard, Calendar, Todos)
-│   ├── components/           # Reusable UI pieces (EventCard, TodoRow, etc.)
-│   ├── hooks/                # useAuth, useSync, etc.
-│   ├── types/web.ts          # Type definitions (mirror of app's types where needed)
-│   ├── styles/web.css        # Tailwind v4 setup; import --t-* tokens from main app
-│   └── api/                  # Fetch wrappers for /api endpoints
-├── index.html                # Static HTML shell
-├── package.json              # Bun project config (separate from root)
-└── bun.lockb                 # Bun lockfile (separate from root)
+│   ├── index.ts               # Bun.serve() — routes "/" and its screens to index.html,
+│   │                           #   "/admin*" to admin.html
+│   ├── index.html             # public site HTML shell -> frontend.tsx
+│   ├── frontend.tsx           # public site React root -> App.tsx
+│   ├── App.tsx                # splash / login / register / offline / signed-in router
+│   ├── admin.html             # admin console HTML shell -> admin-frontend.tsx
+│   ├── admin-frontend.tsx     # admin console React root -> AdminConsole.tsx
+│   ├── AdminConsole.tsx       # admin console — accounts, shares, sync rows
+│   ├── admin.css              # admin console styling (ported from the .dc.html design)
+│   ├── index.css              # public site styling (ported from the .dc.html design)
+│   ├── components/
+│   │   ├── auth/               # Splash, PasskeyLogin, PasswordLogin, RegisterForm, OfflineInfo, SignedIn
+│   │   └── ui/                  # shadcn primitives (Card, Button, Input, ...) — not used by
+│   │                            #   the auth screens or admin console, which match their
+│   │                            #   design references with plain CSS instead; left in place
+│   │                            #   for anything that later wants a generic form control.
+│   ├── lib/
+│   │   ├── webauthn.ts         # base64url <-> ArrayBuffer, and the create()/get() ceremony wrappers
+│   │   ├── api.ts              # fetch wrapper for the public-site endpoints (register/login/password/totp)
+│   │   └── adminApi.ts         # fetch wrapper for /accounts, /admin/shares, /admin/rows — attaches
+│   │                           #   the admin bearer token, throws AdminAuthError on 401/403
+│   └── types/
+│       └── admin.ts            # types mirroring sync-server's admin JSON shapes
+├── build.ts                    # bun build -> dist/, both HTML entrypoints
+├── package.json                # Bun project config (separate from root)
+└── bun.lock                    # Bun lockfile (separate from root)
 ```
 
 ## Bun Setup
@@ -36,143 +74,132 @@ Use Bun, not npm:
 
 ```bash
 bun install
-bun run dev        # development with HMR
-bun run build      # production bundle
-bun start          # run production build
+bun run dev        # development with HMR (bun --hot src/index.ts)
+bun run build      # production bundle (bun run build.ts -> dist/)
+bun start           # run the production build (NODE_ENV=production bun src/index.ts)
 ```
 
-- `bun:sqlite` for any local caching (not synced data)
-- `Bun.serve()` for the server; no express
-- `Bun.file()` for file I/O, not `fs`
-- HTML imports work natively; no bundler config needed
+- `Bun.serve()` for the server; no express, no Next.js.
+- HTML imports work natively (`index.ts` imports `./index.html` and `../admin.html` directly)
+  — no bundler config needed beyond `bun-plugin-tailwind` for Tailwind v4.
 
-## Authentication & Session
+## The public site: auth flows
 
-- **Welcome route:** Passkey ceremony via Tauri plugin? No — the web console runs in a browser with no Tauri. Use `WebAuthn.isUserVerifyingPlatformAuthenticatorAvailable()` and vanilla `navigator.credentials.get()` for security keys/biometrics.
-- **Token flow:** `POST /login/start` → challenge, `POST /login/finish` → token. Store token in `localStorage['albas-session']`.
-- **Validation on load:** Check token with `GET /health` or a minimal `/sync` call before rendering the app.
-- **Logout:** Delete the token from `localStorage` and redirect to Welcome.
+All three credential types are already implemented server-side (`sync-server/src/passkey.rs`,
+`password.rs`, `totp.rs`) — this app is a client for them, not a place to invent new auth
+logic. Endpoints below are called as `/api/...`; nginx strips the `/api` prefix before it
+reaches `sync-server`, so `main.rs`'s routes are unprefixed.
 
-## Fetching & Caching
+- **Passkey register**: `POST /api/register/start {name, invite?}` → `{regId, options}`
+  (`options` is a WebAuthn `CredentialCreationOptions`-shaped JSON, base64url-encoded per
+  `webauthn-rs`'s JSON convention — decode with `lib/webauthn.ts` before passing to
+  `navigator.credentials.create()`). Then `POST /api/register/finish {regId, label?,
+  credential}` → `{name, token}`. Store the token, done.
+- **Passkey login**: `POST /api/login/start` (no body) → `{authId, options}`. Then
+  `POST /api/login/finish {authId, label?, credential}` → `{name, token}`.
+- **Password login**: `POST /api/login/password {name, password, code?}` → `{name, token}`.
+  A 401 whose body is exactly `"A two-factor code is required."` means: show a TOTP code
+  field and retry with `code` set. That string is load-bearing (`totp.rs`'s `CODE_REQUIRED`)
+  — match it exactly, don't pattern-match loosely on "401 means bad password."
+- **Session**: once signed in, `localStorage['albas-session'] = {name, token}`. The signed-in
+  view shows the account name and a Log Out button (clears the key); it does not need to
+  re-validate the token against the server on load — an expired/revoked token just fails the
+  next authenticated call, which is rare here since this page makes none after login.
 
-All data flows through `/sync`:
+Registration's `Invite Code` field from the original design mock is **intentionally not
+built** — see root `CLAUDE.md`, "Project direction" ("Moving away from invites"). Signup is
+open by default; don't add the field back without checking that note first.
 
-```ts
-// First load: include `since: 0` to get a full snapshot
-const response = await fetch('/api/sync', {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${token}` },
-  body: JSON.stringify({ since: 0, sharedSince: 0, grantRev: 0, changes: [] })
-});
-// { seq, changes, shared, sharedSeq, grantRev }
+## The admin console
 
-// Store seq, sharedSeq, grantRev in state
-// On next sync, send { since: seq, sharedSince: sharedSeq, grantRev, changes: [] }
-// Apply `changes` and `shared` rows; these are the only updates
+Gated by `ALBAS_SYNC_ADMIN_TOKEN`, entered once and kept in
+`localStorage['albas-admin-token']`, sent as `Authorization: Bearer <token>` on every call.
+A 401/403 from any admin call should drop back to the token-entry screen — the token was
+either never set or was wrong/rotated, and the console cannot tell those apart (`sync-server`
+deliberately doesn't either — see `admin_ok` in `main.rs`).
+
+Endpoints (all admin-gated, documented in full in `sync-server/README.md`):
+
+```
+GET    /api/accounts                            -> [{id, name, createdAt, grantRev, tokens: [...], passkeys: [...], rowCount}, ...]
+POST   /api/accounts            {name}          -> {name, token}   (token shown once)
+DELETE /api/accounts/<name>
+GET    /api/admin/shares                        -> [{ownerId, granteeId, ownerName, granteeName, calendar, todos}, ...]
+PUT    /api/admin/shares/<owner>/<grantee>       body {calendar, todos}
+DELETE /api/admin/shares/<owner>/<grantee>
+GET    /api/admin/rows?account=&table=&limit=    -> [{accountId, accountName, tbl, pk, updatedAt, deleted, seq}, ...]
 ```
 
-**Never** call `/api` endpoints directly for data — they don't exist. Everything goes through `/sync`.
+Note the path split: account CRUD stays at `/accounts` (unchanged from before this admin
+build; nothing else calls it), but sharing and rows are under `/admin/` because the
+account-scoped `/shares` trio (used by the *app's* own Settings → Sharing, not this console)
+resolves its owner from the bearer token — which an admin token doesn't name. Two different
+identity models, two different route trees.
 
-## Types
+**There is no Invites panel and no `/admin/invites` endpoint.** See root `CLAUDE.md`,
+"Project direction" — the product is moving to open-signup-only, so invite listing/revocation
+isn't getting built out here. Don't add the panel back without revisiting that note.
 
-Mirror only what the console needs from the app:
-
-```ts
-// web/src/types/web.ts
-export type CalendarEvent = {
-  id: string;
-  title: string;
-  startDate: string; // ISO 8601
-  endDate: string;
-  allDay: boolean;
-  color?: string;
-  sharedBy?: string; // if from another account
-};
-
-export type Todo = {
-  id: string;
-  title: string;
-  due?: string;
-  completed: boolean;
-  category?: string;
-  important: boolean;
-  sharedBy?: string;
-};
-
-// Never import from the main app's types.ts — maintain independence.
-```
+**The bottom console box is not a real query engine.** `sync-server` exposes no SQL endpoint
+(the schema note in the design and in the panel says so verbatim — keep it accurate). It
+filters the rows already fetched from `/admin/rows` client-side with a couple of regexes,
+exactly as `AdminConsole.tsx` does today. Don't wire it to a real backend query path.
 
 ## Theming
 
-The main app defines tokens in `src/App.css`. The web console **does not** import that file directly (CORS + bundler issues). Instead:
+The public site and admin console each ship as a **single, deliberately un-themed** design —
+flat white/purple for the public site, flat white/JetBrains-Mono-terminal for the admin
+console — matching their `.dc.html` design references exactly rather than the main app's
+`--t-*` light/dark token system. That system is Tauri-app-specific (see root `CLAUDE.md`,
+"Theming"); this app doesn't import it and doesn't need to. If dark mode is wanted here later,
+that's a new design decision, not a token swap — don't invent one unasked.
 
-1. **Host copies the token definitions** to `web/src/styles/web.css` (or generates them from a shared source).
-2. **Both projects define the full `--t-*` palette** on `:root` (light) and `[data-theme='dark']`.
-3. **Tailwind v4 `@theme inline` block** aliases shadcn/Tailwind names onto them.
-4. **JavaScript toggles `data-theme`** based on user choice or `prefers-color-scheme`.
-
-```css
-/* web/src/styles/web.css */
-:root {
-  --t-surface: #ffffff;
-  --t-accent: #2563eb;
-  /* ... etc ... */
-}
-
-[data-theme='dark'] {
-  --t-surface: #0a0a0a;
-  --t-accent: #60a5fa;
-  /* ... etc ... */
-}
-```
-
-The browser respects `color-scheme` per theme, so native date pickers stay legible.
-
-## Shared Data
-
-Shared rows arrive in `shared` key with `from` field (owner account name):
-
-```ts
-// In /sync response
-{
-  "shared": [
-    { "from": "sarah", "tbl": "events", "pk": "e1", "payload": { /* ... */ } }
-  ]
-}
-
-// Render with attribution, dimmed styling, read-only (no edit buttons)
-<EventCard {...event} sharedBy="sarah" readOnly />
-```
-
-Use `sharedDisplay.ts` logic from the main app (copy it; don't import) to apply the right styling and tooltip.
+Fonts (`Outfit`, `Sora`, and `JetBrains Mono` for the admin console) load from Google Fonts via
+a `<link>` in `index.html`/`admin.html`. That's fine here — unlike the offline-first Android
+app (which self-hosts fonts specifically to avoid a network dependency on first paint, see
+root `CLAUDE.md` "Typography"), this is a server-hosted web app that requires a network
+connection to exist at all.
 
 ## What NOT to Do
 
-- ❌ **Don't hardcode user data.** If a screen shows "Sarah's calendar," that must come from the actual account data, not a template.
-- ❌ **Don't add E2E encryption here.** The console never decrypts; it renders plaintext rows as-is.
-- ❌ **Don't store passwords or tokens in a cookie.** `localStorage` is fine for a single-device session; HTTPS is mandatory.
-- ❌ **Don't parse payloads.** A row's `payload` is opaque JSON; render it as-is, don't assume a shape.
-- ❌ **Don't use express, Next.js, or any full-stack framework.** Bun's `Bun.serve()` is the server; React is the frontend; they live in one `index.ts`.
+- ❌ **Don't add an Invites panel or invite-code field.** See "Project direction" above.
+- ❌ **Don't add a username field to passkey login.** It's discoverable/usernameless by design.
+- ❌ **Don't build a real SQL endpoint for the admin console's query box.** It stays a
+  client-side filter over already-fetched rows.
+- ❌ **Don't mix the admin token and an account session token.** Different credentials,
+  different `localStorage` keys, different failure handling.
+- ❌ **Don't use express, Next.js, or any full-stack framework.** `Bun.serve()` is the server.
+- ❌ **Don't parse a row's `payload` in the admin console.** It's never returned by
+  `/admin/rows` in the first place — the endpoint only ever hands back bookkeeping columns.
 
 ## Deployment
 
-The console is deployed by the same CI pipeline that publishes `sync-server/`. Updates land automatically on `albas.danni-dev.com` when `web/src/**` changes.
-
-nginx forwards requests to the Bun app running on `127.0.0.1:3000`. The TLS terminating reverse proxy is shared with `sync-server/`.
+Deployed by the same CI pipeline that publishes `sync-server/`; nginx forwards `/` and
+`/admin` to the Bun app (see `sync-server/nginx/`) and strips `/api` before proxying to
+`sync-server` itself. Both apps share one TLS-terminating reverse proxy.
 
 ## Testing
 
 ```bash
-bun test            # unit tests in .test.ts files
+bun test            # unit tests in .test.ts files, if/when added
 ```
 
-For integration tests against a live `sync-server`, set `ALBAS_SYNC_TEST_URL` and use the same token protocol as the app (see `sync-server/README.md`).
+For a live end-to-end check against a real `sync-server`, run one locally
+(`cd sync-server && cargo run`, with `ALBAS_SYNC_ADMIN_TOKEN` and either `ALBAS_SYNC_TOKEN` or
+`ALBAS_SYNC_ORIGIN` set so it has a way to end up with an account — default address
+`127.0.0.1:8787`) and `bun run dev` here. `src/index.ts` proxies `/api/*` to
+`ALBAS_SYNC_INTERNAL_URL` (default `http://127.0.0.1:8787`) itself in dev, stripping the
+`/api` prefix the same way nginx does in production — no local nginx needed. In production
+that route never runs; nginx gets there first.
 
-## Maintenance & Sync Protocol Updates
+## Maintenance & Protocol Updates
 
-When `sync.rs` (`src-tauri/src/sync.rs`) changes:
-1. **TABLES** additions → mirror in `web/src/types/web.ts` if the console will display them.
-2. **Payment protocol changes** → update the fetch wrapper in `web/src/api/sync.ts`.
-3. **Share group changes** → update the render logic in components.
+When `sync-server/src/main.rs` or `passkey.rs`/`password.rs`/`totp.rs` change:
+1. A new/changed field on an existing response → update the matching type in
+   `src/types/admin.ts` (admin console) or the inline shape in `lib/api.ts` (public site).
+2. A new admin route → add it to `lib/adminApi.ts` and to the endpoint table above.
+3. A new synced table → the admin console's account/table filter dropdowns
+   (`AdminConsole.tsx`) list tables by name for the Sync Data panel's filter; add it there too.
 
-The server is the source of truth; the console is a client and must adapt when the protocol changes.
+`sync-server` is the source of truth for the wire protocol; this app is a client and adapts
+when it changes, never the other way around.

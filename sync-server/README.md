@@ -74,10 +74,17 @@ a `name` are plain signup passes.
 
 Token-only accounts still work for scripting or as a fallback — `POST
 /accounts {"name":…}` (admin) returns a token shown exactly once, `GET
-/accounts` lists names, and `DELETE /accounts/<name>` revokes an account, its
-rows, tokens, passkeys and shares (devices keep their local data; it just
-stops syncing). Account names are 1–64 of `a-z A-Z 0-9 - _`. Note that with
-open signups, whether a name is taken is observable — treat names as public.
+/accounts` lists every account with its tokens, passkeys and row count inline,
+and `DELETE /accounts/<name>` revokes an account, its rows, tokens, passkeys
+and shares (devices keep their local data; it just stops syncing). Account
+names are 1–64 of `a-z A-Z 0-9 - _`. Note that with open signups, whether a
+name is taken is observable — treat names as public.
+
+**Invites are not planned to grow further.** The product direction is open
+signup only — anyone with the server link can create an account — so
+`POST /invites` (below) stays for `ALBAS_SYNC_SIGNUPS=invite` deployments and
+for attaching a passkey to an existing account, but there is deliberately no
+listing or revocation endpoint, and the admin console has no Invites panel.
 
 ### Self-service credentials
 
@@ -151,6 +158,26 @@ change bumps the grantee's `grantRev`, which tells their next sync to rebuild
 its shared cache from scratch — so a revoked share disappears from their app
 on the next sync.
 
+### Admin console
+
+`web/` (the Bun + React app deployed alongside this server) drives a handful
+of routes under `/admin/*`, all `admin_ok`-gated. They exist because the
+self-service `/shares` trio above is scoped to whichever account the bearer
+token identifies — an admin token names no account, so it needs its own
+routes rather than a mode of those:
+
+```
+GET    /admin/shares                     -> [{ownerId, granteeId, ownerName, granteeName, calendar, todos}, ...]
+PUT    /admin/shares/<owner>/<grantee>    body {"calendar": bool, "todos": bool}; both false removes
+DELETE /admin/shares/<owner>/<grantee>    same as PUT false/false
+GET    /admin/rows?account=&table=&limit= -> [{accountId, accountName, tbl, pk, updatedAt, deleted, seq}, ...]
+                                             (no `account`/`table`, or "all", means unfiltered; limit defaults
+                                             to 200, capped at 1000; never returns `payload`)
+```
+
+There is no free-form SQL endpoint — the console's query box filters the rows
+already fetched from `/admin/rows` client-side, it does not reach the server.
+
 The container listens on `127.0.0.1:8787` only. A TLS-terminating reverse proxy
 in front is mandatory, not optional — the bearer token is the sole credential, so
 it must never cross a network in cleartext, and passkeys require real HTTPS.
@@ -169,8 +196,8 @@ docker compose -f docker-compose.yml -f docker-compose.nginx.yml restart nginx
 ```
 
 **One origin serves everything**: the JSON API under `/api`, Android's
-assetlinks at the domain root, and (soon) the web console at `/`. That is
-deliberate — same-origin means the console never needs a CORS layer, and it puts
+assetlinks at the domain root, and the public splash/login/register page plus
+`/admin` at `/`. That is deliberate — same-origin means the console never needs a CORS layer, and it puts
 the WebAuthn relying party on this exact host rather than on the `danni-dev.com`
 apex, where an Albas passkey would also be offerable to every other subdomain.
 
@@ -206,7 +233,7 @@ works well).
 | Variable                    | Default               | Notes                                                                    |
 | --------------------------- | --------------------- | ------------------------------------------------------------------------ |
 | `ALBAS_SYNC_TOKEN`          | *(unset)*             | Owner's sync token; creates/re-keys the `owner` account's env credential. Min 16 chars. |
-| `ALBAS_SYNC_ADMIN_TOKEN`    | *(unset)*             | Enables the admin endpoints (`/accounts`, `/invites`). Min 16 chars.     |
+| `ALBAS_SYNC_ADMIN_TOKEN`    | *(unset)*             | Enables the admin endpoints (`/accounts`, `/admin/*`, `/invites`). Min 16 chars. |
 | `ALBAS_SYNC_ORIGIN`         | *(unset)*             | Public https **origin** — scheme and host only, no `/api` path. The WebAuthn relying party is its host, so changing it invalidates every existing passkey. Unset disables passkeys. `http://localhost:…` works for local testing. |
 | `ALBAS_SYNC_SIGNUPS`        | `open`                | `open` = anyone with the URL can register; `invite` = invite code required. |
 | `ALBAS_SYNC_ANDROID_ORIGIN` | *(unset)*             | Extra allowed WebAuthn origin (`android:apk-key-hash:…`) asserted by Android's Credential Manager. |

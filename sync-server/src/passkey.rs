@@ -546,6 +546,11 @@ pub(crate) struct InviteReq {
 /// Admin-minted invite. With a `name` it can also attach a passkey to that
 /// existing account; without one it is a plain signup pass (useful when
 /// `ALBAS_SYNC_SIGNUPS=invite`).
+///
+/// Kept for that case and for the passkey-onto-existing-account use, but not
+/// getting further admin support: there is no list/revoke endpoint, and the
+/// admin console has no Invites panel. Product direction is open signup only
+/// — see `main.rs`'s module doc comment and root `CLAUDE.md`.
 pub(crate) async fn create_invite(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

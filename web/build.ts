@@ -5,7 +5,10 @@ import path from "node:path";
 const outdir = path.join(process.cwd(), "dist");
 await rm(outdir, { recursive: true, force: true });
 
-const entrypoints = [...new Bun.Glob("src/**/*.html").scanSync()];
+// admin.html is intentionally at the project root, not under src/ (see
+// src/index.ts, which imports it as "../admin.html") — glob both locations or
+// the admin console silently never makes it into dist/.
+const entrypoints = ["admin.html", ...new Bun.Glob("src/**/*.html").scanSync()];
 
 const result = await Bun.build({
   entrypoints,

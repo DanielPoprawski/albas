@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Albas — Admin Console</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #ffffff;
+      color: #1a202c;
+      overflow: hidden;
+    }
+
+    .admin-shell { width: 100%; height: 100vh; display: flex; flex-direction: column; }
+    .admin-body { flex: 1; display: flex; overflow: hidden; }
+
+    .sidebar { width: 240px; background: #ffffff; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; overflow-y: auto; }
+    .sidebar-logo { padding: 20px 16px; border-bottom: 1px solid #e5e7eb; font-size: 16px; font-weight: 700; font-family: 'Sora', sans-serif; color: #1a202c; display: flex; align-items: center; gap: 8px; }
+    .logo-mark { width: 20px; height: 20px; background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); color: white; display: flex; align-items: center; justify-content: center; font-family: 'Sora', sans-serif; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+
+    .sidebar-menu { display: flex; flex-direction: column; gap: 2px; padding: 12px; }
+    .sidebar-section-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.6px; padding: 12px 12px 4px; }
+    .menu-item { padding: 10px 12px; cursor: pointer; font-size: 13px; font-weight: 500; color: #6b7280; transition: all 0.15s; border: 1px solid transparent; display: flex; align-items: center; gap: 8px; }
+    .menu-item:hover { background: #f3f4f6; color: #1a202c; }
+    .menu-item.active { background: #faf5ff; color: #a855f7; border-color: #a855f7; font-weight: 600; }
+    .sidebar-note { margin-top: auto; padding: 14px 16px; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; line-height: 1.5; }
+    .sidebar-note b { color: #6b7280; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+    .content { flex: 1; display: flex; flex-direction: column; background: #ffffff; overflow: hidden; }
+    .console-half { flex: 0 0 32%; min-height: 220px; border-top: 1px solid #e5e7eb; display: flex; flex-direction: column; background: #ffffff; }
+    .console-bar { height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid #e5e7eb; }
+    .console-bar-title { font-size: 12px; font-weight: 700; font-family: 'Sora', sans-serif; color: #1a202c; }
+    .console-body { flex: 1; display: flex; gap: 12px; padding: 12px 24px; overflow: hidden; }
+    .console-input, .console-output { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .console-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .console-textarea { flex: 1; padding: 12px; background: #1a202c; border: 1px solid #e5e7eb; color: #86efac; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5; resize: none; }
+    .console-textarea::placeholder { color: #64748b; }
+    .output-box { flex: 1; padding: 12px; background: #1a202c; border: 1px solid #e5e7eb; color: #86efac; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.4; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .output-empty { color: #64748b; }
+    .console-controls { display: flex; gap: 8px; margin-top: 10px; }
+    .top-bar { min-height: 48px; background: #ffffff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; flex-shrink: 0; gap: 12px; }
+    .top-bar-title { font-size: 14px; font-weight: 700; font-family: 'Sora', sans-serif; color: #1a202c; }
+    .top-bar-sub { font-size: 11px; color: #9ca3af; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .top-bar-buttons { display: flex; gap: 8px; }
+
+    button { padding: 6px 12px; border: 1px solid #e5e7eb; background: white; color: #1a202c; cursor: pointer; font-size: 12px; font-weight: 600; border-radius: 0; transition: all 0.15s; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
+    button:hover { background: #f3f4f6; border-color: #a855f7; }
+    .btn-primary { background: #a855f7; border-color: #a855f7; color: white; }
+    .btn-primary:hover { background: #9333ea; border-color: #9333ea; }
+    .btn-danger { background: #fff; color: #dc2626; border-color: #fecaca; }
+    .btn-danger:hover { background: #fef2f2; border-color: #dc2626; }
+    .btn-sm { padding: 4px 8px; font-size: 11px; }
+
+    .bottom-bar { height: 32px; background: white; border-top: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 11px; color: #6b7280; flex-shrink: 0; }
+    .bar-version { font-weight: 600; color: #1a202c; }
+    .bar-right { display: flex; align-items: center; gap: 12px; }
+    .bar-sync { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .bar-sync:hover { color: #a855f7; }
+    .bar-divider { width: 1px; height: 14px; background: #e5e7eb; }
+    .bar-user { display: flex; align-items: center; gap: 8px; }
+    .bar-user-icon { width: 20px; height: 20px; background: #a855f7; color: white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; flex-shrink: 0; }
+
+    .panels { flex: 1; display: flex; overflow: hidden; }
+    .panel { flex: 1; display: none; flex-direction: column; background: #ffffff; }
+    .panel.active { display: flex; }
+    .panel-content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 20px 24px; }
+
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .filter-bar select, .filter-bar input { padding: 7px 10px; background: white; border: 1px solid #e5e7eb; color: #1a202c; font-size: 12px; font-family: inherit; }
+
+    table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; background: white; border: 1px solid #e5e7eb; }
+    table.data-table thead { background: #f9fafb; }
+    table.data-table th { padding: 10px 12px; text-align: left; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+    table.data-table td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; color: #1a202c; vertical-align: middle; }
+    table.data-table tbody tr:hover { background: #faf5ff; }
+    table.data-table tbody tr:last-child td { border-bottom: none; }
+
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6b7280; }
+    .mono-strong { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #1a202c; font-weight: 600; }
+
+    .badge { display: inline-block; padding: 3px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+    .badge-on { background: #f3e8ff; color: #7e22ce; }
+    .badge-off { background: #f3f4f6; color: #9ca3af; }
+    .badge-active { background: #dcfce7; color: #166534; }
+    .badge-used { background: #f3f4f6; color: #6b7280; }
+    .badge-expired { background: #fee2e2; color: #991b1b; }
+    .badge-deleted { background: #fee2e2; color: #991b1b; }
+    .badge-live { background: #dcfce7; color: #166534; }
+    .badge-owner { background: #fef3c7; color: #92400e; }
+
+    .chip-row { display: flex; gap: 4px; flex-wrap: wrap; }
+    .chip { font-size: 10px; padding: 2px 6px; background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; font-family: 'JetBrains Mono', monospace; }
+
+    .row-actions { display: flex; gap: 6px; }
+
+    .schema-note { display: flex; gap: 8px; align-items: flex-start; background: #faf5ff; border: 1px solid #f3e8ff; padding: 10px 12px; margin-bottom: 16px; font-size: 11px; color: #6b21a8; line-height: 1.5; }
+    .schema-note b { font-family: 'JetBrains Mono', monospace; }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,20,25,0.5); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.active { display: flex; }
+    .modal { background: white; border: 1px solid #e5e7eb; padding: 24px; width: 480px; max-height: 82vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.12); }
+    .modal-title { font-size: 16px; font-weight: 700; font-family: 'Sora', sans-serif; color: #1a202c; margin-bottom: 4px; }
+    .modal-sub { font-size: 11px; color: #9ca3af; margin-bottom: 16px; font-family: 'JetBrains Mono', monospace; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-label { display: block; font-size: 11px; font-weight: 600; color: #6b7280; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .modal-input { width: 100%; padding: 8px 10px; background: white; border: 1px solid #e5e7eb; color: #1a202c; font-size: 12px; font-family: inherit; }
+    .modal-input:focus { outline: none; border-color: #a855f7; box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2); }
+    .modal-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
+    .modal-toggle-row:last-child { border-bottom: none; }
+    .modal-toggle-label { font-size: 12px; font-weight: 600; color: #1a202c; }
+    .modal-toggle-desc { font-size: 11px; color: #9ca3af; }
+    .toggle-switch { width: 34px; height: 18px; background: #e5e7eb; position: relative; cursor: pointer; flex-shrink: 0; }
+    .toggle-switch.on { background: #a855f7; }
+    .toggle-switch .dot { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: white; transition: left 0.15s; }
+    .toggle-switch.on .dot { left: 18px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+    .token-reveal { background: #1a202c; color: #86efac; font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 12px; word-break: break-all; margin-bottom: 10px; }
+    .token-warning { font-size: 11px; color: #92400e; background: #fef3c7; padding: 8px 10px; margin-bottom: 16px; }
+    .drawer-section { margin-bottom: 18px; }
+    .drawer-section-title { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .drawer-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #f9fafb; border: 1px solid #f3f4f6; margin-bottom: 6px; font-size: 12px; }
+    .drawer-item-label { font-weight: 600; color: #1a202c; }
+    .drawer-item-meta { font-size: 11px; color: #9ca3af; font-family: 'JetBrains Mono', monospace; }
+  </style>
+</helmet>
+<div class="admin-shell">
+<div class="admin-body">
+  <div class="sidebar">
+    <div class="sidebar-logo"><span class="logo-mark"><svg viewBox="0 0 100 100" width="20" height="20"><path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#fff"></path><path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#fff" fill-opacity="0.55"></path><path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#fff"></path></svg></span>Albas Admin</div>
+    <div class="sidebar-menu">
+      <div class="sidebar-section-label">Sync Server</div>
+      <div class="menu-item active" data-panel="accounts" onclick="switchPanel('accounts', this)">Accounts</div>
+      <div class="menu-item" data-panel="shares" onclick="switchPanel('shares', this)">Shares</div>
+      <div class="menu-item" data-panel="invites" onclick="switchPanel('invites', this)">Invites</div>
+      <div class="menu-item" data-panel="rows" onclick="switchPanel('rows', this)">Sync Data</div>
+    </div>
+    <div class="sidebar-note">Reflects the <b>rows</b>/<b>accounts</b>/<b>tokens</b>/<b>shares</b>/<b>invites</b> tables in <b>sync-server</b>. No free-form SQL is exposed by the server — every action here maps to a real admin endpoint.</div>
+  </div>
+
+  <div class="content">
+    <div class="top-bar">
+      <div>
+        <div class="top-bar-title" id="panel-title">Accounts</div>
+        <div class="top-bar-sub" id="panel-sub">4 accounts · isolated row sets</div>
+      </div>
+      <div class="top-bar-buttons" id="panel-actions">
+        <button class="btn-primary" onclick="openAddAccount()">+ New Account</button>
+      </div>
+    </div>
+
+    <div class="panels">
+      <!-- Accounts -->
+      <div class="panel active" id="panel-accounts">
+        <div class="panel-content">
+          <div class="schema-note">Backed by <b>accounts</b> (id, name, created_at, grant_rev) joined with <b>tokens</b> and <b>passkeys</b>. Deleting an account cascades to its rows, tokens, passkeys and shares — the server forgets it, devices keep their local copy.</div>
+          <table class="data-table">
+            <thead><tr><th>ID</th><th>Name</th><th>Created</th><th>Grant Rev</th><th>Tokens</th><th>Passkeys</th><th>Rows</th><th>Actions</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="mono">1</td>
+                <td><b>owner</b> <span class="badge badge-owner" style="margin-left:6px;">env</span></td>
+                <td>Oct 1, 2024</td>
+                <td class="mono">0</td>
+                <td class="chip-row"><span class="chip">env</span></td>
+                <td class="mono">0</td>
+                <td class="mono-strong">342</td>
+                <td class="row-actions"><button class="btn-sm" onclick="openAccountDrawer(1)">View</button><button class="btn-sm btn-danger" onclick="openDeleteAccount('owner')">Delete</button></td>
+              </tr>
+              <tr>
+                <td class="mono">2</td>
+                <td><b>daniel</b></td>
+                <td>Oct 3, 2024</td>
+                <td class="mono">2</td>
+                <td class="chip-row"><span class="chip">admin</span><span class="chip">passkey</span><span class="chip">passkey</span></td>
+                <td class="mono">2</td>
+                <td class="mono-strong">128</td>
+                <td class="row-actions"><button class="btn-sm" onclick="openAccountDrawer(2)">View</button><button class="btn-sm btn-danger" onclick="openDeleteAccount('daniel')">Delete</button></td>
+              </tr>
+              <tr>
+                <td class="mono">3</td>
+                <td><b>sarah</b></td>
+                <td>Oct 5, 2024</td>
+                <td class="mono">0</td>
+                <td class="chip-row"><span class="chip">passkey</span></td>
+                <td class="mono">1</td>
+                <td class="mono-strong">64</td>
+                <td class="row-actions"><button class="btn-sm" onclick="openAccountDrawer(3)">View</button><button class="btn-sm btn-danger" onclick="openDeleteAccount('sarah')">Delete</button></td>
+              </tr>
+              <tr>
+                <td class="mono">4</td>
+                <td><b>james</b></td>
+                <td>Sep 28, 2024</td>
+                <td class="mono">1</td>
+                <td class="chip-row"><span class="chip">passkey</span><span class="chip">admin</span></td>
+                <td class="mono">1</td>
+                <td class="mono-strong">21</td>
+                <td class="row-actions"><button class="btn-sm" onclick="openAccountDrawer(4)">View</button><button class="btn-sm btn-danger" onclick="openDeleteAccount('james')">Delete</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Shares -->
+      <div class="panel" id="panel-shares">
+        <div class="panel-content">
+          <div class="schema-note">Backed by <b>shares</b> (owner_id, grantee_id, calendar, todos). A grant change bumps the grantee's <b>grant_rev</b> so their next sync rebuilds the shared snapshot. Weights are never shareable — there's no column for them here.</div>
+          <table class="data-table">
+            <thead><tr><th>Owner</th><th>Grantee</th><th>Calendar</th><th>Todos</th><th>Actions</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>owner</b></td>
+                <td>daniel</td>
+                <td><span class="badge badge-on">events + periods</span></td>
+                <td><span class="badge badge-on">habits + tasks</span></td>
+                <td class="row-actions"><button class="btn-sm" onclick="openEditShare('owner','daniel',true,true)">Edit</button><button class="btn-sm btn-danger" onclick="revokeShare('owner','daniel')">Revoke</button></td>
+              </tr>
+              <tr>
+                <td><b>daniel</b></td>
+                <td>sarah</td>
+                <td><span class="badge badge-on">events + periods</span></td>
+                <td><span class="badge badge-off">none</span></td>
+                <td class="row-actions"><button class="btn-sm" onclick="openEditShare('daniel','sarah',true,false)">Edit</button><button class="btn-sm btn-danger" onclick="revokeShare('daniel','sarah')">Revoke</button></td>
+              </tr>
+              <tr>
+                <td><b>james</b></td>
+                <td>owner</td>
+                <td><span class="badge badge-off">none</span></td>
+                <td><span class="badge badge-on">habits + tasks</span></td>
+                <td class="row-actions"><button class="btn-sm" onclick="openEditShare('james','owner',false,true)">Edit</button><button class="btn-sm btn-danger" onclick="revokeShare('james','owner')">Revoke</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Invites -->
+      <div class="panel" id="panel-invites">
+        <div class="panel-content">
+          <div class="schema-note">Backed by <b>invites</b> (code_hash, name, created_at, expires_at, used_at). Only used when signups are invite-only — codes are hashed at rest, so a revoked/expired invite can't be recovered, only reissued.</div>
+          <table class="data-table">
+            <thead><tr><th>Code</th><th>Name</th><th>Created</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="mono">inv_7f3a…c92e</td>
+                <td>Sarah's invite</td>
+                <td>Oct 4, 2024</td>
+                <td>Oct 11, 2024</td>
+                <td><span class="badge badge-used">used</span></td>
+                <td class="row-actions"><button class="btn-sm" disabled style="opacity:0.4;">Revoke</button></td>
+              </tr>
+              <tr>
+                <td class="mono">inv_1d90…44ab</td>
+                <td>—</td>
+                <td>Oct 20, 2024</td>
+                <td>Oct 27, 2024</td>
+                <td><span class="badge badge-expired">expired</span></td>
+                <td class="row-actions"><button class="btn-sm" disabled style="opacity:0.4;">Revoke</button></td>
+              </tr>
+              <tr>
+                <td class="mono">inv_ae21…f00c</td>
+                <td>James' plus-one</td>
+                <td>Sep 26, 2026</td>
+                <td>Oct 3, 2026</td>
+                <td><span class="badge badge-active">active</span></td>
+                <td class="row-actions"><button class="btn-sm btn-danger" onclick="revokeInvite(this)">Revoke</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Sync Data -->
+      <div class="panel" id="panel-rows">
+        <div class="panel-content">
+          <div class="schema-note">Backed by the generic <b>rows</b> store (account_id, tbl, pk, payload, updated_at, deleted, seq) — the server never parses payloads, so this is table/pk/seq only, not the app data itself.</div>
+          <div class="filter-bar">
+            <select id="filter-account" onchange="applyRowFilter()">
+              <option value="all">All accounts</option>
+              <option value="owner">owner</option>
+              <option value="daniel">daniel</option>
+              <option value="sarah">sarah</option>
+              <option value="james">james</option>
+            </select>
+            <select id="filter-table" onchange="applyRowFilter()">
+              <option value="all">All tables</option>
+              <option value="events">events</option>
+              <option value="periods">periods</option>
+              <option value="habits">habits</option>
+              <option value="habit_completions">habit_completions</option>
+              <option value="tasks">tasks</option>
+              <option value="weights">weights</option>
+            </select>
+          </div>
+          <table class="data-table" id="rows-table">
+            <thead><tr><th>Account</th><th>Table</th><th>PK</th><th>Updated</th><th>Seq</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr data-account="daniel" data-table="tasks"><td>daniel</td><td class="mono">tasks</td><td class="mono">t_88a1</td><td>Aug 27, 2026 · 9:14 PM</td><td class="mono">4102</td><td><span class="badge badge-live">live</span></td></tr>
+              <tr data-account="daniel" data-table="habits"><td>daniel</td><td class="mono">habits</td><td class="mono">h_2c9f</td><td>Aug 27, 2026 · 9:12 PM</td><td class="mono">4099</td><td><span class="badge badge-live">live</span></td></tr>
+              <tr data-account="owner" data-table="events"><td>owner</td><td class="mono">events</td><td class="mono">e_5510</td><td>Aug 27, 2026 · 8:58 PM</td><td class="mono">4087</td><td><span class="badge badge-live">live</span></td></tr>
+              <tr data-account="sarah" data-table="tasks"><td>sarah</td><td class="mono">tasks</td><td class="mono">t_11ff</td><td>Aug 27, 2026 · 8:40 PM</td><td class="mono">4071</td><td><span class="badge badge-deleted">tombstone</span></td></tr>
+              <tr data-account="owner" data-table="periods"><td>owner</td><td class="mono">periods</td><td class="mono">p_0021</td><td>Aug 26, 2026 · 6:02 PM</td><td class="mono">3944</td><td><span class="badge badge-live">live</span></td></tr>
+              <tr data-account="james" data-table="habit_completions"><td>james</td><td class="mono">habit_completions</td><td class="mono">hc_9a01</td><td>Aug 26, 2026 · 7:30 AM</td><td class="mono">3810</td><td><span class="badge badge-live">live</span></td></tr>
+              <tr data-account="daniel" data-table="weights"><td>daniel</td><td class="mono">weights</td><td class="mono">w_3f20</td><td>Aug 25, 2026 · 7:02 AM</td><td class="mono">3702</td><td><span class="badge badge-live">live</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="console-half">
+      <div class="console-bar" style="justify-content: space-between">
+        <div style="box-sizing: border-box; display: flex; flex-direction: row; gap: normal; justify-content: flex-start; align-items: center"><div class="console-bar-title" style="margin-left: 0px; margin-right: 9px">Sync-Server Console</div><button class="btn-primary" onclick="executeQuery()" style="font-size: 12px; margin-left: 9px; margin-right: 9px">Run</button><button onclick="clearConsole()" style="font-size: 12px; margin-left: 9px; margin-right: 9px">Clear</button></div><div class="top-bar-sub" style="text-align: right">read-only · queries the rows / accounts tables shown above — the real server exposes no SQL endpoint</div>
+        
+      </div>
+      <div class="console-body">
+        <div class="console-input">
+          
+          <textarea class="console-textarea" id="console-query" placeholder="SELECT tbl, pk, seq FROM rows WHERE account_id = 2 ORDER BY seq DESC LIMIT 5;" style="width: 100%; height: 100%"></textarea>
+          <div class="console-controls">
+            
+            
+          </div>
+        </div>
+        <div class="console-output">
+          
+          <div class="output-box" id="console-output" style="width: 100%; height: 100%"><div class="console-label" style="font-family: &quot;Outfit&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">Result</div><span class="output-empty">Results will appear here…</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Account Modal -->
+  <div class="modal-overlay" id="modal-add-account">
+    <div class="modal">
+      <div class="modal-title">New Account</div>
+      <div class="modal-sub" id="add-account-body">POST /accounts</div>
+      <div id="add-account-form">
+        <div class="modal-field">
+          <label class="modal-label">Name</label>
+          <input class="modal-input" id="new-account-name" type="text" placeholder="lowercase, letters/numbers/-/_ only">
+        </div>
+        <div class="modal-actions">
+          <button onclick="closeModal('modal-add-account')">Cancel</button>
+          <button class="btn-primary" onclick="createAccount()">Create Account</button>
+        </div>
+      </div>
+      <div id="add-account-result" style="display:none;">
+        <div class="token-warning">Shown once. This account's token is hashed on the server and cannot be recovered — copy it now.</div>
+        <div class="token-reveal" id="new-token-value"></div>
+        <div class="modal-actions">
+          <button class="btn-primary" onclick="closeModal('modal-add-account')">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Detail Drawer -->
+  <div class="modal-overlay" id="modal-account-drawer">
+    <div class="modal">
+      <div class="modal-title" id="drawer-title">Account</div>
+      <div class="modal-sub">accounts · tokens · passkeys</div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Tokens</div>
+        <div id="drawer-tokens"></div>
+      </div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Passkeys</div>
+        <div id="drawer-passkeys"></div>
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal('modal-account-drawer')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Account Confirm -->
+  <div class="modal-overlay" id="modal-delete-account">
+    <div class="modal" style="width:420px;">
+      <div class="modal-title">Delete account?</div>
+      <div class="modal-sub" id="delete-account-body">DELETE /accounts/:name</div>
+      <p style="font-size:12px;color:#6b7280;line-height:1.6;margin-bottom:8px;">This removes the account's rows, tokens, passkeys, and shares in both directions. It is revocation, not archival — devices keep their local copy, the server just forgets it.</p>
+      <div class="modal-actions">
+        <button onclick="closeModal('modal-delete-account')">Cancel</button>
+        <button class="btn-danger" onclick="closeModal('modal-delete-account')">Delete Account</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Share Modal -->
+  <div class="modal-overlay" id="modal-edit-share">
+    <div class="modal">
+      <div class="modal-title" id="share-title">Edit Grant</div>
+      <div class="modal-sub" id="share-sub">PUT /shares/:name</div>
+      <div class="modal-toggle-row">
+        <div>
+          <div class="modal-toggle-label">Calendar</div>
+          <div class="modal-toggle-desc">events + periods</div>
+        </div>
+        <div class="toggle-switch" id="toggle-calendar" onclick="toggleSwitch(this)"><div class="dot"></div></div>
+      </div>
+      <div class="modal-toggle-row">
+        <div>
+          <div class="modal-toggle-label">Todos</div>
+          <div class="modal-toggle-desc">habits + habit_completions + tasks</div>
+        </div>
+        <div class="toggle-switch" id="toggle-todos" onclick="toggleSwitch(this)"><div class="dot"></div></div>
+      </div>
+      <div class="modal-actions">
+        <button onclick="closeModal('modal-edit-share')">Cancel</button>
+        <button class="btn-primary" onclick="closeModal('modal-edit-share')">Save Grant</button>
+      </div>
+    </div>
+  </div>
+</div>
+  <div class="bottom-bar">
+    <div class="bar-version">v1.9.0</div>
+    <div class="bar-right">
+      <span class="bar-sync">↻ 11:12 PM · just now</span>
+      <span class="bar-divider"></span>
+      <span class="bar-user"><span class="bar-user-icon">DP</span>Daniel P</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const ACCOUNTS = {
+  1: { name: 'owner', tokens: [{ label: 'env', created: 'Oct 1, 2024' }], passkeys: [] },
+  2: { name: 'daniel', tokens: [{ label: 'admin', created: 'Oct 3, 2024' }, { label: 'passkey', created: 'Oct 3, 2024' }, { label: 'passkey', created: 'Jan 14, 2025' }], passkeys: [{ id: 'cred_4a91…e02c', created: 'Oct 3, 2024' }, { id: 'cred_9910…7bf1', created: 'Jan 14, 2025' }] },
+  3: { name: 'sarah', tokens: [{ label: 'passkey', created: 'Oct 5, 2024' }], passkeys: [{ id: 'cred_10ee…33ab', created: 'Oct 5, 2024' }] },
+  4: { name: 'james', tokens: [{ label: 'passkey', created: 'Sep 28, 2024' }, { label: 'admin', created: 'Nov 2, 2024' }], passkeys: [{ id: 'cred_7702…af90', created: 'Sep 28, 2024' }] },
+};
+const PANEL_META = {
+  accounts: { title: 'Accounts', sub: '4 accounts · isolated row sets', action: '<button class="btn-primary" onclick="openAddAccount()">+ New Account</button>' },
+  shares: { title: 'Shares', sub: '3 active grants', action: '<button class="btn-primary" onclick="openAddShare()">+ New Grant</button>' },
+  invites: { title: 'Invites', sub: 'Invite-only signups', action: '<button class="btn-primary" onclick="openAddInvite()">+ New Invite</button>' },
+  rows: { title: 'Sync Data', sub: 'rows table · generic (account, tbl, pk) store', action: '' },
+};
+
+function switchPanel(panelName, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+  document.getElementById(`panel-${panelName}`).classList.add('active');
+  el.classList.add('active');
+  const meta = PANEL_META[panelName];
+  document.getElementById('panel-title').textContent = meta.title;
+  document.getElementById('panel-sub').textContent = meta.sub;
+  document.getElementById('panel-actions').innerHTML = meta.action;
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+function openAddAccount() {
+  document.getElementById('add-account-form').style.display = 'block';
+  document.getElementById('add-account-result').style.display = 'none';
+  document.getElementById('add-account-body').textContent = 'POST /accounts';
+  document.getElementById('new-account-name').value = '';
+  document.getElementById('modal-add-account').classList.add('active');
+}
+function createAccount() {
+  const name = document.getElementById('new-account-name').value.trim() || 'new-account';
+  document.getElementById('add-account-form').style.display = 'none';
+  document.getElementById('add-account-result').style.display = 'block';
+  const fake = Array.from({ length: 32 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+  document.getElementById('new-token-value').textContent = fake;
+  document.getElementById('add-account-body').textContent = `account "${name}" created`;
+}
+
+function openAccountDrawer(id) {
+  const acc = ACCOUNTS[id];
+  document.getElementById('drawer-title').textContent = acc.name;
+  document.getElementById('drawer-tokens').innerHTML = acc.tokens.length
+    ? acc.tokens.map(t => `<div class="drawer-item"><span class="drawer-item-label">${t.label}</span><span class="drawer-item-meta">${t.created}</span></div>`).join('')
+    : '<div class="drawer-item-meta">No tokens</div>';
+  document.getElementById('drawer-passkeys').innerHTML = acc.passkeys.length
+    ? acc.passkeys.map(p => `<div class="drawer-item"><span class="drawer-item-label mono">${p.id}</span><span class="drawer-item-meta">${p.created}</span></div>`).join('')
+    : '<div class="drawer-item-meta">No passkeys</div>';
+  document.getElementById('modal-account-drawer').classList.add('active');
+}
+
+function openDeleteAccount(name) {
+  document.getElementById('delete-account-body').textContent = `DELETE /accounts/${name}`;
+  document.getElementById('modal-delete-account').classList.add('active');
+}
+
+function openEditShare(owner, grantee, calendar, todos) {
+  document.getElementById('share-title').textContent = `${owner} → ${grantee}`;
+  document.getElementById('share-sub').textContent = `PUT /shares/${grantee}`;
+  const cal = document.getElementById('toggle-calendar');
+  const tod = document.getElementById('toggle-todos');
+  cal.classList.toggle('on', calendar);
+  tod.classList.toggle('on', todos);
+  document.getElementById('modal-edit-share').classList.add('active');
+}
+function openAddShare() { openEditShare('owner', 'new-grantee', false, false); }
+function revokeShare(owner, grantee) {
+  if (confirm(`Revoke ${owner} → ${grantee}? DELETE /shares/${grantee}`)) { /* revoked */ }
+}
+function toggleSwitch(el) { el.classList.toggle('on'); }
+
+function openAddInvite() { alert('POST /invites — generates a one-time invite code, shown once.'); }
+function revokeInvite(btn) {
+  const tr = btn.closest('tr');
+  tr.querySelector('.badge').outerHTML = '<span class="badge badge-expired">revoked</span>';
+  btn.disabled = true;
+  btn.style.opacity = '0.4';
+}
+
+function applyRowFilter() {
+  const acct = document.getElementById('filter-account').value;
+  const tbl = document.getElementById('filter-table').value;
+  document.querySelectorAll('#rows-table tbody tr').forEach(tr => {
+    const okAcct = acct === 'all' || tr.dataset.account === acct;
+    const okTbl = tbl === 'all' || tr.dataset.table === tbl;
+    tr.style.display = (okAcct && okTbl) ? '' : 'none';
+  });
+}
+
+const MOCK_ROWS = [
+  { account: 'daniel', tbl: 'tasks', pk: 't_88a1', updated: 'Aug 27, 2026 · 9:14 PM', seq: 4102, deleted: false },
+  { account: 'daniel', tbl: 'habits', pk: 'h_2c9f', updated: 'Aug 27, 2026 · 9:12 PM', seq: 4099, deleted: false },
+  { account: 'owner', tbl: 'events', pk: 'e_5510', updated: 'Aug 27, 2026 · 8:58 PM', seq: 4087, deleted: false },
+  { account: 'sarah', tbl: 'tasks', pk: 't_11ff', updated: 'Aug 27, 2026 · 8:40 PM', seq: 4071, deleted: true },
+  { account: 'owner', tbl: 'periods', pk: 'p_0021', updated: 'Aug 26, 2026 · 6:02 PM', seq: 3944, deleted: false },
+  { account: 'james', tbl: 'habit_completions', pk: 'hc_9a01', updated: 'Aug 26, 2026 · 7:30 AM', seq: 3810, deleted: false },
+  { account: 'daniel', tbl: 'weights', pk: 'w_3f20', updated: 'Aug 25, 2026 · 7:02 AM', seq: 3702, deleted: false },
+];
+function outputLabelHtml() {
+  const existing = document.getElementById('console-output').querySelector('.console-label');
+  return existing ? existing.outerHTML : '';
+}
+function executeQuery() {
+  const q = document.getElementById('console-query').value.trim();
+  const output = document.getElementById('console-output');
+  const label = outputLabelHtml();
+  if (!q) {
+    output.innerHTML = label + '<span class="output-empty">Type a query and press Run.</span>';
+    return;
+  }
+  const m = q.match(/account_id\s*=\s*'?(\w+)'?/i) || q.match(/account\s*=\s*'?(\w+)'?/i);
+  const tblMatch = q.match(/tbl\s*=\s*'?(\w+)'?/i) || q.match(/FROM\s+(\w+)/i);
+  let rows = MOCK_ROWS;
+  if (m) rows = rows.filter(r => r.account === m[1]);
+  if (tblMatch && tblMatch[1] !== 'rows') rows = rows.filter(r => r.tbl === tblMatch[1]);
+  const text = rows.length
+    ? rows.map(r => `${r.account.padEnd(8)} ${r.tbl.padEnd(18)} ${r.pk.padEnd(10)} seq=${r.seq}${r.deleted ? ' [deleted]' : ''}`).join('\n')
+      + `\n\n${rows.length} row(s) — sample data, not a live query.`
+    : 'No matching rows in the sample set.';
+  output.innerHTML = label;
+  output.appendChild(document.createTextNode(text));
+}
+function clearConsole() {
+  document.getElementById('console-query').value = '';
+  document.getElementById('console-output').innerHTML = outputLabelHtml() + '<span class="output-empty">Results will appear here…</span>';
+}
+
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
