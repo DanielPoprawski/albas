@@ -43,6 +43,7 @@
 //! for attaching a passkey to an existing account, but is not wired into the
 //! console. See root `CLAUDE.md`, "Project direction".
 
+mod app_session;
 mod passkey;
 mod password;
 mod totp;
@@ -94,6 +95,16 @@ CREATE TABLE IF NOT EXISTS invites (
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   used_at    INTEGER
+);
+CREATE TABLE IF NOT EXISTS app_sessions (
+  -- SHA-256 of the nonce, never the nonce itself: a database read must not
+  -- yield something that can be polled for a token.
+  nonce_hash TEXT    PRIMARY KEY,
+  -- NULL until the browser claims it; that is what 'pending' means.
+  account_id INTEGER REFERENCES accounts(id),
+  -- The minted app token, held in the clear only between claim and collection.
+  token      TEXT,
+  created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS shares (
   owner_id   INTEGER NOT NULL REFERENCES accounts(id),
@@ -300,6 +311,9 @@ async fn main() {
             put(admin_share_put).delete(admin_share_delete),
         )
         .route("/admin/rows", get(admin_rows))
+        .route("/app-session", post(app_session::create))
+        .route("/app-session/claim", post(app_session::claim))
+        .route("/app-session/:nonce", get(app_session::poll))
         .route("/register/start", post(passkey::register_start))
         .route("/register/finish", post(passkey::register_finish))
         .route("/login/start", post(passkey::login_start))

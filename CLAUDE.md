@@ -77,6 +77,14 @@ bun run version:check
 - **`tauri.conf.json`**: strict JSON (no comments) — `//` causes "key must be a string" error.
 
 ## Project direction (settled decisions)
+- **Auth is moving into the browser** (2026-08, reverses the in-app-ceremony decision
+  below). Reasons: iOS is planned and `tauri-plugin-webauthn` has no iOS support, Google
+  blocks OAuth in embedded webviews, and the original motive — not having to build a
+  website — is moot now that `web/` is deployed. Handoff is **nonce + poll**
+  (`sync-server/src/app_session.rs`), deliberately *not* an `albas://` deep link: a custom
+  scheme needs an Android intent filter, an iOS entitlement and a `.desktop` registration
+  AppImage builds never get, and any app may claim the scheme. A deep link can be layered
+  on later without changing that contract.
 - **Local-only is free; sync is paid.** Offline must work fully. Accounts/registration free for now (`ALBAS_SYNC_SIGNUPS` defaults open). No subscription yet; don't add entitlement checks.
 - **Plaintext payloads** (for now). E2E breaks admin viewer and read-only sharing. Intermediate step: encryption at rest, server-held key.
 - **Invites moving away** (2026-08). Signup is open (anyone can create account). `POST /invites` kept only for bootstrapping existing accounts and `ALBAS_SYNC_SIGNUPS=invite` deployments. No further build-out (no list/revoke, no admin panel).
@@ -97,6 +105,13 @@ bun run version:check
    would mean touching the schema, `sync.rs` `TABLES` and `sharedLogic.ts` together.
 6. The `habits` route is unpersisted because `ActiveView` has no name for it, so a restart
    from Habits lands on the dashboard.
+7. **Push 2FA ("approve this sign-in on another device")** is wanted but deliberately not
+   built. Unlike TOTP and cross-device passkeys — which come free with WebAuthn hybrid
+   transport — it needs a real backend: device registration, a push channel per platform,
+   pending-approval state, and expiry. Revisit once browser auth has settled.
+8. `Settings.tsx`'s `AccountSigninCard` still drives the in-app passkey ceremony
+   (`usePasskeyAuth`). The splash now uses the browser flow; this card is the last
+   in-app-ceremony caller and goes when `tauri-plugin-webauthn` is removed.
 
 ## Typography & icons
 - **Fonts**: Outfit (body), Sora (headings), self-hosted from `public/Outfit/` + `public/Sora/`. `--t-font-body` / `--t-font-heading`. Nothing from fonts.googleapis.com.

@@ -116,3 +116,31 @@ export async function loginWithPassword(name: string, password: string, code?: s
     throw e;
   }
 }
+
+// --- App session handoff ---
+
+/**
+ * What the desktop/Android app is waiting for. The app opened this page with a
+ * nonce it generated and is polling the server; claiming binds that nonce to
+ * the account this browser is signed in as, and mints the app its own token.
+ *
+ * The code comes back from the server rather than being derived here so the
+ * app and the browser cannot disagree about what to show the user.
+ */
+export interface AppSessionClaim {
+  code: string;
+  account: string;
+}
+
+export async function claimAppSession(nonce: string, token: string): Promise<AppSessionClaim> {
+  const res = await fetch("/api/app-session/claim", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ nonce }),
+  });
+  if (!res.ok) {
+    const text = (await res.text().catch(() => "")).trim();
+    throw new ApiError(text || `Request failed (${res.status}).`, res.status);
+  }
+  return (await res.json()) as AppSessionClaim;
+}

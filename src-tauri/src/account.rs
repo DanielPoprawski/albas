@@ -135,6 +135,21 @@ fn finish(app: &tauri::AppHandle, path: &str, mut body: Value) -> Result<Value, 
     let res: FinishRes = serde_json::from_value(post_json(&format!("{base}/{path}"), None, &body)?)
         .map_err(|e| format!("Bad response from server: {e}"))?;
 
+    adopt_session(app, &base, &res.token, &res.name)?;
+    *app.state::<AuthFlow>().0.lock().map_err(err)? = None;
+    Ok(json!({ "name": res.name }))
+}
+
+/// Swaps this device onto an account in one transaction. Local data is
+/// untouched — it will full-push on the next sync — but every watermark
+/// resets, because they were scoped to whatever account this device synced
+/// before. Shared by the passkey ceremony and the browser sign-in.
+fn adopt_session(
+    app: &tauri::AppHandle,
+    base: &str,
+    token: &str,
+    name: &str,
+) -> Result<(), String> {
     let db = app.state::<Db>();
     let mut guard = db.0.lock().map_err(err)?;
     let tx = guard.transaction().map_err(err)?;
@@ -143,11 +158,9 @@ fn finish(app: &tauri::AppHandle, path: &str, mut body: Value) -> Result<Value, 
         db::write_meta(&tx, key, "0").map_err(err)?;
     }
     db::write_setting(&tx, URL_SETTING, &format!("{base}/sync")).map_err(err)?;
-    db::write_setting(&tx, TOKEN_SETTING, &res.token).map_err(err)?;
-    db::write_setting(&tx, ACCOUNT_SETTING, &res.name).map_err(err)?;
-    tx.commit().map_err(err)?;
-    *app.state::<AuthFlow>().0.lock().map_err(err)? = None;
-    Ok(json!({ "name": res.name }))
+    db::write_setting(&tx, TOKEN_SETTING, token).map_err(err)?;
+    db::write_setting(&tx, ACCOUNT_SETTING, name).map_err(err)?;
+    tx.commit().map_err(err)
 }
 
 #[tauri::command]
@@ -329,4 +342,100 @@ mod tests {
         // What the shipped default already is, normalised to itself.
         assert_eq!(normalize_base(crate::sync::DEFAULT_URL), "https://albas.danni-dev.com/api");
     }
+}
+
+// --- Browser sign-in ---
+//
+// The ceremony runs on the public site, not in this WebView: that is what lets
+// one flow cover passkeys, password + TOTP and (later) Google OAuth, and what
+// makes iOS reachable at all, since `tauri-plugin-webauthn` has no iOS support.
+//
+// The app never sees the browser's session. It opens the portal with a nonce
+// and polls until the page reports a token bound to that nonce. Deliberately
+// not an `albas://` deep link — see `sync-server/src/app_session.rs`.
+
+/// The portal that serves `/login`, derived from the API base by dropping the
+/// `/api` prefix nginx strips before proxying. A self-hosted base without that
+/// prefix is returned unchanged.
+fn portal_base(base: &str) -> String {
+    base.strip_suffix("/api").unwrap_or(base).trim_end_matches('/').to_string()
+}
+
+fn get_json_unauth(url: &str) -> Result<Value, String> {
+    ureq::get(url)
+        .timeout(Duration::from_secs(30))
+        .call()
+        .map_err(friendly)?
+        .into_json()
+        .map_err(|e| format!("Bad response from server: {e}"))
+}
+
+/// Opens a pending sign-in. Returns the nonce to poll, the code to show the
+/// user, and the URL the frontend should open in the system browser.
+#[tauri::command]
+pub async fn app_signin_start(
+    app: tauri::AppHandle,
+    url: String,
+    screen: Option<String>,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = normalize_base(&url);
+        check_url(&base)?;
+        // Whitelisted rather than interpolated: this ends up in a URL handed to
+        // the system browser, so it must not be caller-controlled text.
+        let screen = match screen.as_deref() {
+            Some("register") => "register",
+            _ => "login",
+        };
+        let res = post_json(&format!("{base}/app-session"), None, &json!({}))?;
+        let nonce = res["nonce"].as_str().ok_or("Bad response from server: no nonce")?;
+        let code = res["code"].as_str().unwrap_or("");
+        let portal = format!("{}/{}?app_session={}", portal_base(&base), screen, nonce);
+        // Remembered the same way a ceremony is, so a poll can't be pointed at
+        // a different host than the session was opened on.
+        *app.state::<AuthFlow>().0.lock().map_err(err)? = Some(base);
+        Ok(json!({ "nonce": nonce, "code": code, "url": portal }))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// One poll. Returns `pending`, `expired`, or `ready` — and on `ready` this
+/// device is already switched onto the account before the frontend hears back.
+#[tauri::command]
+pub async fn app_signin_poll(app: tauri::AppHandle, nonce: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = app
+            .state::<AuthFlow>()
+            .0
+            .lock()
+            .map_err(err)?
+            .clone()
+            .ok_or("No sign-in in progress — start again.")?;
+        let res = get_json_unauth(&format!("{base}/app-session/{nonce}"))?;
+        match res["status"].as_str().unwrap_or("") {
+            "ready" => {
+                let token = res["token"].as_str().ok_or("Bad response from server: no token")?;
+                let name = res["account"].as_str().unwrap_or("");
+                adopt_session(&app, &base, token, name)?;
+                *app.state::<AuthFlow>().0.lock().map_err(err)? = None;
+                Ok(json!({ "status": "ready", "account": name }))
+            }
+            "expired" => {
+                *app.state::<AuthFlow>().0.lock().map_err(err)? = None;
+                Ok(json!({ "status": "expired" }))
+            }
+            _ => Ok(json!({ "status": "pending" })),
+        }
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Abandons a sign-in so a later poll can't resume it. The server row is left
+/// to expire on its own — it is useless without the nonce.
+#[tauri::command]
+pub async fn app_signin_cancel(app: tauri::AppHandle) -> Result<(), String> {
+    *app.state::<AuthFlow>().0.lock().map_err(err)? = None;
+    Ok(())
 }

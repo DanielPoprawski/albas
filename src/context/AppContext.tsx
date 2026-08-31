@@ -471,7 +471,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       lastSync,
       syncing,
       syncNow,
-      welcomeDone: !!settings.__welcome_done || signedIn,
+      // Compared against '1' rather than coerced: the flag is cleared by
+      // writing '0', and `!!'0'` is true in JS, so a presence check would make
+      // sign-out fail to return the user to the splash.
+      welcomeDone: settings.__welcome_done === '1' || signedIn,
     }}>
       {children}
     </AppContext.Provider>

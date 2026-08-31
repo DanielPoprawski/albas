@@ -13,6 +13,7 @@ import { parseIcs } from '../ics';
 import { usePasskeyAuth } from './auth/usePasskeyAuth';
 import PinDialog from './auth/PinDialog';
 import { Switch } from './ui/switch';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { DEFAULT_SYNC_URL, syncEndpoint } from '../syncServer';
 import { initialsOf } from './AppShell';
 import {
@@ -96,6 +97,12 @@ export default function Settings() {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('sync_sign_out');
       await reloadFromStore();
+      // Order matters: persistence writes go through a serial queue that
+      // load() does not join, so clearing the flag *before* reloadFromStore
+      // would race the read-back and be clobbered by the stale '1'.
+      // Without this the user is signed out but never returns to the splash,
+      // because welcomeDone is `__welcome_done || signedIn`.
+      setSetting('__welcome_done', '0');
       await refreshStatus();
       setToken('');
       setSyncState({ kind: 'idle' });
@@ -231,6 +238,10 @@ function SessionCard({
   onSignOut: () => void;
   busy: boolean;
 }) {
+  // Signing out now drops the user back to the splash screen, so confirm it
+  // rather than firing on a single stray click.
+  const [confirming, setConfirming] = useState(false);
+
   return (
     <Card title="Session">
       <SettingItem label="Sync" description={status?.lastSync ? `Last sync: ${new Date(Number(status.lastSync)).toLocaleString()}` : 'Never synced'}>
@@ -239,10 +250,37 @@ function SessionCard({
         </button>
       </SettingItem>
       <SettingItem label="Log out" description="Sign out of this device">
-        <button onClick={onSignOut} className="button-small button-danger">
+        <button onClick={() => setConfirming(true)} className="button-small button-danger">
           Log Out
         </button>
       </SettingItem>
+      <Dialog open={confirming} onOpenChange={setConfirming}>
+        <DialogContent
+          showCloseButton={false}
+          className="block rounded-2xl p-md w-full max-w-[min(24rem,calc(100%-2rem))] border-line shadow-2xl"
+        >
+          <DialogTitle className="text-headline-lg-mobile font-title font-normal text-txt mb-sm">
+            Sign out{status?.account ? ` of ${status.account}` : ''}?
+          </DialogTitle>
+          <DialogDescription className="text-body-sm text-ink-muted mb-md">
+            Your local items stay on this device, but syncing will stop until you sign in again.
+          </DialogDescription>
+          <div className="flex gap-xs justify-end">
+            <button onClick={() => setConfirming(false)} className="button-small">
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                setConfirming(false);
+                onSignOut();
+              }}
+              className="button-small button-danger"
+            >
+              Sign Out
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
       {syncState.kind === 'ok' && <p style={{ fontSize: '12px', color: 'var(--t-success)', marginTop: '12px' }}>{syncState.message}</p>}
       {syncState.kind === 'error' && <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{syncState.message}</p>}
     </Card>
