@@ -1,50 +1,41 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { usePasskeyAuth } from './auth/usePasskeyAuth';
 import { useBrowserSignIn, type BrowserSignInState } from './auth/useBrowserSignIn';
-import PinDialog from './auth/PinDialog';
 
 type Screen = 'splash' | 'signin' | 'register' | 'offline';
 
 /**
  * Entry point: splash screen + three auth cards (sign in, register, offline).
  * Full-screen gate rendering instead of the app while awaiting welcomeDone.
- * All flows preserve the existing passkey/password auth via usePasskeyAuth.
+ *
+ * Sign-in and account creation both happen in the system browser now — see
+ * `useBrowserSignIn` — since passkeys, password + TOTP and (later) Google
+ * OAuth all live on the public site rather than an in-app WebAuthn ceremony.
  */
 export default function Welcome() {
   const { setSetting } = useApp();
-  const auth = usePasskeyAuth();
   const browser = useBrowserSignIn();
   const [screen, setScreen] = useState<Screen>('splash');
-  const [name, setName] = useState('');
-
-  const busy = auth.state.kind === 'busy';
 
   const handleUseOffline = () => {
     setSetting('__welcome_done', '1');
   };
 
-  const handleCreateAccount = async () => {
-    if (name.trim()) {
-      await auth.createAccount(name.trim(), null);
-    }
-  };
+  const busy = browser.state.kind === 'starting' || browser.state.kind === 'waiting';
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-gradient-to-br from-[var(--t-page)] to-[var(--t-page-shade)]">
       {screen === 'splash' && (
         <SplashScreen
           onSignIn={() => setScreen('signin')}
-          onCreateAccount={() => {
-            setName('');
-            setScreen('register');
-          }}
+          onCreateAccount={() => setScreen('register')}
           onUseOffline={() => setScreen('offline')}
         />
       )}
 
       {screen === 'signin' && (
-        <BrowserSignInCard
+        <BrowserAuthCard
+          mode="login"
           state={browser.state}
           onStart={() => void browser.start('login')}
           onCancel={() => void browser.cancel()}
@@ -57,14 +48,16 @@ export default function Welcome() {
       )}
 
       {screen === 'register' && (
-        <RegisterCard
-          name={name}
-          setName={setName}
-          onBack={() => setScreen('splash')}
-          onSubmit={handleCreateAccount}
-          busy={busy}
-          state={auth.state}
-          footerLink={() => setScreen('signin')}
+        <BrowserAuthCard
+          mode="register"
+          state={browser.state}
+          onStart={() => void browser.start('register')}
+          onCancel={() => void browser.cancel()}
+          onBack={() => {
+            void browser.cancel();
+            setScreen('splash');
+          }}
+          onFooterClick={() => setScreen('signin')}
         />
       )}
 
@@ -73,14 +66,6 @@ export default function Welcome() {
           onStart={handleUseOffline}
           onBack={() => setScreen('splash')}
           busy={busy}
-        />
-      )}
-
-      {auth.pin && (
-        <PinDialog
-          attemptsRemaining={auth.pin.attemptsRemaining}
-          onSubmit={auth.submitPin}
-          onCancel={auth.cancelPin}
         />
       )}
     </div>
@@ -161,107 +146,6 @@ function SplashScreen({
 }
 
 /**
- * Register card. Account name only: signups are open by default, and the
- * server keeps `POST /invites` purely for ALBAS_SYNC_SIGNUPS=invite
- * deployments and for bootstrapping an existing account, which is reached
- * through Settings -> Advanced sync token instead.
- */
-function RegisterCard({
-  name,
-  setName,
-  onBack,
-  onSubmit,
-  busy,
-  state,
-  footerLink,
-}: {
-  name: string;
-  setName: (v: string) => void;
-  onBack: () => void;
-  onSubmit: () => void;
-  busy: boolean;
-  state: any;
-  footerLink: () => void;
-}) {
-  return (
-    <div className="h-full flex items-center justify-center px-[20px]">
-      <div className="bg-white w-full max-w-[420px] p-[40px] shadow-[0_10px_40px_rgba(0,0,0,0.08)]">
-        {/* Header */}
-        <div className="text-center mb-[32px]">
-          <h2 className="text-[28px] font-bold font-heading text-[var(--t-ink)] mb-[8px]">
-            Get Started
-          </h2>
-          <p className="text-[14px] text-[var(--t-ink-muted)]">Create your Albas account</p>
-        </div>
-
-        {/* Form fields */}
-        <div className="space-y-[20px] mb-[20px]">
-          {/* Account name */}
-          <div>
-            <label className="block text-[13px] font-semibold text-[var(--t-ink)] uppercase tracking-wider mb-[8px]">
-              Account Name
-            </label>
-            <input
-              type="text"
-              placeholder="letters, digits, - or _"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={busy}
-              className="w-full px-[16px] py-[12px] border-2 border-[var(--t-border)] text-[14px] font-body placeholder:text-[var(--t-ink-muted)] focus:outline-none focus:border-[var(--t-accent)] focus:shadow-[0_0_0_3px_rgba(168,85,247,0.1)] transition-all duration-300"
-            />
-          </div>
-        </div>
-
-        {/* Passkey note */}
-        <div className="bg-[var(--t-cat-purple-tint)] border-l-4 border-[var(--t-accent)] px-[16px] py-[12px] text-[13px] text-[var(--t-cat-purple-ink)] mb-[20px] leading-relaxed">
-          🔐 You'll create a passkey to protect your account. No password needed.
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-[12px] mt-[28px]">
-          <button
-            onClick={onSubmit}
-            disabled={busy || name.trim() === ''}
-            className="flex-1 px-[12px] py-[12px] text-white font-semibold text-[16px] cursor-pointer transition-all duration-300 hover:translate-y-[-2px] disabled:opacity-40 disabled:pointer-events-none"
-            style={{ background: 'linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%)' }}
-          >
-            Create Account
-          </button>
-          <button
-            onClick={onBack}
-            disabled={busy}
-            className="flex-1 px-[12px] py-[12px] bg-transparent text-[var(--t-accent)] font-semibold text-[16px] cursor-pointer transition-colors duration-300 hover:bg-[var(--t-cat-purple-tint)] disabled:opacity-40 disabled:pointer-events-none"
-          >
-            Back
-          </button>
-        </div>
-
-        {/* Status messages */}
-        {state.kind === 'busy' && (
-          <p className="text-[14px] text-[var(--t-ink-muted)] mt-[20px]">{state.what}</p>
-        )}
-        {state.kind === 'error' && (
-          <p className="text-[14px] text-[var(--t-danger)] mt-[20px]">{state.message}</p>
-        )}
-
-        {/* Footer */}
-        <div className="text-center mt-[24px] pt-[24px] border-t border-[var(--t-border)]">
-          <p className="text-[13px] text-[var(--t-ink-muted)] leading-relaxed">
-            Already have an account?{' '}
-            <button
-              onClick={footerLink}
-              className="text-[var(--t-accent)] font-semibold cursor-pointer hover:underline"
-            >
-              Sign in
-            </button>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
  * Offline entry card with warning callout.
  */
 function OfflineCard({
@@ -318,17 +202,20 @@ function OfflineCard({
 }
 
 /**
- * Sign-in card for the browser flow. The ceremony happens on the public site,
- * so this card's job is to open it, show the code that proves the page belongs
- * to *this* request, and let the user give up.
+ * Sign-in / create-account card for the browser flow. The ceremony happens
+ * on the public site (login or register screen, picked by `mode`), so this
+ * card's job is to open it, show the code that proves the page belongs to
+ * *this* request, and let the user give up.
  */
-function BrowserSignInCard({
+function BrowserAuthCard({
+  mode,
   state,
   onStart,
   onCancel,
   onBack,
   onFooterClick,
 }: {
+  mode: 'login' | 'register';
   state: BrowserSignInState;
   onStart: () => void;
   onCancel: () => void;
@@ -337,16 +224,21 @@ function BrowserSignInCard({
 }) {
   const waiting = state.kind === 'waiting';
   const busy = waiting || state.kind === 'starting';
+  const isLogin = mode === 'login';
 
   return (
     <div className="h-full flex items-center justify-center px-[20px]">
       <div className="bg-white w-full max-w-[420px] p-[40px] shadow-[0_10px_40px_rgba(0,0,0,0.08)]">
         <div className="text-center mb-[32px]">
           <h2 className="text-[28px] font-bold font-heading text-[var(--t-ink)] mb-[8px]">
-            Welcome Back
+            {isLogin ? 'Welcome Back' : 'Get Started'}
           </h2>
           <p className="text-[14px] text-[var(--t-ink-muted)]">
-            {waiting ? 'Finish signing in in your browser' : 'Sign in through your browser'}
+            {waiting
+              ? `Finish ${isLogin ? 'signing in' : 'creating your account'} in your browser`
+              : isLogin
+                ? 'Sign in through your browser'
+                : 'Create your account in your browser'}
           </p>
         </div>
 
@@ -356,7 +248,7 @@ function BrowserSignInCard({
             <div className="text-[28px] font-bold font-heading tracking-[0.3em] my-[8px]">
               {state.code}
             </div>
-            If it shows a different code, cancel here — that sign-in was started somewhere else.
+            If it shows a different code, cancel here — that request was started somewhere else.
           </div>
         ) : (
           <div className="bg-[var(--t-cat-purple-tint)] border-l-4 border-[var(--t-accent)] px-[16px] py-[12px] text-[13px] text-[var(--t-cat-purple-ink)] mb-[20px] leading-relaxed">
@@ -371,7 +263,7 @@ function BrowserSignInCard({
             className="flex-1 px-[12px] py-[12px] text-white font-semibold text-[16px] cursor-pointer transition-all duration-300 hover:translate-y-[-2px] disabled:opacity-40 disabled:pointer-events-none"
             style={{ background: 'linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%)' }}
           >
-            {waiting ? 'Cancel' : 'Sign In'}
+            {waiting ? 'Cancel' : isLogin ? 'Sign In' : 'Create Account'}
           </button>
           <button
             onClick={onBack}
@@ -394,13 +286,13 @@ function BrowserSignInCard({
 
         <div className="text-center mt-[24px] pt-[24px] border-t border-[var(--t-border)]">
           <p className="text-[13px] text-[var(--t-ink-muted)] leading-relaxed">
-            Don't have an account?{' '}
+            {isLogin ? "Don't have an account? " : 'Already have an account? '}
             <button
               onClick={onFooterClick}
               disabled={busy}
               className="text-[var(--t-accent)] font-semibold cursor-pointer hover:underline disabled:opacity-40"
             >
-              Create one
+              {isLogin ? 'Create one' : 'Sign in'}
             </button>
           </p>
         </div>

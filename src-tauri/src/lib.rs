@@ -30,7 +30,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_webauthn::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -62,15 +61,9 @@ pub fn run() {
             sync::sync_now,
             sync::sync_status,
             db::load_shared,
-            account::auth_register_start,
-            account::auth_register_finish,
             account::app_signin_start,
             account::app_signin_poll,
             account::app_signin_cancel,
-            account::auth_add_passkey_start,
-            account::auth_add_passkey_finish,
-            account::auth_login_start,
-            account::auth_login_finish,
             account::shares_list,
             account::shares_set,
             account::sync_sign_out,

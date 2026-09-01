@@ -10,8 +10,7 @@ import { useApp } from '../context/AppContext';
 import type { SyncStatusInfo } from '../context/AppContext';
 import { inTauri } from '../persistence';
 import { parseIcs } from '../ics';
-import { usePasskeyAuth } from './auth/usePasskeyAuth';
-import PinDialog from './auth/PinDialog';
+import { useBrowserSignIn } from './auth/useBrowserSignIn';
 import { Switch } from './ui/switch';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { DEFAULT_SYNC_URL, syncEndpoint } from '../syncServer';
@@ -61,8 +60,8 @@ export default function Settings() {
   const [manual, setManual] = useState(false);
 
   const available = inTauri();
-  const auth = usePasskeyAuth();
-  const busy = syncState.kind === 'busy' || auth.state.kind === 'busy';
+  const browser = useBrowserSignIn();
+  const busy = syncState.kind === 'busy' || browser.state.kind === 'starting' || browser.state.kind === 'waiting';
 
   useEffect(() => {
     if (!available) return;
@@ -74,7 +73,7 @@ export default function Settings() {
         // backend not ready
       }
     })();
-  }, [available, auth.state.kind]);
+  }, [available, browser.state.kind]);
 
   async function sync() {
     setSyncState({ kind: 'busy', what: 'Syncing' });
@@ -156,7 +155,7 @@ export default function Settings() {
         )}
 
         <AccountSigninCard
-          auth={auth}
+          browser={browser}
           busy={busy}
           token={token}
           setToken={setToken}
@@ -330,7 +329,7 @@ function useAuthMethods(ctx: AuthMethodContext, enabled: boolean) {
 }
 
 function AccountSigninCard({
-  auth,
+  browser,
   busy,
   token,
   setToken,
@@ -340,7 +339,7 @@ function AccountSigninCard({
   status,
   syncToken,
 }: {
-  auth: ReturnType<typeof usePasskeyAuth>;
+  browser: ReturnType<typeof useBrowserSignIn>;
   busy: boolean;
   token: string;
   setToken: (t: string) => void;
@@ -376,13 +375,24 @@ function AccountSigninCard({
       {!configured ? (
         <div style={{ paddingTop: '16px', paddingBottom: '16px' }}>
           <p style={{ fontSize: '12px', color: 'var(--t-ink-secondary)', marginBottom: '16px' }}>
-            Your passkey - a security key, fingerprint or face unlock - is the whole sign-in; there is no password. Accounts are free.
+            Sign in through your browser - passkey, password or two-factor, whichever you've set up. Accounts are free.
           </p>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-            <button onClick={() => auth.signIn()} disabled={busy} className="button-primary">
-              Sign in with passkey
+            <button onClick={() => void browser.start('login')} disabled={busy} className="button-primary">
+              Sign in
             </button>
           </div>
+          {browser.state.kind === 'waiting' && (
+            <p style={{ fontSize: '12px', color: 'var(--t-ink-secondary)', marginBottom: '16px' }}>
+              Finish in your browser - it should show the code <strong>{browser.state.code}</strong>.{' '}
+              <button
+                onClick={() => void browser.cancel()}
+                style={{ background: 'none', border: 'none', color: 'var(--t-accent)', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+              >
+                Cancel
+              </button>
+            </p>
+          )}
           <button
             onClick={() => setManual(!manual)}
             style={{ fontSize: '11px', color: 'var(--t-ink-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
@@ -468,9 +478,8 @@ function AccountSigninCard({
           </div>
         </>
       )}
-      {auth.state.kind === 'busy' && <p style={{ fontSize: '12px', color: 'var(--t-ink-secondary)', marginTop: '12px' }}>{auth.state.what}</p>}
-      {auth.state.kind === 'error' && <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{auth.state.message}</p>}
-      {auth.pin && <PinDialog attemptsRemaining={auth.pin.attemptsRemaining} onSubmit={auth.submitPin} onCancel={auth.cancelPin} />}
+      {browser.state.kind === 'starting' && <p style={{ fontSize: '12px', color: 'var(--t-ink-secondary)', marginTop: '12px' }}>Opening your browser…</p>}
+      {browser.state.kind === 'error' && <p style={{ fontSize: '12px', color: 'var(--t-danger)', marginTop: '12px' }}>{browser.state.message}</p>}
     </Card>
   );
 }

@@ -425,10 +425,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const signedIn = !!settings.__sync_token?.trim();
 
-  // Rust owns the stamp, and not every sync passes through `syncNow`: a
-  // passkey ceremony (`usePasskeyAuth`) syncs from inside the flow, so on
-  // sign-in React can only learn when that happened by asking. Signing out
-  // clears it — the next account's history is not this one's.
+  // Rust owns the stamp, and not every sync passes through `syncNow`: the
+  // browser sign-in flow (`useBrowserSignIn`) syncs from inside the poll
+  // loop, so on sign-in React can only learn when that happened by asking.
+  // Signing out clears it — the next account's history is not this one's.
   useEffect(() => {
     if (!inTauri()) return;
     if (!signedIn) {

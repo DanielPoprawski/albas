@@ -5,16 +5,13 @@
  * than inferring it from local state — a device holds a token, not a list of
  * credentials, and a passkey added on another device must still show up here.
  *
- * The action is a second door onto the same account: `POST /passkeys/{start,
- * finish}` authenticate with the bearer token this device already has, so
- * adding a key needs no admin-minted invite. It does need the OS authenticator,
- * which only exists inside Tauri — in the browser dev server the rows still
- * load but the button says why it cannot run.
+ * Adding a passkey is no longer an in-app ceremony: `tauri-plugin-webauthn`
+ * is gone, so the action just sends the user to the browser sign-in portal,
+ * where passkeys, password and TOTP all live now. This method is otherwise
+ * informational — it lists what's attached, it doesn't drive attaching one.
  */
-import { useState } from 'react';
-import PinDialog from '../components/auth/PinDialog';
-import { usePasskeyAuth } from '../components/auth/usePasskeyAuth';
 import { inTauri } from '../persistence';
+import { DEFAULT_SYNC_URL } from '../syncServer';
 import { registerAuthMethod, type AuthMethodContext, type AuthMethodRow } from './registry';
 
 /** What `GET /passkeys` returns. The server stores no device name, so `label`
@@ -54,53 +51,31 @@ async function load(ctx: AuthMethodContext): Promise<AuthMethodRow[]> {
   }));
 }
 
-function AddPasskey({ ctx }: { ctx: AuthMethodContext }) {
-  const auth = usePasskeyAuth();
-  const [done, setDone] = useState(false);
-  const tauri = inTauri();
-  const busy = auth.state.kind === 'busy' ? auth.state.what : null;
+/** The portal that serves `/login`, mirroring `portal_base()` in
+ *  `account.rs`: the API base with its `/api` prefix (stripped by nginx
+ *  before proxying) dropped. */
+function portalUrl(): string {
+  return DEFAULT_SYNC_URL.replace(/\/api\/?$/, '');
+}
 
-  async function add() {
-    setDone(false);
-    // The hook reports failure through its own state rather than throwing, so
-    // the boolean is what says whether a credential actually landed.
-    if (!(await auth.addPasskey())) return;
-    setDone(true);
-    ctx.refresh();
+async function openPortal() {
+  const url = portalUrl();
+  if (inTauri()) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+  } else {
+    window.open(url, '_blank', 'noopener');
   }
+}
 
-  // `done` gates on our own call finishing; the hook's state may still read
-  // 'done' from an earlier sign-in on the same screen.
-  const message =
-    auth.state.kind === 'error'
-      ? auth.state.message
-      : (busy ??
-        (done
-          ? 'Passkey added.'
-          : !tauri
-            ? 'Passkeys need the Albas app — the browser dev server has no authenticator.'
-            : null));
-
+function AddPasskey({ ctx }: { ctx: AuthMethodContext }) {
   return (
-    <>
-      <div>
-        <button
-          className="button-primary"
-          disabled={!tauri || !ctx.token || busy !== null}
-          onClick={() => void add()}
-        >
-          Add a passkey
-        </button>
-        {message && <p className="setting-desc">{message}</p>}
-      </div>
-      {auth.pin && (
-        <PinDialog
-          attemptsRemaining={auth.pin.attemptsRemaining}
-          onSubmit={auth.submitPin}
-          onCancel={auth.cancelPin}
-        />
-      )}
-    </>
+    <div>
+      <button className="button-primary" disabled={!ctx.token} onClick={() => void openPortal()}>
+        Manage in browser
+      </button>
+      <p className="setting-desc">Passkeys are added and removed from the browser sign-in page.</p>
+    </div>
   );
 }
 
