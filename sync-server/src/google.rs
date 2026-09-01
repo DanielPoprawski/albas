@@ -42,14 +42,16 @@
 //! time someone signs in through it via Google. A later Google sign-in with
 //! the same verified email always resolves to that same account. The first
 //! time, `find_or_create_account` derives a candidate account name from the
-//! email's local part; if that name is already taken by an account with no
-//! password set, it adopts it (nothing else could touch it without a
-//! passkey, so nothing is being handed over). If that name is taken by an
-//! account that *has* a password, it deliberately does not — a password is a
-//! standing credential someone else chose, and linking would hand them access
-//! to whatever the real, Google-verified owner of that email later syncs into
-//! it. See root CLAUDE.md's Phase 2 plan note on this. A fresh, distinctly
-//! named account is created instead.
+//! email's local part — but a name collision never adopts the existing
+//! account, whatever credentials it holds. Controlling `alice@` at any domain
+//! Google will issue a token for says nothing about who owns the local
+//! account named `alice`, and a passwordless account is not an unclaimed one:
+//! in this app it is usually a *passkey* account, the strongest credential
+//! type there is. Adopting on a name match would hand a stranger every synced
+//! row and share it owns. So the bare name is taken only when it is free; any
+//! collision creates a fresh, distinctly named account. Deliberate linking of
+//! an existing account to Google belongs behind an authenticated action in
+//! Settings, where the account owner proves they are present.
 
 use crate::{mint_token, name_ok, now_ms, random_token, AppState};
 use axum::{
@@ -441,29 +443,19 @@ fn find_or_create_account(conn: &Connection, email: &str) -> Result<(i64, String
     }
 
     let candidate = candidate_name(email);
-    let existing: Option<(i64, Option<String>)> = conn
-        .query_row(
-            "SELECT id, password_hash FROM accounts WHERE name = ?1",
-            [&candidate],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+    let existing: Option<i64> = conn
+        .query_row("SELECT id FROM accounts WHERE name = ?1", [&candidate], |r| {
+            r.get(0)
+        })
         .optional()
         .map_err(internal_err)?;
 
     match existing {
-        // Nothing to take over: adopt the name for this Google identity.
-        Some((id, None)) => {
-            conn.execute(
-                "UPDATE accounts SET google_email = ?1 WHERE id = ?2",
-                params![email, id],
-            )
-            .map_err(internal_err)?;
-            Ok((id, candidate))
-        }
-        // A password is a standing credential someone else already holds —
-        // refuse to hand its owner (or whoever knows the password) implicit
-        // access to this email's account by linking it here.
-        Some((_, Some(_))) => create_distinct_account(conn, &candidate, email),
+        // Someone already holds this name. Whether or not they set a password
+        // is irrelevant — a passwordless account here is typically a passkey
+        // account, and adopting it would hand this Google identity everything
+        // that account has ever synced. Never adopt on a name match.
+        Some(_) => create_distinct_account(conn, &candidate, email),
         None => {
             match conn.execute(
                 "INSERT INTO accounts (name, created_at, google_email) VALUES (?1, ?2, ?3)",
@@ -619,11 +611,12 @@ mod tests {
         assert_eq!(name2, "alice");
     }
 
-    /// A same-named account with no password is fair game to adopt — nothing
-    /// else could have gotten in without a passkey belonging to this same
-    /// Google user's device.
+    /// The takeover case that matters most here: a passwordless account is
+    /// usually a *passkey* account, so a name match must not adopt it either.
+    /// Holding `alice@example.com` on Google says nothing about who owns the
+    /// local account named `alice`.
     #[test]
-    fn adopts_a_same_named_passwordless_account() {
+    fn refuses_to_link_a_same_named_passwordless_account() {
         let c = mem();
         c.execute(
             "INSERT INTO accounts (name, created_at) VALUES ('alice', 0)",
@@ -633,17 +626,18 @@ mod tests {
         let existing_id = c.last_insert_rowid();
 
         let (id, name) = find_or_create_account(&c, "alice@example.com").unwrap();
-        assert_eq!(id, existing_id);
-        assert_eq!(name, "alice");
+        assert_ne!(id, existing_id, "must not adopt the existing account");
+        assert_ne!(name, "alice");
 
+        // The pre-existing account is left exactly as it was.
         let google_email: Option<String> = c
             .query_row(
                 "SELECT google_email FROM accounts WHERE id = ?1",
-                [id],
+                [existing_id],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(google_email.as_deref(), Some("alice@example.com"));
+        assert_eq!(google_email, None);
     }
 
     /// The takeover case the plan calls out: a same-named account that

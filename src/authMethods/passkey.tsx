@@ -11,7 +11,6 @@
  * informational — it lists what's attached, it doesn't drive attaching one.
  */
 import { inTauri } from '../persistence';
-import { DEFAULT_SYNC_URL } from '../syncServer';
 import { registerAuthMethod, type AuthMethodContext, type AuthMethodRow } from './registry';
 
 /** What `GET /passkeys` returns. The server stores no device name, so `label`
@@ -53,13 +52,16 @@ async function load(ctx: AuthMethodContext): Promise<AuthMethodRow[]> {
 
 /** The portal that serves `/login`, mirroring `portal_base()` in
  *  `account.rs`: the API base with its `/api` prefix (stripped by nginx
- *  before proxying) dropped. */
-function portalUrl(): string {
-  return DEFAULT_SYNC_URL.replace(/\/api\/?$/, '');
+ *  before proxying) dropped.
+ *
+ *  Derived from `ctx.server` rather than `DEFAULT_SYNC_URL` so a self-hoster
+ *  is sent to their own portal, not the hosted one. */
+function portalUrl(server: string): string {
+  return server.replace(/\/api\/?$/, '');
 }
 
-async function openPortal() {
-  const url = portalUrl();
+async function openPortal(server: string) {
+  const url = portalUrl(server);
   if (inTauri()) {
     const { openUrl } = await import('@tauri-apps/plugin-opener');
     await openUrl(url);
@@ -71,7 +73,7 @@ async function openPortal() {
 function AddPasskey({ ctx }: { ctx: AuthMethodContext }) {
   return (
     <div>
-      <button className="button-primary" disabled={!ctx.token} onClick={() => void openPortal()}>
+      <button className="button-primary" disabled={!ctx.token} onClick={() => void openPortal(ctx.server)}>
         Manage in browser
       </button>
       <p className="setting-desc">Passkeys are added and removed from the browser sign-in page.</p>

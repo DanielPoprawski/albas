@@ -26,3 +26,20 @@ export function syncEndpoint(url: string): string {
   const base = url.trim().replace(/\/+$/, '');
   return base.endsWith('/sync') ? base : `${base}/sync`;
 }
+
+/**
+ * The inverse of `syncEndpoint`: the API base the auth-method fetches want
+ * (`/passkeys`, `/password`, `/totp` hang off it), recovered from whatever is
+ * actually stored in `__sync_url`.
+ *
+ * Needed because the server is editable again (Settings → Advanced). Deriving
+ * the base from the live sync URL instead of `DEFAULT_SYNC_URL` is what stops
+ * a self-hoster's Settings from listing sign-in methods off the hosted server
+ * while their data syncs somewhere else entirely.
+ */
+export function apiBase(url: string | null | undefined): string {
+  if (!url) return DEFAULT_SYNC_URL;
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (trimmed === '') return DEFAULT_SYNC_URL;
+  return trimmed.endsWith('/sync') ? trimmed.slice(0, -'/sync'.length) : trimmed;
+}

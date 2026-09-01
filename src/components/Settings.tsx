@@ -13,7 +13,7 @@ import { parseIcs } from '../ics';
 import { useBrowserSignIn } from './auth/useBrowserSignIn';
 import { Switch } from './ui/switch';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
-import { DEFAULT_SYNC_URL, syncEndpoint } from '../syncServer';
+import { DEFAULT_SYNC_URL, apiBase, syncEndpoint } from '../syncServer';
 import { initialsOf } from './AppShell';
 import {
   authMethods,
@@ -52,12 +52,35 @@ const THEME_OPTIONS: { value: ThemeName; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
+/**
+ * Turns whatever a person pastes into the "Advanced" server field into
+ * something `syncEndpoint()` (and then Rust's `check_url`) can judge.
+ *
+ * Blank -> the real default, never localhost. A bare domain (no scheme) is
+ * assumed to mean `https://` — the common case of pasting just the host —
+ * rather than being handed to `check_url` as-is to fail with a message that
+ * doesn't explain what's missing. Anything already carrying a scheme
+ * (including `http://`, e.g. a LAN test server) is passed through unchanged:
+ * `check_url` in `sync.rs` is the single source of truth on which schemes are
+ * actually allowed, and it will reject `http://` with a clear reason the next
+ * time this device syncs.
+ */
+function normalizeSyncUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') return DEFAULT_SYNC_URL;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export default function Settings() {
   const { setSetting, syncNow, reloadFromStore, syncToken } = useApp();
   const [status, setStatus] = useState<SyncStatusInfo | null>(null);
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' });
   const [token, setToken] = useState('');
   const [manual, setManual] = useState(false);
+  // Blank means "use the default server" (see `normalizeSyncUrl` below), never
+  // prefilled from `status.url` — so clearing the field can't read back as
+  // whatever custom value was last saved.
+  const [url, setUrl] = useState('');
 
   const available = inTauri();
   const browser = useBrowserSignIn();
@@ -122,7 +145,7 @@ export default function Settings() {
   async function connectManually() {
     setSyncState({ kind: 'busy', what: 'Saving' });
     try {
-      setSetting('__sync_url', syncEndpoint(DEFAULT_SYNC_URL));
+      setSetting('__sync_url', syncEndpoint(normalizeSyncUrl(url)));
       setSetting('__sync_token', token.trim());
       setSetting('__sync_account', '');
       setSetting('__welcome_done', '1');
@@ -159,6 +182,8 @@ export default function Settings() {
           busy={busy}
           token={token}
           setToken={setToken}
+          url={url}
+          setUrl={setUrl}
           manual={manual}
           setManual={setManual}
           onConnect={connectManually}
@@ -333,6 +358,8 @@ function AccountSigninCard({
   busy,
   token,
   setToken,
+  url,
+  setUrl,
   manual,
   setManual,
   onConnect,
@@ -343,6 +370,8 @@ function AccountSigninCard({
   busy: boolean;
   token: string;
   setToken: (t: string) => void;
+  url: string;
+  setUrl: (u: string) => void;
   manual: boolean;
   setManual: (m: boolean) => void;
   onConnect: () => void;
@@ -357,9 +386,9 @@ function AccountSigninCard({
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick(t => t + 1), []);
   const ctx = useMemo<AuthMethodContext>(
-    () => ({ token: syncToken, server: DEFAULT_SYNC_URL, refresh }),
+    () => ({ token: syncToken, server: apiBase(status?.url), refresh }),
     // `tick` is deliberately a dependency: it is what makes `refresh()` bite.
-    [syncToken, refresh, tick]
+    [syncToken, status?.url, refresh, tick]
   );
 
   const { methods, byId } = useAuthMethods(ctx, configured);
@@ -397,10 +426,25 @@ function AccountSigninCard({
             onClick={() => setManual(!manual)}
             style={{ fontSize: '11px', color: 'var(--t-ink-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
           >
-            {manual ? 'v' : '>'} Advanced: connect with a sync token
+            {manual ? 'v' : '>'} Advanced: connect to your own server
           </button>
           {manual && (
             <div style={{ marginTop: '12px' }}>
+              <p style={{ fontSize: '11px', color: 'var(--t-ink-secondary)', marginBottom: '8px', maxWidth: '360px' }}>
+                A server URL and a sync token together are a complete sign-in — the
+                token is the only credential, and the server only ever stores its
+                SHA-256. Leave the URL blank to use the default server ({DEFAULT_SYNC_URL}).
+              </p>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--t-ink)', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>Server URL</label>
+              <input
+                className="input-text"
+                style={{ marginBottom: '8px', display: 'block' }}
+                type="text"
+                autoComplete="off"
+                placeholder={DEFAULT_SYNC_URL}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+              />
               <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--t-ink)', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>Sync token</label>
               <input
                 className="input-text"
