@@ -2,15 +2,20 @@ import { useState } from "react";
 import type { Screen } from "../../screens";
 import { registerWithPasskey, saveSession, type Session } from "../../lib/api";
 import { webauthnSupported } from "../../lib/webauthn";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 
 const NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function RegisterForm({
   onNavigate,
   onSignedIn,
+  appSession,
 }: {
   onNavigate: (screen: Screen) => void;
   onSignedIn: (session: Session) => void;
+  /** The app-session nonce this page was opened with, if any — forwarded to
+   * Google sign-in so the handoff survives the round trip. See `App.tsx`. */
+  appSession?: string | null;
 }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -79,6 +84,8 @@ export function RegisterForm({
             </button>
           </div>
         </form>
+
+        <GoogleSignInButton appSession={appSession} />
 
         <div className="form-footer">
           <p className="form-footer-text">

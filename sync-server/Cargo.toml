@@ -21,6 +21,13 @@ argon2 = "0.5"
 # TOTP secret generation, otpauth:// URI construction, and code verification.
 # The QR code is rendered client-side from the URI, so no image crate here.
 totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
+# Google OAuth's token exchange and userinfo calls are the only outbound HTTP
+# this server makes; rustls (not the system openssl) keeps the build the same
+# on every platform this ships to.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Percent-encoding the authorize-URL query params (redirect_uri, scope). Tiny,
+# no transitive deps of its own.
+urlencoding = "2"
 
 [profile.release]
 strip = true

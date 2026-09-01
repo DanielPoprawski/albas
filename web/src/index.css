@@ -275,6 +275,26 @@ input::placeholder {
   line-height: 1.5;
 }
 
+/* "or" divider between a primary sign-in method and Google */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: #9ca3af;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
 /* Login method switcher */
 .auth-method-tabs {
   display: flex;

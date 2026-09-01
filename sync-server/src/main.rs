@@ -44,6 +44,7 @@
 //! console. See root `CLAUDE.md`, "Project direction".
 
 mod app_session;
+mod google;
 mod passkey;
 mod password;
 mod totp;
@@ -72,7 +73,15 @@ CREATE TABLE IF NOT EXISTS accounts (
   -- code generated from it has verified, so a half-finished enrollment can
   -- never lock anyone out.
   totp_secret    TEXT,
-  totp_confirmed INTEGER NOT NULL DEFAULT 0
+  totp_confirmed INTEGER NOT NULL DEFAULT 0,
+  -- The verified email address Google last signed this account in as, or
+  -- NULL. Not declared UNIQUE: SQLite's `ALTER TABLE ADD COLUMN` (what
+  -- `ensure_column` must use for databases that predate this column) cannot
+  -- add a UNIQUE constraint, and a fresh database must end up with the same
+  -- schema as an upgraded one. `google.rs`'s `find_or_create_account` is the
+  -- only writer and enforces uniqueness itself by looking up before it
+  -- inserts.
+  google_email   TEXT
 );
 CREATE TABLE IF NOT EXISTS tokens (
   id         INTEGER PRIMARY KEY,
@@ -143,6 +152,8 @@ pub(crate) struct AppState {
     pub(crate) webauthn: Option<webauthn_rs::Webauthn>,
     pub(crate) assetlinks: Option<String>,
     pub(crate) pending: passkey::Pending,
+    pub(crate) google: Option<google::GoogleConfig>,
+    pub(crate) google_pending: google::Pending,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -273,6 +284,7 @@ async fn main() {
     };
     let webauthn = passkey::build_webauthn().expect("failed to configure passkeys");
     let assetlinks = std::env::var("ALBAS_SYNC_ASSETLINKS").ok().filter(|s| !s.trim().is_empty());
+    let google = google::GoogleConfig::from_env().expect("failed to configure Google sign-in");
 
     let mut conn = Connection::open(&db_path).expect("failed to open database");
     conn.pragma_update(None, "journal_mode", "WAL").expect("WAL");
@@ -296,6 +308,8 @@ async fn main() {
         webauthn,
         assetlinks,
         pending: passkey::Pending::default(),
+        google,
+        google_pending: google::Pending::default(),
     });
 
     let app = Router::new()
@@ -314,6 +328,10 @@ async fn main() {
         .route("/app-session", post(app_session::create))
         .route("/app-session/claim", post(app_session::claim))
         .route("/app-session/:nonce", get(app_session::poll))
+        .route("/auth/config", get(google::config))
+        .route("/auth/google/start", get(google::start))
+        .route("/auth/google/callback", get(google::callback))
+        .route("/auth/google/session/:ticket", get(google::session))
         .route("/register/start", post(passkey::register_start))
         .route("/register/finish", post(passkey::register_finish))
         .route("/login/start", post(passkey::login_start))
@@ -464,6 +482,7 @@ fn init_db(conn: &mut Connection, owner_token: Option<&str>) -> Result<(), Strin
     ensure_column(&tx, "accounts", "password_hash", "TEXT")?;
     ensure_column(&tx, "accounts", "totp_secret", "TEXT")?;
     ensure_column(&tx, "accounts", "totp_confirmed", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(&tx, "accounts", "google_email", "TEXT")?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -1450,6 +1469,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: passkey::Pending::default(),
+            google: None,
+            google_pending: Default::default(),
         })
     }
 

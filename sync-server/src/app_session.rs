@@ -179,6 +179,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         })
     }
 

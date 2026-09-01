@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Screen } from "../../screens";
 import type { Session } from "../../lib/api";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 import { PasskeyLogin } from "./PasskeyLogin";
 import { PasswordLogin } from "./PasswordLogin";
 
@@ -9,9 +10,13 @@ type Method = "passkey" | "password";
 export function LoginScreen({
   onNavigate,
   onSignedIn,
+  appSession,
 }: {
   onNavigate: (screen: Screen) => void;
   onSignedIn: (session: Session) => void;
+  /** The app-session nonce this page was opened with, if any — forwarded to
+   * Google sign-in so the handoff survives the round trip. See `App.tsx`. */
+  appSession?: string | null;
 }) {
   const [method, setMethod] = useState<Method>("passkey");
 
@@ -42,6 +47,8 @@ export function LoginScreen({
         </div>
 
         {method === "passkey" ? <PasskeyLogin onSignedIn={onSignedIn} /> : <PasswordLogin onSignedIn={onSignedIn} />}
+
+        <GoogleSignInButton appSession={appSession} />
 
         <div className="form-actions">
           <button type="button" className="btn-text" style={{ flex: 1 }} onClick={() => onNavigate("splash")}>

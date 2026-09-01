@@ -66,6 +66,15 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`);
+  if (!res.ok) {
+    const text = (await res.text().catch(() => "")).trim();
+    throw new ApiError(text || `Request failed (${res.status}).`, res.status);
+  }
+  return (await res.json()) as T;
+}
+
 // --- Passkey ---
 
 function registerStart(name: string): Promise<RegistrationChallenge> {
@@ -115,6 +124,45 @@ export async function loginWithPassword(name: string, password: string, code?: s
     }
     throw e;
   }
+}
+
+// --- Google sign-in (server-side OAuth; see sync-server/src/google.rs) ---
+
+/**
+ * What the server reports it's configured for. Google sign-in needs a
+ * client id/secret pair the app never sees, so a self-hoster without a
+ * Google Cloud project simply doesn't set them — `google` comes back false
+ * and the button that would call `startGoogleSignIn` should not render.
+ */
+export interface AuthConfig {
+  google: boolean;
+}
+
+export function getAuthConfig(): Promise<AuthConfig> {
+  return get<AuthConfig>("/auth/config");
+}
+
+/**
+ * Sends the browser to Google's own consent screen — this can't happen via
+ * `fetch`; it's a full-page navigation, same as any other OAuth confidential-
+ * client flow. `appSession` (the nonce this page may have been opened with,
+ * see `claimAppSession` below) is forwarded as a query param so the server
+ * can hand it back once Google redirects here again; from there the flow
+ * rejoins the ordinary one below unchanged.
+ */
+export function startGoogleSignIn(appSession?: string | null): void {
+  const qs = appSession ? `?app_session=${encodeURIComponent(appSession)}` : "";
+  window.location.href = `/api/auth/google/start${qs}`;
+}
+
+/**
+ * One-time pickup of the session the server minted after Google's callback.
+ * The callback redirects back into this app with `?google_ticket=<ticket>`
+ * rather than the bearer token itself; this exchanges that single-use ticket
+ * for `{name, token}`, the same shape every other login method resolves to.
+ */
+export function claimGoogleTicket(ticket: string): Promise<Session> {
+  return get<Session>(`/auth/google/session/${encodeURIComponent(ticket)}`);
 }
 
 // --- App session handoff ---

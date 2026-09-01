@@ -237,6 +237,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         });
 
         let before = password_status(axum::extract::State(state.clone()), headers_for(&token))
@@ -282,6 +284,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         });
 
         let body = Json(json!({ "password": password }));
@@ -311,6 +315,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         });
 
         // Set a password
@@ -338,6 +344,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         });
 
         // Try to login to non-existent account
@@ -363,6 +371,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         });
 
         // Set a password
@@ -392,6 +402,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         });
 
         // Set a password
@@ -417,6 +429,8 @@ mod tests {
             webauthn: None,
             assetlinks: None,
             pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
         });
 
         // Try to set a short password
