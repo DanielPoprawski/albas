@@ -60,7 +60,7 @@ bun run version:check
 - **`tauri.properties`**: must live in `gen/android/app/` (module-relative path), not `gen/android/`.
 
 ## Versioning
-**`package.json` is the single source of truth.** `bun run version:set <x.y.z>` rewrites all version files and tags. Never hand-edit `tauri.properties` (versionCode is Android-monotonic). Never blanket `cargo update` — `Cargo.lock` pins `webauthn-authenticator-rs` at 0.5.1; the script updates by name. `sync-server/` versions independently (0.2.0). App version injected as `__APP_VERSION__` from `package.json` (see `vite.config.ts`).
+**`package.json` is the single source of truth.** `bun run version:set <x.y.z>` rewrites all version files and tags. Never hand-edit `tauri.properties` (versionCode is Android-monotonic). The old "never blanket `cargo update`" rule is retired: it existed only for the `webauthn-authenticator-rs` 0.5.1 pin, and `tauri-plugin-webauthn` — its sole dependent — is gone. The script still updates by name. `sync-server/` versions independently (0.2.0). App version injected as `__APP_VERSION__` from `package.json` (see `vite.config.ts`).
 
 ## Websites
 - **`web/`**: Public site (`albas.danni-dev.com`), splash/login/register/offline-info, passkey + password+TOTP auth. See `web/CLAUDE.md`.
@@ -69,22 +69,24 @@ bun run version:check
 ## Domain and origins
 - **One origin**: `albas.danni-dev.com` (subdomain, not apex). WebAuthn RP ID is a security boundary.
 - **Changing domain invalidates all passkeys** — no migration, accounts re-created.
-- **Three files move together**: `src/syncServer.ts` (no `/sync`), `src-tauri/src/sync.rs` `DEFAULT_URL` (with `/sync`), Android `asset_statements` in `values/strings.xml` (domain root).
+- **Two files move together**: `src/syncServer.ts` (no `/sync`) and `src-tauri/src/sync.rs` `DEFAULT_URL` (with `/sync`). The Android `asset_statements` entry dropped out of this rule when in-app WebAuthn was removed — nothing on the device asserts an origin any more.
 - **`ALBAS_SYNC_ANDROID_ORIGIN`** is domain-independent (apk-key-hash); don't touch when moving domain.
 - **nginx** strips `/api` prefix via trailing slash in `proxy_pass` (slashless breaks everything). Configs: `sync-server/nginx/`.
 - **`__sync_url` beats `DEFAULT_URL`**: stored URL always wins, so add old URL to `SUPERSEDED_URLS` before moving default or old installs keep syncing to old host.
-- **No user-editable server**: Server field removed from UI. Repoint a build by editing constants, not restoring a field.
+- **User-editable server is back** (Settings → "Advanced: connect to your own server"), paired with the sync token, since URL + token together are a complete login. It was removed when the default was `localhost`; defaulting to the real domain — blank field means default, never localhost — is what made it safe to restore. `apiBase()` in `src/syncServer.ts` derives the auth-method API base from the live URL, so a self-hoster's Settings talks to their own server.
 - **`tauri.conf.json`**: strict JSON (no comments) — `//` causes "key must be a string" error.
 
 ## Project direction (settled decisions)
-- **Auth is moving into the browser** (2026-08, reverses the in-app-ceremony decision
-  below). Reasons: iOS is planned and `tauri-plugin-webauthn` has no iOS support, Google
+- **Auth moved into the browser** (2026-08, done — reversed the earlier in-app-ceremony
+  decision). Reasons: iOS is planned and `tauri-plugin-webauthn` has no iOS support, Google
   blocks OAuth in embedded webviews, and the original motive — not having to build a
   website — is moot now that `web/` is deployed. Handoff is **nonce + poll**
   (`sync-server/src/app_session.rs`), deliberately *not* an `albas://` deep link: a custom
   scheme needs an Android intent filter, an iOS entitlement and a `.desktop` registration
   AppImage builds never get, and any app may claim the scheme. A deep link can be layered
-  on later without changing that contract.
+  on later without changing that contract. Shipped in three parts: the nonce+poll handoff,
+  Google OAuth server-side, and the removal of `tauri-plugin-webauthn`. What is *not* done
+  is browser-side passkey management and Google account linking (TODO #8, #9).
 - **Local-only is free; sync is paid.** Offline must work fully. Accounts/registration free for now (`ALBAS_SYNC_SIGNUPS` defaults open). No subscription yet; don't add entitlement checks.
 - **Plaintext payloads** (for now). E2E breaks admin viewer and read-only sharing. Intermediate step: encryption at rest, server-held key.
 - **Invites moving away** (2026-08). Signup is open (anyone can create account). `POST /invites` kept only for bootstrapping existing accounts and `ALBAS_SYNC_SIGNUPS=invite` deployments. No further build-out (no list/revoke, no admin panel).
@@ -108,10 +110,14 @@ bun run version:check
 7. **Push 2FA ("approve this sign-in on another device")** is wanted but deliberately not
    built. Unlike TOTP and cross-device passkeys — which come free with WebAuthn hybrid
    transport — it needs a real backend: device registration, a push channel per platform,
-   pending-approval state, and expiry. Revisit once browser auth has settled.
-8. `Settings.tsx`'s `AccountSigninCard` still drives the in-app passkey ceremony
-   (`usePasskeyAuth`). The splash now uses the browser flow; this card is the last
-   in-app-ceremony caller and goes when `tauri-plugin-webauthn` is removed.
+   pending-approval state, and expiry. Browser auth has now settled, so this is revisitable.
+8. **No way to add a passkey to an existing account.** Removing the in-app ceremony left
+   `src/authMethods/passkey.tsx`'s action opening the browser portal, but `web/` has no
+   passkey-management page — `POST /passkeys/start`/`/finish` are live and uncalled. Until
+   that page exists the registry row is informational only.
+9. **Linking an existing account to Google** has no UI. `google.rs` deliberately refuses to
+   auto-link on a name match, so the only safe path is an authenticated "link Google"
+   action in Settings, which nobody has built.
 
 ## Typography & icons
 - **Fonts**: Outfit (body), Sora (headings), self-hosted from `public/Outfit/` + `public/Sora/`. `--t-font-body` / `--t-font-heading`. Nothing from fonts.googleapis.com.
@@ -182,18 +188,18 @@ bun run version:check
 - **Settings not synced**: `__` prefix marks local-only keys (wyze creds, urls, tokens, etc.). Syncs on launch + manual button. Pull from Rust → call `reloadFromStore()` (condition: `pulled > 0 || sharedChanged`).
 
 ## Passkeys & auth
-- **In-app ceremonies** (not browser): `tauri-plugin-webauthn` drives platform authenticator. Linux: CTAP2 USB keys via `webauthn-authenticator-rs`. Android: Credential Manager. macOS/iOS unsupported.
-- **Plugin pins `webauthn-authenticator-rs`/`-proto` at 0.5.1** in `Cargo.lock`. Blanket `cargo update` breaks build.
-- **Android**: `minSdk = 28`. `asset_statements` in tracked `AndroidManifest.xml`. Digital Asset Links at `/.well-known/assetlinks.json`. Credential Manager asserts `android:apk-key-hash:…` origin (see `ALBAS_SYNC_ANDROID_ORIGIN`).
-- **Login**: discoverable/usernameless (credential id finds account). `residentKey: 'required'` forced in `src/auth.ts` (webauthn only prefers it).
+- **All ceremonies happen in the system browser.** `tauri-plugin-webauthn`, `src/auth.ts`, `usePasskeyAuth.ts` and `PinDialog.tsx` are deleted; the app holds no WebAuthn code. Both sign-in and registration open `web/`.
+- **Handoff is nonce + poll** (`sync-server/src/app_session.rs`, `src/components/auth/useBrowserSignIn.ts`): the app creates a pending session, opens the browser, and polls. The browser page claims the nonce with its own bearer token. Single-use, 5-minute TTL, with a 4-character confirmation code shown on both sides so a nonce cannot be phished in.
 - **Registration**: open by default (`ALBAS_SYNC_SIGNUPS=invite` locks it). Invites only for bootstrapping existing accounts.
-- **Sign-in**: mints token, resets sync watermarks + shared cache. `usePasskeyAuth.ts` is single flow-state hook. `run(adoptsSession)`: login marks welcome done + reloads Rust writes; adding passkey to existing session does neither. Linux keys ask PIN via `PinDialog`.
+- **Login**: discoverable/usernameless (credential id finds account); `residentKey: 'required'` is forced browser-side in `web/`.
+- **Sign-in**: mints token, resets sync watermarks + shared cache. Sign-out clears `__welcome_done`, which is what returns you to the splash.
+- **Google OAuth** is server-side only (`sync-server/src/google.rs`, confidential client). Needs `ALBAS_SYNC_GOOGLE_CLIENT_ID`/`_CLIENT_SECRET`/`_REDIRECT_URI` set together or not at all; unset means the button hides and the routes 503. **A Google name match never adopts an existing account** — a passwordless account here is normally a *passkey* account, so adopting on a name collision would hand over the strongest accounts. Collisions get a distinctly suffixed new account; deliberate linking needs an authenticated action that does not exist yet.
 
 ## Sign-in methods
 - **Primary**: Passkeys. Others: password, TOTP (optional).
 - **Registry** (`src/authMethods/`): `AuthMethod` with `id`, `order`, `load(ctx)`, optional `Action`. Fixed imports (`passkey`, `password`, `totp`); no editing shared files when adding methods.
 - **Contract**: `load()` returns *real* credentials only (no aspirational rows). Unconfirmed TOTP doesn't appear.
-- **Passkeys**: ceremonies via Tauri. Self-service `POST /passkeys/start` + `/finish`. Bearer token for identity. Excludes existing credentials. Mints token; add-passkey path deletes it (keeps session).
+- **Passkeys**: ceremonies in the browser. Self-service `POST /passkeys/start` + `/finish` still exist server-side and take a bearer token, but **nothing in `web/` calls them yet** — the Settings action only opens the portal, so adding a passkey to an existing account has no working path (see TODO #8).
 - **Password**: `fetch` (no Tauri). Argon2id into `accounts.password_hash` (not `token_hash`). Identical 401 for unknown/wrong. `DELETE` refuses 409 if only credential.
 - **TOTP**: `fetch`. `totp-rs` server-side, QR client-side (`qrcode.react`). `totp_confirmed` only after code verify. Re-enroll while confirmed = 409. **Second factor for password only** (not passkey — already possession + verification). UI clarifies.
 - **`accounts` schema**: add `ensure_column()` call in `init_db` (not just `SCHEMA` — fresh DBs get no columns, existing DBs get none).
