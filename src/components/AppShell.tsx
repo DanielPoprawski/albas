@@ -152,12 +152,11 @@ function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-logo">
         <span className="logo-mark">
-          {/* The app mark, drawn rather than lettered — same three strokes as
-              public/icon.svg, in white on the purple square. */}
-          <svg viewBox="0 0 100 100" width="20" height="20" aria-hidden="true">
-            <path d="M76 9 C40 18 8 55 13 93 C28 72 58 50 76 9 Z" fill="#fff" />
-            <path d="M78 12 L94 9 L79 94 L64 96 Z" fill="#fff" fillOpacity="0.55" />
-            <path d="M18 66 L97 38 L97 56 L18 84 Z" fill="#fff" />
+          {/* The app mark, drawn rather than lettered — same glyph as
+              public/icons/albas-mark-glyph.svg, in white on the purple square. */}
+          <svg viewBox="0 0 512 512" width="20" height="20" aria-hidden="true">
+            <path d="M 352.64213,163.92994 413.28,52.08 l 58.95456,422.68234 -78.20532,-0.0413 z" fill="#fff" fillOpacity="0.55" />
+            <path d="M 313.80273 46.6875 C 313.78856 46.714256 313.77394 46.740823 313.75977 46.767578 L 286.22266 46.767578 L 255.42969 105.83398 L 281.96094 105.83398 C 249.48628 165.31906 216.10526 224.31592 183.19531 283.55859 L 154.49609 283.55859 L 123.70312 342.625 L 150.38477 342.625 L 114.07422 409.05273 L 86.029297 409.05273 L 55.236328 468.11914 L 81.789062 468.11914 L 81.765625 468.16211 L 168.49414 468.36133 L 238.37305 342.625 L 475.24219 342.625 L 462.71484 283.55859 L 271.19922 283.55859 L 402.84375 46.6875 L 313.80273 46.6875 z" fill="#fff" />
           </svg>
         </span>
         Albas

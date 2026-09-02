@@ -14,6 +14,17 @@ export class AdminAuthError extends Error {
   }
 }
 
+/** A non-auth error response, carrying the status so callers can give
+ * action-specific copy (e.g. the 409 lockout guards). */
+export class AdminRequestError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "AdminRequestError";
+    this.status = status;
+  }
+}
+
 export function getAdminToken(): string | null {
   try {
     return localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -44,7 +55,7 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed: ${res.status}`);
+    throw new AdminRequestError(res.status, text || `Request failed: ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -63,6 +74,41 @@ export function createAccount(name: string): Promise<CreateAccountResponse> {
 
 export function deleteAccount(name: string): Promise<void> {
   return adminFetch<void>(`/accounts/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export function renameAccount(name: string, newName: string): Promise<{ name: string }> {
+  return adminFetch<{ name: string }>(`/accounts/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name: newName }),
+  });
+}
+
+/** Empty (or null) label clears back to the derived "Passkey <prefix>" name. */
+export function setPasskeyLabel(name: string, passkeyId: number, label: string | null): Promise<void> {
+  return adminFetch<void>(`/accounts/${encodeURIComponent(name)}/passkeys/${passkeyId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ label: label ?? "" }),
+  });
+}
+
+export function deletePasskey(name: string, passkeyId: number): Promise<void> {
+  return adminFetch<void>(`/accounts/${encodeURIComponent(name)}/passkeys/${passkeyId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteToken(name: string, tokenId: number): Promise<void> {
+  return adminFetch<void>(`/accounts/${encodeURIComponent(name)}/tokens/${tokenId}`, {
+    method: "DELETE",
+  });
+}
+
+export function clearPassword(name: string): Promise<void> {
+  return adminFetch<void>(`/accounts/${encodeURIComponent(name)}/password`, { method: "DELETE" });
+}
+
+export function clearTotp(name: string): Promise<void> {
+  return adminFetch<void>(`/accounts/${encodeURIComponent(name)}/totp`, { method: "DELETE" });
 }
 
 export function listShares(): Promise<Share[]> {

@@ -13,6 +13,8 @@ export interface Passkey {
   accountId: number;
   credId: string;
   createdAt: number;
+  /** Admin-set name, or null when the console should derive one from credId. */
+  label: string | null;
 }
 
 export interface Account {
@@ -23,6 +25,10 @@ export interface Account {
   tokens: Token[];
   passkeys: Passkey[];
   rowCount: number;
+  hasPassword: boolean;
+  /** Enrolled and confirmed — matches what login actually enforces. */
+  totpEnabled: boolean;
+  googleEmail: string | null;
 }
 
 export interface Share {

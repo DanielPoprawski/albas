@@ -429,9 +429,10 @@ pub(crate) async fn add_passkey_finish(
 
 /// The passkeys really attached to the signed-in account.
 ///
-/// The table stores no device name — the server never learns one — so `label`
-/// is derived from what it does store: a short prefix of the credential id.
-/// Inventing a friendlier name here would be inventing a fact.
+/// `label` is the admin-set name when one exists; otherwise it is derived from
+/// what the table always stores, a short prefix of the credential id — the
+/// server never learns a device name on its own, and inventing a friendlier
+/// one here would be inventing a fact.
 pub(crate) async fn list_passkeys(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -440,18 +441,20 @@ pub(crate) async fn list_passkeys(
     let (account_id, _) = signed_in(&guard, &headers)?;
     let mut stmt = guard
         .prepare(
-            "SELECT cred_id, created_at FROM passkeys WHERE account_id = ?1 ORDER BY created_at",
+            "SELECT cred_id, created_at, label FROM passkeys WHERE account_id = ?1 ORDER BY created_at",
         )
         .map_err(internal)?;
     let rows = stmt
-        .query_map([account_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+        .query_map([account_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?))
+        })
         .map_err(internal)?
-        .collect::<rusqlite::Result<Vec<(String, i64)>>>()
+        .collect::<rusqlite::Result<Vec<(String, i64, Option<String>)>>>()
         .map_err(internal)?;
     let out: Vec<Value> = rows
         .into_iter()
-        .map(|(cred_id, created_at)| {
-            let label = format!("Passkey {}", short_cred(&cred_id));
+        .map(|(cred_id, created_at, label)| {
+            let label = label.unwrap_or_else(|| format!("Passkey {}", short_cred(&cred_id)));
             json!({ "credId": cred_id, "label": label, "createdAt": created_at })
         })
         .collect();

@@ -29,9 +29,11 @@ it, and no data leaves the machine unless you set sync up yourself.
 ## Install
 
 Desktop bundles are produced by `bun run tauri build` and land in
-`src-tauri/target/release/bundle/` as `.deb`, `.rpm` and `.AppImage`. The raw binary is at
-`src-tauri/target/release/albas` — if you run from a checkout, a `.desktop` entry pointing
-straight at that path means a rebuild updates the installed app with no reinstall step.
+`src-tauri/target/release/bundle/` as `.deb`, `.rpm` and `.AppImage`. If you run from a
+checkout, `bun run app:desktop` builds and then installs the raw binary to
+`~/.local/bin/albas` — point your `.desktop` entry there rather than into
+`src-tauri/target/`, so `bun run clean` can wipe build caches without breaking the
+launcher.
 
 Android is a signed APK — see [Building](#building) below.
 
@@ -55,9 +57,12 @@ app**:
 | `bun run dev` | Vite only, on `localhost:1420`. No Rust, no SQLite, no sync — persistence falls back to a `localStorage` blob. Fine for pure UI work, misleading for anything else. |
 | `bun run tauri dev` | The real desktop app, Rust included. |
 | `bun run build` | `tsc && vite build`. The **frontend bundle only**. Does not touch the desktop binary. |
-| `bun run tauri build` (or `bun run app:desktop`) | Builds `src-tauri/target/release/albas` plus the deb/rpm/AppImage. **This** is what updates an installed desktop app. |
+| `bun run tauri build` | Builds `src-tauri/target/release/albas` plus the deb/rpm/AppImage. |
+| `bun run app:desktop` | `tauri build`, then installs the binary to `~/.local/bin/albas`. **This** is what updates an installed desktop app. |
 | `bun run tauri android dev` | Installs `dev.daniel_p.albas.dev`, whose webview loads the UI from the Vite dev server over the LAN. Useless away from the desk. |
 | `bun run app:android` | A standalone signed release APK, **and installs it** to the connected device. `android:install` re-installs the last build without recompiling; `android:launch` starts it. |
+| `bun run clean` | Deletes the rebuildable build caches (debug and unused-Android cargo targets, Gradle output, `sync-server/target`) — tens of GB. Keeps `release/` and the aarch64 Android target so the next real build stays fast. |
+| `sync-server/scripts/publish.sh` | Builds the sync-server Docker image (amd64), pushes it to GHCR, rebuilds the web console, then SSHes into the server to upload `web/dist/` and pull + restart the stack (expect one passkey prompt). `--build-only` skips the deploy. |
 
 ### Building
 
@@ -126,9 +131,10 @@ The sync server runs in Docker on a home VM, behind nginx with a Let's Encrypt c
 at **`albas.danni-dev.com`**. One origin serves everything: the JSON API under `/api`,
 Android's Digital Asset Links at the domain root, and the web console at `/`. Images are
 published to
-`ghcr.io/danielpoprawski/albas-sync` by GitHub Actions on any push to `main` that touches
-`sync-server/**`, for both amd64 and arm64 — so the host needs neither a clone nor a Rust
-toolchain, and the same image runs on an ARM box or a Pi.
+`ghcr.io/danielpoprawski/albas-sync` by `sync-server/scripts/publish.sh` (a local amd64
+build and push) — so the host needs neither a clone nor a Rust toolchain. A manual-dispatch
+GitHub Actions workflow remains for the occasional multi-arch build, should the image ever
+need to run on an ARM box or a Pi.
 
 Deploying an update is:
 
@@ -153,8 +159,9 @@ Full protocol, account, sharing and deployment docs: [`sync-server/README.md`](s
 
 ### Why a monorepo, and why the server host has no clone
 
-The app and the server live in one repository. The CI path filter already gives the server an
-independent release pipeline from inside it, so splitting buys nothing operationally — while
+The app and the server live in one repository. The server already has an independent release
+pipeline from inside it (`sync-server/scripts/publish.sh`, versioned by its own
+`Cargo.toml`), so splitting buys nothing operationally — while
 the sync client's table spec (`src-tauri/src/sync.rs`) and the server's share groups are
 co-designed and must agree, which would turn a one-line protocol change into a two-repository
 dance.

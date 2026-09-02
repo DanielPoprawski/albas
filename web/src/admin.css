@@ -198,6 +198,12 @@ button:hover {
   border-color: var(--accent);
 }
 
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -753,6 +759,27 @@ table.data-table tbody tr:last-child td {
   font-size: 11px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+}
+
+/* Right-hand cluster of a drawer item: meta text plus its action buttons. */
+.drawer-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Inline passkey rename: swaps the whole row for an input + save/cancel. */
+.drawer-item-edit {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawer-item-edit .modal-input {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
 }
 
 /* Admin token gate */

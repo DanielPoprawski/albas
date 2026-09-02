@@ -34,6 +34,10 @@
 //! `GET /accounts` (unchanged path) now returns each account's tokens, passkeys
 //! and row count inline instead of just `{name, created_at}`, since that is
 //! what the console's Accounts panel needs and nothing else calls this route.
+//! Credential management lives under `/accounts/:name/...` (rename, passkey
+//! label/delete, token revoke, password/TOTP clear) rather than `/admin/`:
+//! these routes name their account in the path, so there is no collision with
+//! a token-scoped twin — the reason `/admin/shares` exists.
 //!
 //! **Invites are not getting further admin support.** The product direction
 //! (2026-08) is open signup only — anyone with the site link can create an
@@ -52,7 +56,7 @@ mod totp;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use rusqlite::{params, Connection, OptionalExtension};
@@ -95,7 +99,11 @@ CREATE TABLE IF NOT EXISTS passkeys (
   account_id   INTEGER NOT NULL REFERENCES accounts(id),
   cred_id      TEXT    NOT NULL UNIQUE,
   passkey_json TEXT    NOT NULL,
-  created_at   INTEGER NOT NULL
+  created_at   INTEGER NOT NULL,
+  -- Admin-set display name, or NULL to derive one from cred_id. Nullable
+  -- because `ensure_column` backfills it into older databases and SQLite
+  -- cannot ADD COLUMN NOT NULL without a default.
+  label        TEXT
 );
 CREATE TABLE IF NOT EXISTS invites (
   id         INTEGER PRIMARY KEY,
@@ -235,6 +243,8 @@ struct PasskeyInfo {
     account_id: i64,
     cred_id: String,
     created_at: i64,
+    /// Admin-set name, or `None` when the console should derive one.
+    label: Option<String>,
 }
 
 /// `GET /accounts` response shape. Named for what the admin console shows,
@@ -249,6 +259,24 @@ struct AccountDetail {
     tokens: Vec<TokenInfo>,
     passkeys: Vec<PasskeyInfo>,
     row_count: i64,
+    has_password: bool,
+    /// Enrolled *and* confirmed — a half-finished enrollment reads as off,
+    /// matching what login actually enforces.
+    totp_enabled: bool,
+    /// The linked Google address itself, not a bool: the console is staff-only
+    /// and "which Google account" is what support questions need.
+    google_email: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenamedAccount {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct PasskeyLabel {
+    label: String,
 }
 
 #[derive(Deserialize)]
@@ -316,7 +344,14 @@ async fn main() {
         .route("/health", get(|| async { "ok" }))
         .route("/sync", post(sync))
         .route("/accounts", post(create_account).get(list_accounts))
-        .route("/accounts/:name", delete(delete_account))
+        .route("/accounts/:name", delete(delete_account).patch(rename_account))
+        .route(
+            "/accounts/:name/passkeys/:id",
+            patch(admin_label_passkey).delete(admin_delete_passkey),
+        )
+        .route("/accounts/:name/tokens/:id", delete(admin_delete_token))
+        .route("/accounts/:name/password", delete(admin_clear_password))
+        .route("/accounts/:name/totp", delete(admin_clear_totp))
         .route("/shares", get(shares_get))
         .route("/shares/:name", put(shares_put).delete(shares_delete))
         .route("/admin/shares", get(admin_shares_get))
@@ -474,8 +509,8 @@ fn init_db(conn: &mut Connection, owner_token: Option<&str>) -> Result<(), Strin
             upsert_owner(&tx, token).map_err(|e| e.to_string())?;
         }
     }
-    // Columns added to `accounts` after it first shipped. Idempotent, and run
-    // on every path above — the two rebuild branches recreate the table from
+    // Columns added to tables after they first shipped. Idempotent, and run
+    // on every path above — the two rebuild branches recreate the tables from
     // SCHEMA and so already have them, which is exactly what makes this safe
     // to run unconditionally.
     ensure_column(&tx, "accounts", "grant_rev", "INTEGER NOT NULL DEFAULT 0")?;
@@ -483,6 +518,7 @@ fn init_db(conn: &mut Connection, owner_token: Option<&str>) -> Result<(), Strin
     ensure_column(&tx, "accounts", "totp_secret", "TEXT")?;
     ensure_column(&tx, "accounts", "totp_confirmed", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&tx, "accounts", "google_email", "TEXT")?;
+    ensure_column(&tx, "passkeys", "label", "TEXT")?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -756,15 +792,22 @@ async fn list_accounts(
     admin_ok(&state, &headers)?;
     let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let mut stmt = guard
-        .prepare("SELECT id, name, created_at, grant_rev FROM accounts ORDER BY created_at")
+        .prepare(
+            "SELECT id, name, created_at, grant_rev, password_hash IS NOT NULL,
+                    totp_secret IS NOT NULL AND totp_confirmed = 1, google_email
+             FROM accounts ORDER BY created_at",
+        )
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let accounts: Vec<(i64, String, i64, i64)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+    #[allow(clippy::type_complexity)]
+    let accounts: Vec<(i64, String, i64, i64, bool, bool, Option<String>)> = stmt
+        .query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+        })
         .and_then(|rows| rows.collect())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut out = Vec::with_capacity(accounts.len());
-    for (id, name, created_at, grant_rev) in accounts {
+    for (id, name, created_at, grant_rev, has_password, totp_enabled, google_email) in accounts {
         let mut tstmt = guard
             .prepare("SELECT id, label, created_at FROM tokens WHERE account_id = ?1 ORDER BY created_at")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -776,11 +819,17 @@ async fn list_accounts(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let mut pstmt = guard
-            .prepare("SELECT id, cred_id, created_at FROM passkeys WHERE account_id = ?1 ORDER BY created_at")
+            .prepare("SELECT id, cred_id, created_at, label FROM passkeys WHERE account_id = ?1 ORDER BY created_at")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         let passkeys = pstmt
             .query_map([id], |r| {
-                Ok(PasskeyInfo { id: r.get(0)?, account_id: id, cred_id: r.get(1)?, created_at: r.get(2)? })
+                Ok(PasskeyInfo {
+                    id: r.get(0)?,
+                    account_id: id,
+                    cred_id: r.get(1)?,
+                    created_at: r.get(2)?,
+                    label: r.get(3)?,
+                })
             })
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -789,7 +838,18 @@ async fn list_accounts(
             .query_row("SELECT COUNT(*) FROM rows WHERE account_id = ?1", [id], |r| r.get(0))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        out.push(AccountDetail { id, name, created_at, grant_rev, tokens, passkeys, row_count });
+        out.push(AccountDetail {
+            id,
+            name,
+            created_at,
+            grant_rev,
+            tokens,
+            passkeys,
+            row_count,
+            has_password,
+            totp_enabled,
+            google_email,
+        });
     }
     Ok(Json(out))
 }
@@ -828,6 +888,231 @@ async fn delete_account(
         tx.execute(sql, [id]).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
     tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn rename_account(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    Json(req): Json<NewAccount>,
+) -> Result<Json<RenamedAccount>, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let new_name = req.name.trim().to_string();
+    let mut guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tx = guard.transaction().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    rename_account_db(&tx, &name, &new_name)?;
+    tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(RenamedAccount { name: new_name }))
+}
+
+/// The `owner` name is refused in both directions: `upsert_owner` finds that
+/// account by name at boot, so renaming it away would leave `ALBAS_SYNC_TOKEN`
+/// recreating an empty `owner`, and renaming onto the name would hand the env
+/// token's identity to another account.
+fn rename_account_db(conn: &Connection, name: &str, new_name: &str) -> Result<(), StatusCode> {
+    if !name_ok(new_name) {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    if name == OWNER || new_name == OWNER {
+        return Err(StatusCode::CONFLICT);
+    }
+    let id: Option<i64> = conn
+        .query_row("SELECT id FROM accounts WHERE name = ?1", [name], |r| r.get(0))
+        .optional()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let Some(id) = id else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if new_name == name {
+        return Ok(());
+    }
+    match conn.execute("UPDATE accounts SET name = ?1 WHERE id = ?2", params![new_name, id]) {
+        Ok(_) => {}
+        Err(rusqlite::Error::SqliteFailure(e, _))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            return Err(StatusCode::CONFLICT)
+        }
+        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+    // Grantees cache this account's shared rows under ids embedding the old
+    // name, so a rename must force their snapshots to rebuild like a
+    // revocation would.
+    conn.execute(
+        "UPDATE accounts SET grant_rev = grant_rev + 1
+         WHERE id IN (SELECT grantee_id FROM shares WHERE owner_id = ?1)",
+        [id],
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(())
+}
+
+async fn admin_delete_passkey(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((name, passkey_id)): Path<(String, i64)>,
+) -> Result<StatusCode, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let mut guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tx = guard.transaction().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    delete_passkey_db(&tx, &name, passkey_id)?;
+    tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Refuses (409) to delete the last passkey of an account with no password and
+/// no Google link: nothing can mint a token for an *existing* account, so that
+/// account would be unrecoverable. Deleting the whole account is the escape
+/// hatch when that is really meant.
+fn delete_passkey_db(conn: &Connection, name: &str, passkey_id: i64) -> Result<(), StatusCode> {
+    let account: Option<i64> = conn
+        .query_row("SELECT id FROM accounts WHERE name = ?1", [name], |r| r.get(0))
+        .optional()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let Some(account) = account else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    let exists: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM passkeys WHERE id = ?1 AND account_id = ?2",
+            params![passkey_id, account],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if exists.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let (passkey_count, other_login): (i64, bool) = conn
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM passkeys WHERE account_id = ?1),
+                    password_hash IS NOT NULL OR google_email IS NOT NULL
+             FROM accounts WHERE id = ?1",
+            [account],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if passkey_count == 1 && !other_login {
+        return Err(StatusCode::CONFLICT);
+    }
+    conn.execute(
+        "DELETE FROM passkeys WHERE id = ?1 AND account_id = ?2",
+        params![passkey_id, account],
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(())
+}
+
+/// Sets or, with an empty string, clears a passkey's admin-facing label —
+/// cleared falls back to the name derived from `cred_id`.
+async fn admin_label_passkey(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((name, passkey_id)): Path<(String, i64)>,
+    Json(req): Json<PasskeyLabel>,
+) -> Result<StatusCode, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let label = req.label.trim().to_string();
+    if label.len() > 64 {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    let label = (!label.is_empty()).then_some(label);
+    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let n = guard
+        .execute(
+            "UPDATE passkeys SET label = ?1
+             WHERE id = ?2 AND account_id = (SELECT id FROM accounts WHERE name = ?3)",
+            params![label, passkey_id, name],
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if n == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Revokes one token — the remote "sign that device out". The device's local
+/// data is untouched; its next `/sync` just gets a 401.
+async fn admin_delete_token(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((name, token_id)): Path<(String, i64)>,
+) -> Result<StatusCode, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let n = guard
+        .execute(
+            "DELETE FROM tokens WHERE id = ?1 AND account_id = (SELECT id FROM accounts WHERE name = ?2)",
+            params![token_id, name],
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if n == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn admin_clear_password(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let mut guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tx = guard.transaction().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    clear_password_db(&tx, &name)?;
+    tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Clearing the only credential would brick the account (see
+/// `delete_passkey_db`), so a set password only clears (409 otherwise) when a
+/// passkey or Google link remains. Softer than the self-service guard in
+/// `password.rs`, which insists on a passkey specifically: for admin recovery
+/// a Google login is as real a way back in.
+fn clear_password_db(conn: &Connection, name: &str) -> Result<(), StatusCode> {
+    let row: Option<(i64, bool, bool)> = conn
+        .query_row(
+            "SELECT id, password_hash IS NOT NULL,
+                    (SELECT COUNT(*) FROM passkeys WHERE account_id = accounts.id) > 0
+                      OR google_email IS NOT NULL
+             FROM accounts WHERE name = ?1",
+            [name],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let Some((id, has_password, other_login)) = row else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if has_password && !other_login {
+        return Err(StatusCode::CONFLICT);
+    }
+    conn.execute("UPDATE accounts SET password_hash = NULL WHERE id = ?1", [id])
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(())
+}
+
+/// No guard, deliberately: TOTP is only ever a second factor on password
+/// login, so clearing it cannot lock anyone out — it *is* the recovery path
+/// for a lost authenticator.
+async fn admin_clear_totp(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    admin_ok(&state, &headers)?;
+    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let n = guard
+        .execute(
+            "UPDATE accounts SET totp_secret = NULL, totp_confirmed = 0 WHERE name = ?1",
+            [&name],
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if n == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1155,6 +1440,105 @@ mod tests {
         .unwrap();
         c.execute("UPDATE accounts SET grant_rev = grant_rev + 1 WHERE id = ?1", [grantee])
             .unwrap();
+    }
+
+    fn make_passkey(c: &Connection, account: i64, cred: &str) -> i64 {
+        c.execute(
+            "INSERT INTO passkeys (account_id, cred_id, passkey_json, created_at)
+             VALUES (?1, ?2, '{}', 0)",
+            params![account, cred],
+        )
+        .unwrap();
+        c.last_insert_rowid()
+    }
+
+    fn grant_rev(c: &Connection, id: i64) -> i64 {
+        c.query_row("SELECT grant_rev FROM accounts WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn rename_validates_and_bumps_grantees() {
+        let c = mem(None);
+        let alice = make_account(&c, "alice");
+        let bob = make_account(&c, "bob");
+        make_account(&c, "carol");
+        grant(&c, alice, bob, true, false);
+        let rev = grant_rev(&c, bob);
+
+        assert_eq!(rename_account_db(&c, "alice", "bad name!"), Err(StatusCode::UNPROCESSABLE_ENTITY));
+        assert_eq!(rename_account_db(&c, "missing", "fine"), Err(StatusCode::NOT_FOUND));
+        assert_eq!(rename_account_db(&c, "alice", "carol"), Err(StatusCode::CONFLICT));
+        assert_eq!(rename_account_db(&c, "owner", "boss"), Err(StatusCode::CONFLICT));
+        assert_eq!(rename_account_db(&c, "alice", OWNER), Err(StatusCode::CONFLICT));
+        assert_eq!(grant_rev(&c, bob), rev, "failed renames must not bump grantees");
+
+        assert_eq!(rename_account_db(&c, "alice", "alicia"), Ok(()));
+        let name: String = c
+            .query_row("SELECT name FROM accounts WHERE id = ?1", [alice], |r| r.get(0))
+            .unwrap();
+        assert_eq!(name, "alicia");
+        // Bob caches alice's shared rows under her old name; his snapshot must
+        // be invalidated exactly as a revocation would.
+        assert_eq!(grant_rev(&c, bob), rev + 1);
+    }
+
+    #[test]
+    fn deleting_last_passkey_needs_another_login_method() {
+        let c = mem(None);
+        let a = make_account(&c, "a");
+        let only = make_passkey(&c, a, "cred1");
+
+        assert_eq!(delete_passkey_db(&c, "missing", only), Err(StatusCode::NOT_FOUND));
+        assert_eq!(delete_passkey_db(&c, "a", 999), Err(StatusCode::NOT_FOUND));
+        assert_eq!(delete_passkey_db(&c, "a", only), Err(StatusCode::CONFLICT));
+
+        let second = make_passkey(&c, a, "cred2");
+        assert_eq!(delete_passkey_db(&c, "a", second), Ok(()), "not the last one");
+        assert_eq!(delete_passkey_db(&c, "a", only), Err(StatusCode::CONFLICT));
+
+        c.execute("UPDATE accounts SET password_hash = 'x' WHERE id = ?1", [a]).unwrap();
+        assert_eq!(delete_passkey_db(&c, "a", only), Ok(()), "password remains as a way in");
+
+        let b = make_account(&c, "b");
+        let bs = make_passkey(&c, b, "cred3");
+        c.execute("UPDATE accounts SET google_email = 'b@example.com' WHERE id = ?1", [b])
+            .unwrap();
+        assert_eq!(delete_passkey_db(&c, "b", bs), Ok(()), "google link counts too");
+    }
+
+    #[test]
+    fn passkey_delete_is_scoped_to_the_named_account() {
+        let c = mem(None);
+        let a = make_account(&c, "a");
+        make_account(&c, "b");
+        make_passkey(&c, a, "cred1");
+        let target = make_passkey(&c, a, "cred2");
+        assert_eq!(delete_passkey_db(&c, "b", target), Err(StatusCode::NOT_FOUND));
+        let still: i64 =
+            c.query_row("SELECT COUNT(*) FROM passkeys WHERE id = ?1", [target], |r| r.get(0))
+                .unwrap();
+        assert_eq!(still, 1);
+    }
+
+    #[test]
+    fn clear_password_needs_another_login_method() {
+        let c = mem(None);
+        let a = make_account(&c, "a");
+
+        assert_eq!(clear_password_db(&c, "missing"), Err(StatusCode::NOT_FOUND));
+        assert_eq!(clear_password_db(&c, "a"), Ok(()), "no password set: idempotent no-op");
+
+        c.execute("UPDATE accounts SET password_hash = 'x' WHERE id = ?1", [a]).unwrap();
+        assert_eq!(clear_password_db(&c, "a"), Err(StatusCode::CONFLICT), "only credential");
+
+        make_passkey(&c, a, "cred1");
+        assert_eq!(clear_password_db(&c, "a"), Ok(()));
+        let has: bool = c
+            .query_row("SELECT password_hash IS NOT NULL FROM accounts WHERE id = ?1", [a], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!has);
     }
 
     /// The core merge rule: a stale edit must not clobber a newer one, in

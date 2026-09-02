@@ -20,8 +20,10 @@ reachable.
 ## Running it
 
 Images are published to `ghcr.io/danielpoprawski/albas-sync` by
-`.github/workflows/sync-server.yml` (amd64 and arm64), so hosting needs neither a
-clone nor a Rust toolchain — only `docker-compose.yml` and a token.
+`scripts/publish.sh` (amd64, built locally and pushed), so hosting needs neither a
+clone nor a Rust toolchain — only `docker-compose.yml` and a token. The manual
+`.github/workflows/sync-server.yml` workflow remains for the rare multi-arch
+(arm64) build.
 
 ```bash
 mkdir albas-sync && cd albas-sync
@@ -74,11 +76,27 @@ a `name` are plain signup passes.
 
 Token-only accounts still work for scripting or as a fallback — `POST
 /accounts {"name":…}` (admin) returns a token shown exactly once, `GET
-/accounts` lists every account with its tokens, passkeys and row count inline,
+/accounts` lists every account with its tokens, passkeys and row count inline
+(plus `hasPassword`, `totpEnabled` and `googleEmail` credential flags),
 and `DELETE /accounts/<name>` revokes an account, its rows, tokens, passkeys
 and shares (devices keep their local data; it just stops syncing). Account
 names are 1–64 of `a-z A-Z 0-9 - _`. Note that with open signups, whether a
 name is taken is observable — treat names as public.
+
+### Admin credential management
+
+The console's per-account actions, all admin-gated sub-resources of
+`/accounts/<name>` (they name their account in the path, so unlike `/shares`
+they need no `/admin/` twin):
+
+| Route | Effect |
+|---|---|
+| `PATCH /accounts/<name>` `{"name"}` | Rename. 409 on a taken name or the `owner` account (either direction — `upsert_owner` finds it by name at boot), 422 on an invalid one. Bumps every grantee's `grant_rev`, since shared snapshots cache rows under the owner's name. |
+| `PATCH /accounts/<name>/passkeys/<id>` `{"label"}` | Set a passkey's display label; empty string clears back to the derived `Passkey <prefix>` name. |
+| `DELETE /accounts/<name>/passkeys/<id>` | Remove a passkey. 409 when it is the last one and no password or Google link remains — nothing can mint a token for an existing account, so that would brick it; delete the account instead. |
+| `DELETE /accounts/<name>/tokens/<id>` | Revoke one token — signs that device out on its next sync. |
+| `DELETE /accounts/<name>/password` | Clear the password (idempotent). 409 when it is the only credential — a passkey or Google link must remain. |
+| `DELETE /accounts/<name>/totp` | Clear TOTP (idempotent). Never guarded: TOTP is only a second factor, so this is the recovery move for a lost authenticator. |
 
 **Invites are not planned to grow further.** The product direction is open
 signup only — anyone with the server link can create an account — so
@@ -99,9 +117,9 @@ existing credential ids as `exclude_credentials`, so an authenticator refuses
 to silently enroll a second passkey for the same device. Finish re-checks that
 the presented token still resolves to the account the pending ceremony was
 started for, so one account cannot complete another's ceremony. `GET /passkeys`
-lists what is attached as `{credId, label, createdAt}` — the table stores no
-device name, so the label is derived from the credential id rather than
-invented.
+lists what is attached as `{credId, label, createdAt}` — `label` is the
+admin-set name when one exists, otherwise derived from the credential id (the
+server never learns a device name on its own).
 
 **Password** — `PUT /password` sets or changes one (Argon2id, PHC string in
 `accounts.password_hash`; minimum 12 characters), `DELETE /password` removes it
@@ -128,11 +146,12 @@ to prompt for a typed code. An account with no confirmed secret is unaffected
 either way.
 
 **Upgrading an older server:** nothing to do beyond pulling the new image.
-Columns added to `accounts` after it first shipped (`grant_rev`,
-`password_hash`, `totp_secret`, `totp_confirmed`) are backfilled by
-`ensure_column` on every start — `CREATE TABLE IF NOT EXISTS` is a no-op on an
-existing table, so each such column needs one, and adding a column to `accounts`
-means adding a matching `ensure_column` call in `init_db`.
+Columns added to tables after they first shipped (`accounts.grant_rev`,
+`password_hash`, `totp_secret`, `totp_confirmed`, `google_email`;
+`passkeys.label`) are backfilled by `ensure_column` on every start — `CREATE
+TABLE IF NOT EXISTS` is a no-op on an existing table, so each such column needs
+one, and adding a column to a shipped table means adding a matching
+`ensure_column` call in `init_db`.
 A pre-account database is migrated in place — rows are assigned to the `owner`
 account (created from `ALBAS_SYNC_TOKEN`, which must still be set for that
 first start) with every `seq` preserved, so existing devices keep syncing with

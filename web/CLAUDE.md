@@ -121,9 +121,16 @@ deliberately doesn't either — see `admin_ok` in `main.rs`).
 Endpoints (all admin-gated, documented in full in `sync-server/README.md`):
 
 ```
-GET    /api/accounts                            -> [{id, name, createdAt, grantRev, tokens: [...], passkeys: [...], rowCount}, ...]
+GET    /api/accounts                            -> [{id, name, createdAt, grantRev, tokens: [...], passkeys: [...], rowCount,
+                                                     hasPassword, totpEnabled, googleEmail}, ...]
 POST   /api/accounts            {name}          -> {name, token}   (token shown once)
+PATCH  /api/accounts/<name>     {name}          -> {name}   (rename; 409 conflict/owner, 422 invalid)
 DELETE /api/accounts/<name>
+PATCH  /api/accounts/<name>/passkeys/<id>        body {label} — empty clears to the derived name
+DELETE /api/accounts/<name>/passkeys/<id>        409 if last passkey and no password/Google link
+DELETE /api/accounts/<name>/tokens/<id>          revoke one session token
+DELETE /api/accounts/<name>/password             idempotent; 409 if it's the only credential
+DELETE /api/accounts/<name>/totp                 idempotent, never guarded
 GET    /api/admin/shares                        -> [{ownerId, granteeId, ownerName, granteeName, calendar, todos}, ...]
 PUT    /api/admin/shares/<owner>/<grantee>       body {calendar, todos}
 DELETE /api/admin/shares/<owner>/<grantee>
@@ -131,10 +138,18 @@ GET    /api/admin/rows?account=&table=&limit=    -> [{accountId, accountName, tb
 ```
 
 Note the path split: account CRUD stays at `/accounts` (unchanged from before this admin
-build; nothing else calls it), but sharing and rows are under `/admin/` because the
-account-scoped `/shares` trio (used by the *app's* own Settings → Sharing, not this console)
-resolves its owner from the bearer token — which an admin token doesn't name. Two different
-identity models, two different route trees.
+build; nothing else calls it), and the credential-management routes are sub-resources of it —
+they name their account in the path, so they don't collide with anything token-scoped. Sharing
+and rows are under `/admin/` because the account-scoped `/shares` trio (used by the *app's*
+own Settings → Sharing, not this console) resolves its owner from the bearer token — which an
+admin token doesn't name. Two different identity models, two different route trees.
+
+The 409s above are the server's lockout guards: nothing can mint a token for an *existing*
+account, so an account stripped of its last credential would be permanently bricked. The
+console maps each 409 to action-specific copy (see `ConfirmActionState.conflict` in
+`AdminConsole.tsx`); "add passkey" is deliberately absent — a WebAuthn credential binds to
+whichever authenticator runs the ceremony, so the account holder adds their own via
+`/register` or the self-service `/passkeys/*` pair.
 
 **There is no Invites panel and no `/admin/invites` endpoint.** See root `CLAUDE.md`,
 "Project direction" — the product is moving to open-signup-only, so invite listing/revocation
