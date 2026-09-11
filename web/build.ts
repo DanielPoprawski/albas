@@ -1,22 +1,20 @@
-import tailwind from "bun-plugin-tailwind";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 
 const outdir = path.join(process.cwd(), "dist");
 await rm(outdir, { recursive: true, force: true });
 
-// Both entry HTML files sit at the project root. Bun derives each output path
+// The entry HTML file sits at the project root. Bun derives the output path
 // from the entrypoints' common ancestor, so an entry under src/ would land at
 // dist/src/index.html with "../chunk-*.js" asset references — servable only by
 // accident, since those resolve against the URL path rather than the file's
-// location. Keeping them level puts index.html at the root of dist/ with the
-// asset links nginx actually needs.
-const entrypoints = ["admin.html", "index.html"];
+// location. Keeping it at the root puts index.html at the root of dist/ with
+// the asset links nginx actually needs.
+const entrypoints = ["index.html"];
 
 const result = await Bun.build({
   entrypoints,
   outdir,
-  plugins: [tailwind],
   minify: true,
   target: "browser",
   // Root-absolute asset URLs. The default is relative, which resolves against

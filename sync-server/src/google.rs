@@ -56,17 +56,39 @@
 use crate::{mint_token, name_ok, now_ms, random_token, AppState};
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{
+        header::{COOKIE, SET_COOKIE},
+        HeaderMap, StatusCode,
+    },
     response::Redirect,
     Json,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 type Rejection = (StatusCode, String);
+
+/// `state` + PKCE `code_verifier` live in one `HttpOnly; Secure; SameSite=Lax`
+/// cookie, scoped to the callback path (nginx puts the API behind `/api`, so
+/// this is `/api/auth/google/callback` — see `tls.conf`), between `start` and
+/// `callback`. This is what stops the classic OAuth login-CSRF: without it,
+/// anyone can call `start` themselves, harvest a *server-valid* `code`+`state`
+/// pair for their own Google account, and hand that URL to a victim — the
+/// in-memory `state.google_pending` map alone can't tell the difference
+/// between "the browser that started this flow" and "any browser that knows
+/// the state value", but only the browser holding this cookie can.
+const OAUTH_COOKIE: &str = "albas_oauth";
+/// `/api/auth/google`, not just `/callback` — nginx strips the leading `/api`
+/// before this server ever sees the request (`location /api/ { proxy_pass
+/// http://albas-sync:8787/; ... }` in `nginx/tls.conf`), but the `Path`
+/// attribute of a cookie is matched against the URL the *browser* requests,
+/// which still carries `/api`.
+const OAUTH_COOKIE_PATH: &str = "/api/auth/google";
 
 fn internal_err(e: impl std::fmt::Display) -> Rejection {
     (
@@ -136,6 +158,11 @@ fn google_of(state: &AppState) -> Result<&GoogleConfig, Rejection> {
 struct FlowEntry {
     /// The `app_session.rs` nonce this browser tab was opened with, if any.
     app_session_nonce: Option<String>,
+    /// PKCE code verifier generated in `start`, sent back to Google in
+    /// `exchange_code` alongside the authorization code. Kept server-side
+    /// (not in the cookie) — the cookie only needs to prove "same browser
+    /// that started this", not carry the verifier itself.
+    code_verifier: String,
     expires_at: i64,
 }
 
@@ -157,7 +184,7 @@ pub(crate) struct Pending {
 }
 
 impl Pending {
-    fn new_flow(&self, app_session_nonce: Option<String>) -> String {
+    fn new_flow(&self, app_session_nonce: Option<String>, code_verifier: String) -> String {
         let mut m = self.flows.lock().unwrap();
         let now = now_ms();
         m.retain(|_, v| v.expires_at > now);
@@ -166,6 +193,7 @@ impl Pending {
             state.clone(),
             FlowEntry {
                 app_session_nonce,
+                code_verifier,
                 expires_at: now + FLOW_TTL_MS,
             },
         );
@@ -174,11 +202,11 @@ impl Pending {
 
     /// Single-use: a `state` value not found here is either unknown or
     /// already spent, and both must be refused identically.
-    fn take_flow(&self, state: &str) -> Option<Option<String>> {
+    fn take_flow(&self, state: &str) -> Option<(Option<String>, String)> {
         let mut m = self.flows.lock().unwrap();
         let now = now_ms();
         m.retain(|_, v| v.expires_at > now);
-        m.remove(state).map(|f| f.app_session_nonce)
+        m.remove(state).map(|f| (f.app_session_nonce, f.code_verifier))
     }
 
     fn new_ticket(&self, name: String, token: String) -> String {
@@ -220,23 +248,61 @@ pub(crate) struct StartQuery {
     app_session: Option<String>,
 }
 
-/// `GET /auth/google/start`. Redirects the browser to Google; nothing here is
-/// itself sensitive (the `state` value is unguessable but not secret — Google
-/// only ever echoes it back to us).
+/// Random 64-hex-char PKCE code verifier — well within the 43-128 character
+/// range RFC 7636 requires, and hex digits are all in its unreserved charset.
+fn generate_code_verifier() -> String {
+    random_token()
+}
+
+fn code_challenge(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+/// Builds the `Set-Cookie` header value carrying the OAuth `state` (nothing
+/// else — see `FlowEntry`), or a `Max-Age=0` clear of the same cookie once
+/// `callback` has consumed it.
+fn oauth_cookie(value: &str, max_age_secs: i64) -> String {
+    format!(
+        "{OAUTH_COOKIE}={value}; HttpOnly; Secure; SameSite=Lax; Path={OAUTH_COOKIE_PATH}; Max-Age={max_age_secs}"
+    )
+}
+
+fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(COOKIE).and_then(|v| v.to_str().ok()).and_then(|raw| {
+        raw.split(';').find_map(|pair| {
+            let (k, v) = pair.trim().split_once('=')?;
+            (k == name).then_some(v)
+        })
+    })
+}
+
+/// `GET /auth/google/start`. Redirects the browser to Google and sets the
+/// `state`-carrying cookie `callback` will require back (see `OAUTH_COOKIE`).
 pub(crate) async fn start(
     State(state): State<Arc<AppState>>,
     Query(q): Query<StartQuery>,
-) -> Result<Redirect, Rejection> {
+) -> Result<(HeaderMap, Redirect), Rejection> {
     let cfg = google_of(&state)?;
-    let oauth_state = state.google_pending.new_flow(q.app_session);
+    let verifier = generate_code_verifier();
+    let challenge = code_challenge(&verifier);
+    let oauth_state = state.google_pending.new_flow(q.app_session, verifier);
     let url = format!(
-        "{AUTHORIZE_URL}?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&access_type=online&prompt=select_account",
+        "{AUTHORIZE_URL}?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}\
+         &access_type=online&prompt=select_account&code_challenge={}&code_challenge_method=S256",
         urlencoding::encode(&cfg.client_id),
         urlencoding::encode(&cfg.redirect_uri),
         urlencoding::encode("openid email"),
         urlencoding::encode(&oauth_state),
+        urlencoding::encode(&challenge),
     );
-    Ok(Redirect::to(&url))
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        SET_COOKIE,
+        oauth_cookie(&oauth_state, FLOW_TTL_MS / 1000)
+            .parse()
+            .map_err(internal_err)?,
+    );
+    Ok((headers, Redirect::to(&url)))
 }
 
 #[derive(Deserialize)]
@@ -246,36 +312,48 @@ pub(crate) struct CallbackQuery {
     error: Option<String>,
 }
 
+/// The one message every failure short of "no config at all" shows the
+/// browser. Google's own error bodies, mismatched cookies, and exchange
+/// failures are all logged server-side with detail instead — none of that is
+/// actionable for the person looking at this page, and echoing a third
+/// party's response body back to a browser is needless exposure.
+const GENERIC_CALLBACK_ERROR: &str = "Google sign-in didn't complete. Start again.";
+
+fn generic_callback_error(detail: impl std::fmt::Display) -> Rejection {
+    tracing::warn!("google oauth callback failed: {detail}");
+    (StatusCode::BAD_REQUEST, GENERIC_CALLBACK_ERROR.into())
+}
+
 /// `GET /auth/google/callback`. Google lands the user's browser here with
 /// either `code`+`state` (consent given) or `error` (declined/failed).
 pub(crate) async fn callback(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(q): Query<CallbackQuery>,
-) -> Result<Redirect, Rejection> {
+) -> Result<(HeaderMap, Redirect), Rejection> {
     let cfg = google_of(&state)?;
 
     if let Some(err) = q.error {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!("Google sign-in was not completed: {err}"),
-        ));
+        return Err(generic_callback_error(format_args!("Google reported: {err}")));
     }
-    let code = q.code.ok_or((
-        StatusCode::BAD_REQUEST,
-        "Google did not send a code.".into(),
-    ))?;
-    let oauth_state = q.state.ok_or((
-        StatusCode::BAD_REQUEST,
-        "Google did not send a state.".into(),
-    ))?;
+    let code = q.code.ok_or_else(|| generic_callback_error("no code in callback query"))?;
+    let oauth_state = q.state.ok_or_else(|| generic_callback_error("no state in callback query"))?;
+
+    // The cookie set in `start` must match the query's state — this is what
+    // ties the callback to the same browser that began the flow (see the
+    // `OAUTH_COOKIE` doc comment). Checked *before* consuming the flow, so a
+    // mismatched or missing cookie never burns a legitimate pending flow.
+    if cookie_value(&headers, OAUTH_COOKIE) != Some(oauth_state.as_str()) {
+        return Err(generic_callback_error("oauth cookie missing or did not match the state query param"));
+    }
 
     // Single-use and TTL'd: a replayed or stale callback must not be honoured.
-    let app_session_nonce = state.google_pending.take_flow(&oauth_state).ok_or((
-        StatusCode::BAD_REQUEST,
-        "This sign-in link has expired or was already used. Start again.".into(),
-    ))?;
+    let (app_session_nonce, code_verifier) = state
+        .google_pending
+        .take_flow(&oauth_state)
+        .ok_or_else(|| generic_callback_error("state not found in the pending-flow map (expired, replayed, or bogus)"))?;
 
-    let email = exchange_code(cfg, &code).await?;
+    let email = exchange_code(cfg, &code, &code_verifier).await?;
 
     let (name, token) = {
         let conn = state.conn.lock().unwrap();
@@ -285,11 +363,18 @@ pub(crate) async fn callback(
     };
 
     let ticket = state.google_pending.new_ticket(name, token);
+    // The nonce rides in the URL *fragment*, not a query param: fragments are
+    // never sent to a server (not even this one, on the next navigation) or
+    // recorded in access logs — see CLAUDE.md, "Auth". `google_ticket` stays
+    // a query param; the web client reads it once via `location.search`
+    // immediately after this redirect, before anything else can log it.
     let mut redirect = format!("/login?google_ticket={}", urlencoding::encode(&ticket));
     if let Some(nonce) = app_session_nonce {
-        redirect.push_str(&format!("&app_session={}", urlencoding::encode(&nonce)));
+        redirect.push_str(&format!("#app_session={}", urlencoding::encode(&nonce)));
     }
-    Ok(Redirect::to(&redirect))
+    let mut out_headers = HeaderMap::new();
+    out_headers.insert(SET_COOKIE, oauth_cookie("", 0).parse().map_err(internal_err)?);
+    Ok((out_headers, Redirect::to(&redirect)))
 }
 
 /// `GET /auth/google/session/:ticket`. The web client calls this exactly once,
@@ -314,7 +399,7 @@ pub(crate) async fn session(
 /// the id_token's signature locally: the code was already single-use and tied
 /// to our own `redirect_uri`, so trusting whatever Google's own endpoint hands
 /// back for that access token needs no separate JWKS/signature machinery.
-async fn exchange_code(cfg: &GoogleConfig, code: &str) -> Result<String, Rejection> {
+async fn exchange_code(cfg: &GoogleConfig, code: &str, code_verifier: &str) -> Result<String, Rejection> {
     let client = reqwest::Client::new();
 
     let token_res = client
@@ -325,68 +410,43 @@ async fn exchange_code(cfg: &GoogleConfig, code: &str) -> Result<String, Rejecti
             ("code", code),
             ("redirect_uri", cfg.redirect_uri.as_str()),
             ("grant_type", "authorization_code"),
+            ("code_verifier", code_verifier),
         ])
         .send()
         .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("Could not reach Google: {e}"),
-            )
-        })?;
+        .map_err(|e| generic_callback_error(format_args!("could not reach Google's token endpoint: {e}")))?;
 
     if !token_res.status().is_success() {
         let body = token_res.text().await.unwrap_or_default();
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            format!("Google rejected the sign-in: {body}"),
-        ));
+        return Err(generic_callback_error(format_args!("Google rejected the token exchange: {body}")));
     }
-    let token_json: Value = token_res.json().await.map_err(|e| {
-        (
-            StatusCode::BAD_GATEWAY,
-            format!("Google sent an unreadable response: {e}"),
-        )
-    })?;
+    let token_json: Value = token_res
+        .json()
+        .await
+        .map_err(|e| generic_callback_error(format_args!("Google's token response was unreadable: {e}")))?;
     let access_token = token_json
         .get("access_token")
         .and_then(|v| v.as_str())
-        .ok_or((
-            StatusCode::BAD_GATEWAY,
-            "Google's response had no access token.".into(),
-        ))?;
+        .ok_or_else(|| generic_callback_error("Google's token response had no access_token"))?;
 
     let userinfo_res = client
         .get(USERINFO_URL)
         .bearer_auth(access_token)
         .send()
         .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("Could not fetch the Google profile: {e}"),
-            )
-        })?;
+        .map_err(|e| generic_callback_error(format_args!("could not fetch the Google profile: {e}")))?;
     if !userinfo_res.status().is_success() {
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            "Google refused the profile request.".into(),
-        ));
+        return Err(generic_callback_error("Google refused the userinfo request"));
     }
-    let profile: Value = userinfo_res.json().await.map_err(|e| {
-        (
-            StatusCode::BAD_GATEWAY,
-            format!("Google sent an unreadable profile: {e}"),
-        )
-    })?;
+    let profile: Value = userinfo_res
+        .json()
+        .await
+        .map_err(|e| generic_callback_error(format_args!("Google's profile response was unreadable: {e}")))?;
 
     let email = profile
         .get("email")
         .and_then(|v| v.as_str())
-        .ok_or((
-            StatusCode::BAD_GATEWAY,
-            "Google did not return an email address.".into(),
-        ))?
+        .ok_or_else(|| generic_callback_error("Google's profile had no email"))?
         .trim()
         .to_lowercase();
 
@@ -517,7 +577,6 @@ mod tests {
     fn state_with(c: Connection) -> Arc<AppState> {
         Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -558,6 +617,7 @@ mod tests {
 
         let callback_err = callback(
             State(state.clone()),
+            HeaderMap::new(),
             Query(CallbackQuery {
                 code: Some("x".into()),
                 state: Some("y".into()),
@@ -567,6 +627,78 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(callback_err.0, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// The cookie set in `start` must reach `callback` unchanged and match
+    /// the `state` query param — this is the actual CSRF binding, so it gets
+    /// its own end-to-end test through the real handlers.
+    #[tokio::test]
+    async fn callback_requires_the_start_cookie_to_match_state() {
+        let state = state_with(mem());
+        // Manually configure Google without touching the shared process
+        // environment (see `from_env_requires_all_three_or_none`'s comment).
+        let state = Arc::new(AppState {
+            google: Some(GoogleConfig {
+                client_id: "id".into(),
+                client_secret: "secret".into(),
+                redirect_uri: "https://albas.example.com/api/auth/google/callback".into(),
+            }),
+            ..Arc::try_unwrap(state).ok().unwrap()
+        });
+
+        let (headers, redirect) =
+            start(State(state.clone()), Query(StartQuery { app_session: None })).await.unwrap();
+        let set_cookie = headers.get(SET_COOKIE).unwrap().to_str().unwrap().to_string();
+        let cookie_state = set_cookie.split(';').next().unwrap().split_once('=').unwrap().1.to_string();
+        let _ = redirect;
+
+        // No cookie at all.
+        let err = callback(
+            State(state.clone()),
+            HeaderMap::new(),
+            Query(CallbackQuery { code: Some("x".into()), state: Some(cookie_state.clone()), error: None }),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+
+        // Cookie present but for a different (also-real) flow's state.
+        let (other_headers, _) =
+            start(State(state.clone()), Query(StartQuery { app_session: None })).await.unwrap();
+        let other_cookie = other_headers.get(SET_COOKIE).unwrap().to_str().unwrap().to_string();
+        let mut mismatched = HeaderMap::new();
+        mismatched.insert(COOKIE, other_cookie.split(';').next().unwrap().parse().unwrap());
+        let err = callback(
+            State(state.clone()),
+            mismatched,
+            Query(CallbackQuery { code: Some("x".into()), state: Some(cookie_state.clone()), error: None }),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+
+        // A matching cookie gets *past* the cookie check and consumes the
+        // flow (single-use) — verified without going on to the real network
+        // call `exchange_code` would make, by checking the flow can't be
+        // taken a second time.
+        assert!(cookie_value(
+            &{
+                let mut h = HeaderMap::new();
+                h.insert(COOKIE, set_cookie.split(';').next().unwrap().parse().unwrap());
+                h
+            },
+            OAUTH_COOKIE
+        ) == Some(cookie_state.as_str()));
+        assert!(state.google_pending.take_flow(&cookie_state).is_some(), "flow must still be pending");
+        assert!(state.google_pending.take_flow(&cookie_state).is_none(), "take_flow is single-use");
+    }
+
+    #[test]
+    fn cookie_value_parses_one_of_several_cookies() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "foo=bar; albas_oauth=the-state; other=1".parse().unwrap());
+        assert_eq!(cookie_value(&headers, OAUTH_COOKIE), Some("the-state"));
+        assert_eq!(cookie_value(&headers, "missing"), None);
     }
 
     /// `session` (the ticket pickup) needs no Google config at all — by the

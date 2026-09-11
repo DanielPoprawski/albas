@@ -1,49 +1,38 @@
-import { useId, useRef } from 'react';
+import { useId, useRef, type MutableRefObject } from 'react';
 import { Trash2 } from 'lucide-react';
 import { colorHex, GREY_RAMP, PALETTE, PALETTE_COMPACT, PALETTE_ROWS } from '../../colors';
 import { useIsMobile } from '../../useMedia';
+import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
-import {
-  Select as SelectRoot,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
+import { Segmented } from '../ui/segmented';
+import { Select as SelectRoot, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
 /*
- * The shared text-input skin. White ground and a hairline border, matching the
- * designs' `.input-text`; the filled grey `bg-fill-strong` it used to carry is
- * a pre-redesign surface. `focus:border-accent` colours the border on any
- * focus and the global :focus-visible outline still lands on top for keyboard
- * users — the previous `focus:outline-none` took that away and left the border
- * tint as the only signal.
+ * The shared text-input skin — now just the `field-input` utility (App.css),
+ * which bakes in its own `:focus` border so it no longer needs a
+ * `focus:border-accent` modifier at the call site.
  */
-export const inputClass = 'w-full bg-surface border border-line px-sm py-xs text-body-sm text-ink placeholder:text-ink-muted focus:border-accent transition-colors';
-export const labelClass = 'block text-[10px] font-bold uppercase tracking-wider text-ink-muted mb-xs';
+export const inputClass = 'field-input';
 
-export function SegmentedControl<T extends string>({ options, value, onChange }: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex bg-fill-strong rounded-lg p-xs">
-      {options.map(opt => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`flex-1 py-xs px-xs rounded text-label-md font-semibold transition-all ${
-            value === opt.value ? 'bg-primary text-on-primary shadow-sm' : 'text-txt-muted hover:text-txt'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+/**
+ * What a form's `commit()` did. The modal decides what each means for
+ * closing: a dismiss (scrim, Escape, back) closes on anything but `invalid`,
+ * the Done button additionally refuses `empty` so a blank title is noticed.
+ */
+export type CommitResult = 'saved' | 'unchanged' | 'empty' | 'invalid';
+export type CommitRef = MutableRefObject<(() => CommitResult) | null>;
+export const labelClass = 'micro-label block mb-xs';
+
+/**
+ * Re-export of `ui/segmented.tsx#Segmented` under this form's older name
+ * (its two callers, EventForm and TodoForm, are untouched) — that one has
+ * roving-arrow keyboard support this one never grew. Visual note: this
+ * merge swaps a padded rounded-pill track (redundant anyway, since the
+ * app-wide `border-radius: 0` reset already squared its corners off) for
+ * the bordered adjoining-square look every other segmented control in the
+ * app already uses (Settings' appearance rows).
+ */
+export const SegmentedControl = Segmented;
 
 /**
  * Same props as the native `<select>` this used to render, so no call site
@@ -51,19 +40,24 @@ export function SegmentedControl<T extends string>({ options, value, onChange }:
  * `colorScheme: 'dark'`, which forced a dark OS dropdown even under the light
  * theme. The Radix listbox is styled from the theme tokens instead.
  */
-export function Select<T extends string>({ options, value, onChange, className }: {
+export function Select<T extends string>({
+  options,
+  value,
+  onChange,
+  className,
+}: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
   className?: string;
 }) {
   return (
-    <SelectRoot value={value} onValueChange={v => onChange(v as T)}>
+    <SelectRoot value={value} onValueChange={(v) => onChange(v as T)}>
       <SelectTrigger className={`${inputClass} cursor-pointer h-auto ${className ?? ''}`}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {options.map(opt => (
+        {options.map((opt) => (
           <SelectItem key={opt.value} value={opt.value} className="text-body-sm">
             {opt.label}
           </SelectItem>
@@ -83,10 +77,7 @@ export function Select<T extends string>({ options, value, onChange, className }
  * The wheel opens the OS colour picker via a hidden `input[type=color]`, so any
  * hex is reachable; the swatches are just the fast path.
  */
-export function ColorPicker({ value, onChange }: {
-  value: string;
-  onChange: (hex: string) => void;
-}) {
+export function ColorPicker({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
   const customRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
   const hex = colorHex(value);
@@ -100,9 +91,10 @@ export function ColorPicker({ value, onChange }: {
       onClick={() => onChange(c)}
       className={`aspect-square rounded-full transition-all ${
         hex.toLowerCase() === c.toLowerCase()
-          ? 'ring-2 ring-txt/70 ring-offset-1 ring-offset-transparent scale-110'
+          ? 'ring-2 ring-ink/70 ring-offset-1 ring-offset-transparent scale-110'
           : 'opacity-70 hover:opacity-100 hover:scale-110'
       }`}
+      // dynamic: the swatch is the colour it offers
       style={{ backgroundColor: c }}
     />
   );
@@ -113,8 +105,9 @@ export function ColorPicker({ value, onChange }: {
       title="Custom colour"
       onClick={() => customRef.current?.click()}
       className={`aspect-square rounded-full relative transition-all ${
-        isCustom ? 'ring-2 ring-txt/70 scale-110' : 'opacity-90 hover:opacity-100 hover:scale-110'
+        isCustom ? 'ring-2 ring-ink/70 scale-110' : 'opacity-90 hover:opacity-100 hover:scale-110'
       }`}
+      // dynamic: the wheel shows the custom colour once one is picked
       style={{
         background: isCustom
           ? hex
@@ -122,7 +115,7 @@ export function ColorPicker({ value, onChange }: {
       }}
     >
       {/* punched-out centre marks it as "pick anything", not a colour itself */}
-      {!isCustom && <span className="absolute inset-[30%] rounded-full bg-elevated" />}
+      {!isCustom && <span className="absolute inset-[30%] rounded-full bg-surface" />}
     </button>
   );
 
@@ -132,7 +125,7 @@ export function ColorPicker({ value, onChange }: {
       type="color"
       className="sr-only"
       value={hex}
-      onChange={e => onChange(e.target.value)}
+      onChange={(e) => onChange(e.target.value)}
       tabIndex={-1}
     />
   );
@@ -157,7 +150,12 @@ export function ColorPicker({ value, onChange }: {
   );
 }
 
-export function CheckboxRow({ checked, onChange, label, hint }: {
+export function CheckboxRow({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
@@ -170,31 +168,29 @@ export function CheckboxRow({ checked, onChange, label, hint }: {
   return (
     <label
       htmlFor={id}
-      className="flex items-start gap-sm cursor-pointer p-sm rounded-lg bg-fill hover:bg-fill-strong transition-colors"
+      className="flex items-start gap-sm cursor-pointer p-sm rounded-lg bg-subtle hover:bg-subtle-strong transition-colors"
     >
       {/* was `accent-blue-600` — a literal blue that ignored the theme accent */}
-      <Checkbox
-        id={id}
-        checked={checked}
-        onCheckedChange={v => onChange(v === true)}
-        className="mt-0.5"
-      />
+      <Checkbox id={id} checked={checked} onCheckedChange={(v) => onChange(v === true)} className="mt-0.5" />
       <span>
-        <span className="block text-body-sm text-txt font-medium">{label}</span>
-        {hint && <span className="block text-[11px] text-txt-muted">{hint}</span>}
+        <span className="block text-body-sm text-ink font-medium">{label}</span>
+        {hint && <span className="block text-xs text-ink-muted">{hint}</span>}
       </span>
     </label>
   );
 }
 
+/**
+ * `ui/button.tsx#Button` in its `primary` variant, which already draws from
+ * `--t-accent` (not shadcn's neutral "accent" hover surface — see CLAUDE.md).
+ * `active:scale-95` is kept as a press affordance the shared Button doesn't
+ * have; `text-sm` replaces the old `text-body-sm` (0.875rem).
+ */
 export function SubmitButton({ label }: { label: string }) {
   return (
-    <button
-      type="submit"
-      className="w-full py-sm bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all"
-    >
+    <Button type="submit" variant="primary" className="w-full active:scale-95">
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -205,10 +201,9 @@ export function EditActions({ saveLabel, onDelete }: { saveLabel: string; onDele
       <button
         type="button"
         onClick={onDelete}
-        className="px-md py-sm rounded-lg font-semibold text-body-sm border text-danger hover:bg-tertiary-container/20 active:scale-95 transition-all flex items-center gap-xs flex-shrink-0"
-        style={{ borderColor: 'color-mix(in srgb, var(--t-danger) 55%, transparent)' }}
+        className="px-md py-sm font-semibold text-body-sm border border-danger/55 text-danger hover:bg-cat-red-tint active:scale-95 transition-all flex items-center gap-xs flex-shrink-0"
       >
-        <Trash2 size={15} />
+        <Trash2 size="0.9375rem" />
         Delete
       </button>
       <SubmitButton label={saveLabel} />

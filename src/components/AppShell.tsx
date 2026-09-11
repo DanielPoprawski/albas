@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { remindDueEvents, remindDueTodos } from '../notifications';
 import Calendar from './Calendar';
@@ -12,14 +6,18 @@ import HomeView from './HomeView';
 import RightPanel from './RightPanel';
 import TodoViewRedesign from './TodoViewRedesign';
 import HabitsView from './HabitsView';
-import WeightPanel from './WeightPanel';
 import Settings from './Settings';
 import Welcome from './Welcome';
-import { useApp } from '../context/AppContext';
-import { stampLabel, timeAgo } from '../dates';
+import AddModal from './AddModal';
+import ResizeHandle from './ResizeHandle';
+import { Logo } from './Logo';
+import { LAYOUT_LIMITS, clampRem, useApp } from '../context/AppContext';
+import { fmt, stampLabel, timeAgo } from '../dates';
+import { cn } from '@/lib/utils';
 import { inTauri } from '../persistence';
 import { useIsMobile } from '../useMedia';
-import type { ActiveView } from '../types';
+import { useShortcuts } from '../shortcuts';
+import type { ActiveView, AddType } from '../types';
 
 /**
  * The four destinations the redesign's sidebar has. They are the shell's own
@@ -27,29 +25,22 @@ import type { ActiveView } from '../types';
  * that the stored view type doesn't name yet, and Dashboard/To-Do read better
  * here than the old calendar/todos.
  */
-type Route = 'dashboard' | 'todo' | 'habits' | 'weight' | 'settings';
+type Route = 'dashboard' | 'todo' | 'habits' | 'settings';
 
 /** Route → the persisted view, where one exists. Habits has none yet. */
 const VIEW_OF: Partial<Record<Route, ActiveView>> = {
   dashboard: 'calendar',
   todo: 'todos',
-  weight: 'weight',
   settings: 'settings',
 };
 
 /**
- * The persisted view → this shell's route.
- *
- * `'weight'` used to be folded into `habits`, so the two shared one stored
- * value and navigating to Habits silently rewrote `activeView` to `'weight'`.
- * Weight is now its own destination, which is the clean fix: every route with
- * an `ActiveView` round-trips through `VIEW_OF` unchanged. `habits` is the one
- * route with nothing to persist — `ActiveView` has no name for it — so it is
- * simply not in either map and a restart lands on the dashboard.
+ * The persisted view → this shell's route. `habits` is the one route with
+ * nothing to persist — `ActiveView` has no name for it — so it is simply not
+ * in either map and a restart lands on the dashboard.
  */
 function routeOf(view: ActiveView): Route {
   if (view === 'todos') return 'todo';
-  if (view === 'weight') return 'weight';
   if (view === 'settings') return 'settings';
   return 'dashboard';
 }
@@ -74,7 +65,23 @@ export function SidebarSlot({ children }: { children: ReactNode }) {
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────*/
 
-const ICON = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8 } as const;
+/** A titled group of rows inside the sidebar (Menu, the page's slot). */
+const SIDEBAR_SECTION = 'flex flex-col gap-2';
+
+/**
+ * The full-width content column: a padded, independently scrolling flex child
+ * of the content slot. 2rem, dropping to 1.25rem under the breakpoint.
+ */
+const MAIN_COLUMN = 'min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5';
+
+const ICON = {
+  width: 15,
+  height: 15,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+} as const;
 
 const NAV: { route: Route; label: string; icon: ReactNode }[] = [
   {
@@ -114,20 +121,6 @@ const NAV: { route: Route; label: string; icon: ReactNode }[] = [
     ),
   },
   {
-    route: 'weight',
-    label: 'Weight',
-    // A dial: the arc of a scale's face with its needle. Drawn here in the
-    // same 15px/1.8-stroke vocabulary as its four neighbours rather than
-    // pulled from lucide, which nothing else in this file imports.
-    icon: (
-      <svg {...ICON}>
-        <path d="M3.5 17a9 9 0 1 1 17 0" />
-        <line x1="12" y1="17" x2="16" y2="10.5" />
-        <line x1="3.5" y1="17" x2="20.5" y2="17" />
-      </svg>
-    ),
-  },
-  {
     route: 'settings',
     label: 'Settings',
     icon: (
@@ -149,20 +142,17 @@ function Sidebar({
   slotRef: (el: HTMLDivElement | null) => void;
 }) {
   return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">
-        <span className="logo-mark">
+    <aside className="sidebar max-md:hidden">
+      <div className="flex items-center gap-2 font-heading text-base font-bold text-ink">
+        <span className="gradient-accent text-on-accent flex size-5 shrink-0 items-center justify-center font-heading text-xs font-bold">
           {/* The app mark, drawn rather than lettered — same glyph as
               public/icons/albas-mark-glyph.svg, in white on the purple square. */}
-          <svg viewBox="0 0 512 512" width="20" height="20" aria-hidden="true">
-            <path d="M 352.64213,163.92994 413.28,52.08 l 58.95456,422.68234 -78.20532,-0.0413 z" fill="#fff" fillOpacity="0.55" />
-            <path d="M 313.80273 46.6875 C 313.78856 46.714256 313.77394 46.740823 313.75977 46.767578 L 286.22266 46.767578 L 255.42969 105.83398 L 281.96094 105.83398 C 249.48628 165.31906 216.10526 224.31592 183.19531 283.55859 L 154.49609 283.55859 L 123.70312 342.625 L 150.38477 342.625 L 114.07422 409.05273 L 86.029297 409.05273 L 55.236328 468.11914 L 81.789062 468.11914 L 81.765625 468.16211 L 168.49414 468.36133 L 238.37305 342.625 L 475.24219 342.625 L 462.71484 283.55859 L 271.19922 283.55859 L 402.84375 46.6875 L 313.80273 46.6875 z" fill="#fff" />
-          </svg>
+          <Logo variant="bw" width={20} height={20} aria-hidden="true" />
         </span>
         Albas
       </div>
 
-      <div className="sidebar-section">
+      <div className={SIDEBAR_SECTION}>
         <div className="sidebar-title">Menu</div>
         {NAV.map(({ route: r, label, icon }) => (
           // Real anchors, so a destination has a hover target, a focus ring
@@ -174,7 +164,7 @@ function Sidebar({
             href={`#/${r}`}
             aria-current={route === r ? 'page' : undefined}
             className={`sidebar-item${route === r ? ' active' : ''}`}
-            onClick={e => {
+            onClick={(e) => {
               e.preventDefault();
               onNavigate(r);
             }}
@@ -186,7 +176,7 @@ function Sidebar({
       </div>
 
       {/* Page-specific section — see SidebarSlot. Empty renders as nothing. */}
-      <div className="sidebar-section sidebar-slot" ref={slotRef} />
+      <div className={cn(SIDEBAR_SECTION, 'empty:hidden')} ref={slotRef} />
     </aside>
   );
 }
@@ -232,12 +222,12 @@ function BottomBar() {
   const name = syncAccount ?? (signedIn ? 'Sync token' : 'Local');
 
   return (
-    <div className="bottom-bar">
-      <div className="bar-version">v{__APP_VERSION__}</div>
-      <div className="bar-right">
+    <div className="flex h-8 shrink-0 items-center justify-between border-t border-line bg-surface px-4 text-xs text-ink-secondary max-md:hidden">
+      <div className="font-semibold text-ink">v{__APP_VERSION__}</div>
+      <div className="flex items-center gap-3">
         <button
           type="button"
-          className="bar-sync"
+          className="flex cursor-pointer items-center gap-1.5 hover:text-accent"
           disabled={!canSync || syncing}
           title={canSync ? 'Sync now' : 'Sync is off until an account is set up'}
           onClick={() => {
@@ -249,9 +239,11 @@ function BottomBar() {
           <span aria-hidden="true">↻</span>
           {label}
         </button>
-        <span className="bar-divider" />
-        <span className="bar-user">
-          <span className="user-icon">{initialsOf(name)}</span>
+        <span className="h-3.5 w-px bg-line" />
+        <span className="flex items-center gap-2">
+          <span className="flex size-5 shrink-0 items-center justify-center bg-accent text-xs font-semibold text-on-accent">
+            {initialsOf(name)}
+          </span>
           {name}
         </span>
       </div>
@@ -264,7 +256,18 @@ function BottomBar() {
 export default function AppShell() {
   const isMobile = useIsMobile();
   const [slotHost, setSlotHost] = useState<HTMLDivElement | null>(null);
-  const { activeView, setActiveView, todos, events, loaded, welcomeDone, firstDayOfWeek } = useApp();
+  const {
+    activeView,
+    setActiveView,
+    todos,
+    events,
+    loaded,
+    welcomeDone,
+    firstDayOfWeek,
+    selectedDate,
+    getSetting,
+    setSetting,
+  } = useApp();
 
   // The shell's own route. Seeded from the persisted view and re-derived
   // whenever something else changes it (Settings links, the account menu),
@@ -277,6 +280,61 @@ export default function AppShell() {
     const view = VIEW_OF[next];
     if (view) setActiveView(view);
   }
+
+  // Ctrl+N's target, owned here rather than threaded through every screen so
+  // it works no matter which route is active — `AddModal` itself already
+  // knows how to render standalone (see the calendar day-click callers).
+  const [addRequest, setAddRequest] = useState<{ type: AddType; date?: string } | null>(null);
+
+  // Drag state for the sidebar's resize handle — same pattern as
+  // RightPanel's: a ref (no per-pixel re-render), the var written straight
+  // onto <html> during the drag, `setSetting` only on pointer up.
+  const dragSidebarRem = useRef<number | null>(null);
+
+  function commitSidebarWidth() {
+    if (dragSidebarRem.current === null) return;
+    setSetting('__layout_sidebar_w', String(dragSidebarRem.current));
+    dragSidebarRem.current = null;
+  }
+
+  function handleSidebarDelta(deltaPx: number) {
+    if (dragSidebarRem.current === null) {
+      const stored = parseFloat(getSetting('__layout_sidebar_w') ?? '');
+      dragSidebarRem.current = Number.isFinite(stored) ? stored : LAYOUT_LIMITS.sidebar.def;
+      window.addEventListener('pointerup', commitSidebarWidth, { once: true });
+    }
+    const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    // The handle sits on the sidebar's *right* edge, so dragging right (a
+    // positive clientX delta) widens it.
+    dragSidebarRem.current = clampRem(
+      dragSidebarRem.current + deltaPx / remPx,
+      LAYOUT_LIMITS.sidebar.min,
+      LAYOUT_LIMITS.sidebar.max,
+    );
+    document.documentElement.style.setProperty('--layout-sidebar-w', `${dragSidebarRem.current}rem`);
+  }
+
+  function handleSidebarReset() {
+    dragSidebarRem.current = null;
+    document.documentElement.style.removeProperty('--layout-sidebar-w');
+    setSetting('__layout_sidebar_w', '');
+  }
+
+  useShortcuts({
+    newItem() {
+      const date = selectedDate ?? fmt(new Date());
+      if (route === 'dashboard') setAddRequest({ type: 'event', date });
+      else if (route === 'todo') setAddRequest({ type: 'task', date });
+      else if (route === 'habits') setAddRequest({ type: 'habit', date });
+      // settings: no item to create.
+    },
+    cycleView(dir) {
+      if (isMobile) return; // Tab/Shift+Tab is desktop-only; mobile has no keyboard focus to lose.
+      const i = NAV.findIndex((n) => n.route === route);
+      const next = NAV[(i + dir + NAV.length) % NAV.length];
+      navigate(next.route);
+    },
+  });
 
   // Remind about due to-dos and upcoming events on launch, then re-check
   // periodically. 5-minute cadence so short event offsets (10 min) can't
@@ -298,14 +356,21 @@ export default function AppShell() {
   if (inTauri() && !welcomeDone) return <Welcome />;
 
   return (
-    <div className="desktop-shell">
-      <div className="shell-body">
+    <div className="flex h-screen flex-col">
+      <div className="flex flex-1 overflow-hidden max-md:flex-col">
         <Sidebar route={route} onNavigate={navigate} slotRef={setSlotHost} />
+
+        <ResizeHandle
+          side="right"
+          onDelta={handleSidebarDelta}
+          onReset={handleSidebarReset}
+          ariaLabel="Resize sidebar"
+        />
 
         {/* The content slot. A flex row, so a two-column screen is simply two
             children of it; single-column screens fill it. */}
         <SlotContext.Provider value={slotHost}>
-          <div className="shell-content">
+          <div className="flex min-w-0 flex-1 overflow-hidden bg-surface max-md:flex-col">
             {/* Under 768px the sidebar and the bottom bar are both display:none
                 — HomeView brings its own header and tab bar, which is the whole
                 of the mobile chrome. That leaves every other route with no way
@@ -314,16 +379,17 @@ export default function AppShell() {
                 shell rather than in each screen because it is the shell's
                 navigation that went missing. */}
             {isMobile && route !== 'dashboard' && (
-              <div className="mobile-route-bar">
+              <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-surface px-2">
                 <button
                   type="button"
-                  className="mobile-route-back"
+                  className="flex cursor-pointer items-center gap-1 text-xs font-semibold text-accent"
                   onClick={() => navigate('dashboard')}
                 >
                   <span aria-hidden="true">←</span> Dashboard
                 </button>
-                <span className="mobile-route-title">
-                  {NAV.find(n => n.route === route)?.label}
+                {/* mr-18 balances the back button so the title sits centred in the bar. */}
+                <span className="mr-18 flex-1 text-center font-heading text-sm font-bold text-ink">
+                  {NAV.find((n) => n.route === route)?.label}
                 </span>
               </div>
             )}
@@ -336,19 +402,8 @@ export default function AppShell() {
             {/* Package 04 owns this screen; the shell only routes to it. */}
             {route === 'habits' && <HabitsView />}
 
-            {/* The weight tracker. It predates the redesign and still speaks
-                the legacy `--t-*` aliases, and it sizes itself with `h-full`,
-                so it needs the same padded scroll column Settings gets. */}
-            {route === 'weight' && (
-              <div className="panel-main">
-                <WeightPanel />
-              </div>
-            )}
-
             {route === 'settings' && (
-              // 32px, dropping to 20px under the breakpoint — the design's
-              // `.settings-main`, which a fixed utility padding could not do.
-              <div className="settings-main">
+              <div className={MAIN_COLUMN}>
                 <Settings />
               </div>
             )}
@@ -357,6 +412,13 @@ export default function AppShell() {
       </div>
 
       <BottomBar />
+
+      {/* Ctrl+N's modal — mounted at the shell so it works from any route,
+          not just the routes that already render their own AddModal for a
+          day click or an edit. */}
+      {addRequest && (
+        <AddModal defaultType={addRequest.type} defaultDate={addRequest.date} onClose={() => setAddRequest(null)} />
+      )}
     </div>
   );
 }

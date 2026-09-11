@@ -1,26 +1,23 @@
 import { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { isDone } from '../todoLogic';
 import { SidebarSlot } from './AppShell';
 import TodoCategories from './todo/TodoCategories';
 import TodoTaskRow from './todo/TodoTaskRow';
 import AddModal from './AddModal';
+import QuickAddField from './QuickAddField';
+import SearchBar from './SearchBar';
 import type { Todo } from '../types';
-import { TODO_CATEGORIES } from '../colors';
+import { colorHex } from '../colors';
 
-/**
- * One source for the starter categories and their colours: `src/colors.ts`.
- * This file, `todo/TodoCategories.tsx` and `AddModal.tsx` each used to declare
- * their own copy, and the three disagreed — "Work" was purple in two of them
- * and blue in the third, so a task's category changed colour as you moved
- * between screens.
- */
-const CATEGORY_DEFS: Record<string, { name: string; color: string }> = Object.fromEntries(
-  TODO_CATEGORIES.map(c => [c.label.toLowerCase(), { name: c.label, color: c.hex }]),
-);
-
-type CategoryId = string;
-const CATEGORY_IDS: CategoryId[] = TODO_CATEGORIES.map(c => c.label.toLowerCase());
+/** The section band above a group of tasks; colour comes from the call site. */
+const SECTION_TITLE =
+  'mb-2.5 flex w-full items-center gap-2 border-0 px-2 py-1 text-xs font-bold uppercase tracking-[0.04em]';
+const SECTION_COUNT = 'text-xs font-semibold normal-case';
+const SECTION_TOGGLE =
+  'flex size-4 shrink-0 cursor-pointer items-center justify-center border border-current bg-transparent p-0 text-xs font-bold text-inherit';
 
 /** Sorting function: important first, then by due date, then by time added */
 function sortTasks(a: Todo, b: Todo): number {
@@ -41,95 +38,81 @@ function sortTasks(a: Todo, b: Todo): number {
 }
 
 export default function TodoViewRedesign() {
-  const { todos } = useApp();
-  const [checkedCategories, setCheckedCategories] = useState<Record<CategoryId, boolean>>({
-    work: true,
-    personal: true,
-    shopping: true,
-    health: true,
-    finance: true,
-  });
+  const { todos, categoriesFor } = useApp();
+  const categories = categoriesFor('tasks');
+  const categoryIds = categories.map((c) => c.id);
+  // Empty = "show everything" — a category unchecked by id, not an
+  // opt-in map, so a newly created category is visible without this
+  // component needing to know about it in advance.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [showCompleted, setShowCompleted] = useState(true);
-  const [collapsedSections, setCollapsedSections] = useState<Record<CategoryId, boolean>>({
-    work: false,
-    personal: false,
-    shopping: false,
-    health: false,
-    finance: false,
-  });
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [editingTodo, setEditingTodo] = useState<Todo | undefined>();
-  // Separate from `editingTodo`: "add" has no todo to carry, so reusing that
-  // state for it (setEditingTodo(undefined)) rendered nothing at all.
-  const [adding, setAdding] = useState(false);
+  /** The category id to pre-fill when adding from a category's header bar. */
+  const [addingIn, setAddingIn] = useState<string | undefined>();
 
   // Filter to only tasks (not habits/chores)
-  const tasks = todos.filter(t => t.schedule.type === 'once');
+  const tasks = todos.filter((t) => t.schedule.type === 'once');
 
   // Separate active and completed tasks
-  const activeTasks = tasks.filter(t => !isDone(t));
+  const activeTasks = tasks.filter((t) => !isDone(t));
   const completedTasks = tasks.filter(isDone);
 
-  // Get active category IDs
-  const activeCategories = CATEGORY_IDS.filter(id => checkedCategories[id]);
+  const isVisible = (t: Todo) => !t.category || !hiddenIds.has(t.category);
 
   // Filter active tasks by checked categories
-  const visibleActiveTasks = activeTasks.filter(t => {
-    const catId = getCategoryId(t.category);
-    return catId ? checkedCategories[catId] : true;
-  });
+  const visibleActiveTasks = activeTasks.filter(isVisible);
 
   // Build sections
   const allSectionTasks = visibleActiveTasks.slice().sort(sortTasks);
 
-  const categorySections = activeCategories
-    .map(catId => {
-      const def = CATEGORY_DEFS[catId];
-      const catTasks = visibleActiveTasks
-        .filter(t => getCategoryId(t.category) === catId)
-        .sort(sortTasks);
+  const categorySections = categories
+    .filter((c) => !hiddenIds.has(c.id))
+    .map((cat) => {
+      const catTasks = visibleActiveTasks.filter((t) => t.category === cat.id).sort(sortTasks);
       return {
-        id: catId,
-        name: def.name,
-        color: def.color,
+        id: cat.id,
+        name: cat.name,
+        color: colorHex(cat.colorKey),
         tasks: catTasks,
-        collapsed: !!collapsedSections[catId],
+        collapsed: collapsedIds.has(cat.id),
       };
     })
-    .filter(s => s.tasks.length > 0);
+    .filter((s) => s.tasks.length > 0);
 
   // Completed section (always last, gray header, optional)
-  const completedVisible = completedTasks
-    .filter(t => {
-      const catId = getCategoryId(t.category);
-      return catId ? checkedCategories[catId] : true;
-    })
-    .sort(sortTasks);
+  const completedVisible = completedTasks.filter(isVisible).sort(sortTasks);
 
-  const handleToggleCategory = (catId: CategoryId | 'all' | 'completed') => {
+  const handleToggleCategory = (catId: string | 'all' | 'completed') => {
     if (catId === 'all') {
-      const allOn = activeCategories.length === CATEGORY_IDS.length;
-      const next = { ...checkedCategories };
-      CATEGORY_IDS.forEach(id => {
-        next[id] = !allOn;
-      });
-      setCheckedCategories(next);
+      setHiddenIds((prev) => (prev.size === 0 ? new Set(categoryIds) : new Set()));
     } else if (catId === 'completed') {
       setShowCompleted(!showCompleted);
     } else {
-      setCheckedCategories(prev => ({ ...prev, [catId]: !prev[catId] }));
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(catId)) next.delete(catId);
+        else next.add(catId);
+        return next;
+      });
     }
   };
 
-  const handleToggleSection = (catId: CategoryId) => {
-    setCollapsedSections(prev => ({ ...prev, [catId]: !prev[catId] }));
+  const handleToggleSection = (catId: string) => {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(catId)) next.delete(catId);
+      else next.add(catId);
+      return next;
+    });
   };
 
   return (
     <>
       <SidebarSlot>
         <TodoCategories
-          activeCategories={activeCategories}
-          checkedCategories={checkedCategories}
+          categories={categories}
+          hiddenIds={hiddenIds}
           showCompleted={showCompleted}
           completedCount={completedVisible.length}
           onToggleCategory={handleToggleCategory}
@@ -138,74 +121,78 @@ export default function TodoViewRedesign() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-surface">
         {/* Header */}
-        <div className="border-b border-border px-[var(--space-16)] py-[var(--space-16)]">
+        <div className="border-b border-line px-4 py-4 flex items-center gap-3">
           <h1 className="text-h1 font-heading font-bold">To-Do</h1>
+          <SearchBar scope="tasks" className="hidden md:block ml-auto" />
         </div>
 
-        {/* Add Task Card */}
-        <div className="mx-[var(--space-16)] mt-[var(--space-16)] mb-[var(--space-16)] p-[var(--space-14)] bg-surface border border-border shadow-pop flex items-center gap-[var(--space-10)]">
-          <div className="w-5 h-5 flex-shrink-0 border-2 border-border" />
-          <input
-            type="text"
-            placeholder="Add a task"
-            // Readonly: it opens the modal rather than accepting text. The
-            // focus ring stays — a keyboard user has no other way to tell this
-            // is the control they are on.
-            className="flex-1 text-ui font-body bg-transparent border-none"
-            readOnly
-            onClick={() => setAdding(true)}
-          />
-        </div>
+        <QuickAddField type="task" className="mx-4 mt-4 mb-4 shadow-pop" />
 
         {/* Task List */}
-        <div className="flex-1 overflow-y-auto px-[var(--space-16)] pb-[var(--space-16)]">
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
           {allSectionTasks.length > 0 && (
-            <div className="mb-[var(--space-24)]">
+            <div className="mb-6">
               {/* All Section Header */}
-              <div className="task-section-title bg-accent text-white">
+              <div className={cn(SECTION_TITLE, 'bg-accent text-on-accent')}>
                 All
-                <span className="task-section-count text-white/75">{allSectionTasks.length}</span>
+                <span className={cn(SECTION_COUNT, 'text-on-accent/75')}>{allSectionTasks.length}</span>
               </div>
               {/* All Tasks */}
-              <div className="space-y-[6px]">
-                {allSectionTasks.map(task => (
-                  <TodoTaskRow
-                    key={task.id}
-                    task={task}
-                    onEdit={() => setEditingTodo(task)}
-                  />
+              <div className="space-y-[0.375rem]">
+                {allSectionTasks.map((task) => (
+                  <TodoTaskRow key={task.id} task={task} onEdit={() => setEditingTodo(task)} />
                 ))}
               </div>
             </div>
           )}
 
           {/* Category Sections */}
-          {categorySections.map(section => (
-            <div key={section.id} className="mb-[var(--space-24)]">
-              {/* Section Header */}
-              <button
-                onClick={() => handleToggleSection(section.id)}
-                className="task-section-title text-white cursor-pointer"
+          {categorySections.map((section) => (
+            <div key={section.id} className="mb-6">
+              {/* Section Header: the bar itself adds a to-do into this List
+                  (there is no floating + any more); the chevron at its left
+                  edge is what collapses it. */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setAddingIn(section.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setAddingIn(section.id);
+                  }
+                }}
+                className={cn(SECTION_TITLE, 'cursor-pointer text-on-accent transition-[filter] hover:brightness-95')}
+                // dynamic: the category's own colour
                 style={{ backgroundColor: section.color }}
-                aria-expanded={!section.collapsed}
+                title={`Add a to-do to ${section.name}`}
               >
-                <span className="task-section-toggle" aria-hidden="true">
-                  {section.collapsed ? '+' : '−'}
-                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleSection(section.id);
+                  }}
+                  className={SECTION_TOGGLE}
+                  aria-expanded={!section.collapsed}
+                  aria-label={section.collapsed ? `Expand ${section.name}` : `Collapse ${section.name}`}
+                  title={section.collapsed ? 'Expand' : 'Collapse'}
+                >
+                  {section.collapsed ? (
+                    <ChevronRight size="0.75rem" strokeWidth={3} />
+                  ) : (
+                    <ChevronDown size="0.75rem" strokeWidth={3} />
+                  )}
+                </button>
                 <span className="flex-1 text-left">{section.name}</span>
-                <span className="task-section-count text-white/75">
-                  {section.tasks.length}
-                </span>
-              </button>
+                <span className={cn(SECTION_COUNT, 'text-on-accent/75')}>{section.tasks.length}</span>
+                <Plus size="0.875rem" strokeWidth={3} aria-hidden="true" className="opacity-75" />
+              </div>
               {/* Section Tasks */}
               {!section.collapsed && (
-                <div className="space-y-[6px]">
-                  {section.tasks.map(task => (
-                    <TodoTaskRow
-                      key={task.id}
-                      task={task}
-                      onEdit={() => setEditingTodo(task)}
-                    />
+                <div className="space-y-[0.375rem]">
+                  {section.tasks.map((task) => (
+                    <TodoTaskRow key={task.id} task={task} onEdit={() => setEditingTodo(task)} />
                   ))}
                 </div>
               )}
@@ -214,65 +201,37 @@ export default function TodoViewRedesign() {
 
           {/* Completed Section */}
           {showCompleted && completedVisible.length > 0 && (
-            <div className="mb-[var(--space-24)]">
+            <div className="mb-6">
               {/* Completed Header */}
-              {/* The tint and hairline are derived from the muted ink with
-                  color-mix; Tailwind v3's `bg-opacity-*` was dropped in v4 and
-                  was silently painting this band a solid grey. */}
-              <div
-                className="task-section-title text-ink-muted border"
-                style={{
-                  background: 'color-mix(in srgb, var(--t-ink-muted) 8%, transparent)',
-                  borderColor: 'color-mix(in srgb, var(--t-ink-muted) 20%, transparent)',
-                }}
-              >
-                <span
-                  className="w-2 h-2 flex-shrink-0"
-                  style={{ backgroundColor: 'var(--t-ink-muted)' }}
-                />
+              {/* The tint and hairline are the muted ink at 8% / 20% — v4's
+                  colour-opacity modifiers, which do the color-mix the old
+                  inline style spelled out by hand. */}
+              <div className={cn(SECTION_TITLE, 'border border-ink-muted/20 bg-ink-muted/8 text-ink-muted')}>
+                <span className="w-2 h-2 flex-shrink-0 bg-ink-muted" />
                 <span className="flex-1">Completed</span>
-                <span className="task-section-count">{completedVisible.length}</span>
+                <span className={SECTION_COUNT}>{completedVisible.length}</span>
               </div>
               {/* Completed Tasks */}
-              <div className="space-y-[6px] opacity-55">
-                {completedVisible.map(task => (
-                  <TodoTaskRow
-                    key={task.id}
-                    task={task}
-                    done
-                    onEdit={() => setEditingTodo(task)}
-                  />
+              <div className="space-y-[0.375rem] opacity-55">
+                {completedVisible.map((task) => (
+                  <TodoTaskRow key={task.id} task={task} done onEdit={() => setEditingTodo(task)} />
                 ))}
               </div>
             </div>
           )}
 
           {allSectionTasks.length === 0 && categorySections.length === 0 && (
-            <div className="text-center py-[var(--space-24)] text-micro text-ink-muted">
-              Nothing here yet — hit + to add your first to-do.
+            <div className="text-center py-6 text-micro text-ink-muted">
+              Nothing here yet — type in the "New task" field above to add your first to-do.
             </div>
           )}
         </div>
       </div>
 
       {editingTodo && <AddModal editTodo={editingTodo} onClose={() => setEditingTodo(undefined)} />}
-      {adding && <AddModal defaultType="task" onClose={() => setAdding(false)} />}
-
-      {/* FAB Button */}
-      <button
-        onClick={() => setAdding(true)}
-        className="add-fab"
-        title="Add a to-do"
-      >
-        +
-      </button>
+      {addingIn !== undefined && (
+        <AddModal defaultType="task" defaultCategory={addingIn} onClose={() => setAddingIn(undefined)} />
+      )}
     </>
   );
-}
-
-/** Get the category ID for a task, or undefined if uncategorized */
-function getCategoryId(category: string): CategoryId | undefined {
-  if (!category) return undefined;
-  const normalized = category.toLowerCase();
-  return CATEGORY_IDS.find(id => CATEGORY_DEFS[id].name.toLowerCase() === normalized) as CategoryId | undefined;
 }

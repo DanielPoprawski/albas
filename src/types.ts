@@ -16,6 +16,24 @@ export type Repeat =
 
 export type TodoKind = 'yesno' | 'measurable';
 
+/** Which surfaces a category can be assigned on. */
+export type CategoryScope = 'calendar' | 'tasks' | 'habits';
+
+/**
+ * A user-managed, synced grouping — replaces the old free-text
+ * `Todo.category`. `colorKey` is a hex string, same convention as
+ * `Todo.colorKey` / `CalendarEvent.colorKey` (resolve via `colorHex()`).
+ * `scopes` says which Add-modal types / list views offer it; `sort` is the
+ * user's manual ordering (Settings' up/down), ascending.
+ */
+export interface Category {
+  id: string;
+  name: string;
+  colorKey: string;
+  scopes: CategoryScope[];
+  sort: number;
+}
+
 /** Unified to-do: tasks, habits, and chores are all this one shape. */
 export interface Todo {
   id: string;
@@ -36,9 +54,8 @@ export interface Todo {
   /** Notify on days it's due and not yet done. */
   reminder: boolean;
   /**
-   * Free-text grouping, empty for uncategorised. Free text rather than a
-   * managed list: a category exists exactly as long as a to-do uses one, so
-   * there is nothing to rename, delete, or migrate.
+   * Category id, empty for uncategorised. Was free text; a synced
+   * `categories` table now owns the name/colour (`AppContext#categoryById`).
    */
   category: string;
   /** Starred. Sorts above everything else in its category. */
@@ -50,8 +67,8 @@ export interface Todo {
 /** `exdates` lists occurrence start dates deleted individually ("just this event"). */
 export type Recurrence =
   | { type: 'none' }
-  | { type: 'daily'; interval: number; until?: string | null; exdates?: string[] }   // every N days
-  | { type: 'weekly'; interval: number; until?: string | null; exdates?: string[] }  // every N weeks, on startDate's weekday
+  | { type: 'daily'; interval: number; until?: string | null; exdates?: string[] } // every N days
+  | { type: 'weekly'; interval: number; until?: string | null; exdates?: string[] } // every N weeks, on startDate's weekday
   | { type: 'monthly'; interval: number; until?: string | null; exdates?: string[] }; // every N months, on startDate's day-of-month
 
 /**
@@ -75,6 +92,8 @@ export interface CalendarEvent {
   recurrence: Recurrence;
   /** Reminder lead times in minutes before start (e.g. 10, 60, 1440 = 1d, 10080 = 1w). */
   reminders: number[];
+  /** Category id, empty for uncategorised. */
+  category: string;
   /**
    * Present only on events belonging to another account that shared them
    * (their account name). Shared events are read-only: every edit path checks
@@ -84,31 +103,12 @@ export interface CalendarEvent {
 }
 
 /**
- * One scale reading. Weight is always stored in kg — lb is a display choice
- * (`weightUnit` setting) so switching units can never drift the stored value.
- * Wyze rows reuse the upstream `data_id` as `id`, making a re-sync idempotent.
- */
-export interface WeightEntry {
-  id: string;
-  date: string; // YYYY-MM-DD, local
-  ts: number; // epoch ms of the measurement
-  weightKg: number;
-  /** Body fat percentage. Null when the scale only captured weight. */
-  bodyFat: number | null;
-  bmi: number | null;
-  muscle: number | null;
-  bodyWater: number | null;
-  source: 'wyze' | 'manual';
-}
-
-/**
  * Two themes, both drawn: `:root` in App.css is light, `[data-theme='dark']`
  * is dark. `grey-high`/`grey-low` were dropped — the redesign never drew them,
  * so they were four names for two palettes. A database still holding one fails
  * `AppContext`'s THEMES check and falls back to the default, which is light.
  */
 export type ThemeName = 'light' | 'dark';
-export type WeightUnit = 'kg' | 'lb';
 /** Which weekday grids start on, as a JS `getDay()` value: 0 = Sunday, 1 = Monday. */
 export type FirstDayOfWeek = 0 | 1;
 
@@ -126,6 +126,8 @@ export interface SharedGroup {
   owner: string;
   events: CalendarEvent[];
   todos: Todo[];
+  /** The owner's categories, ids namespaced `${owner}:${pk}` like everything else shared. */
+  categories: Category[];
 }
 
 /** One sharing grant as the server reports it. */
@@ -135,6 +137,6 @@ export interface ShareGrant {
   todos: boolean;
 }
 
-export type ActiveView = 'calendar' | 'todos' | 'weight' | 'settings';
+export type ActiveView = 'calendar' | 'todos' | 'settings';
 export type AddType = 'event' | 'task' | 'habit';
 export type CalendarMode = 'month' | 'week' | 'day';

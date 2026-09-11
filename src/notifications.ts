@@ -1,37 +1,30 @@
 import { addDays, fmt, parse, shortDate } from './dates';
 import { expandEvents, shortTime, type Occurrence } from './eventLogic';
 import { isDoneOn, isDueOn } from './todoLogic';
+import { inTauri } from './persistence';
 import type { CalendarEvent, FirstDayOfWeek, Todo } from './types';
 
 const NOTIFIED_KEY = 'albas-last-reminder';
 const EVENT_NOTIFIED_KEY = 'albas-event-reminders-sent';
-
-function inTauri(): boolean {
-  return '__TAURI_INTERNALS__' in window;
-}
 
 /**
  * Send one desktop notification per day listing to-dos that are due today,
  * have reminders enabled, and aren't done yet. No-op outside Tauri (plain
  * browser dev server) and when everything is already done.
  */
-export async function remindDueTodos(
-  todos: Todo[],
-  firstDay: FirstDayOfWeek = 0,
-): Promise<void> {
+export async function remindDueTodos(todos: Todo[], firstDay: FirstDayOfWeek = 0): Promise<void> {
   if (!inTauri()) return;
 
   const todayStr = fmt(new Date());
   if (localStorage.getItem(NOTIFIED_KEY) === todayStr) return;
 
-  const due = todos.filter(
-    t => t.reminder && isDueOn(t, todayStr, firstDay) && !isDoneOn(t, todayStr)
-  );
+  const due = todos.filter((t) => t.reminder && isDueOn(t, todayStr, firstDay) && !isDoneOn(t, todayStr));
   if (due.length === 0) return;
 
   try {
-    const { isPermissionGranted, requestPermission, sendNotification } =
-      await import('@tauri-apps/plugin-notification');
+    const { isPermissionGranted, requestPermission, sendNotification } = await import(
+      '@tauri-apps/plugin-notification'
+    );
 
     let granted = await isPermissionGranted();
     if (!granted) granted = (await requestPermission()) === 'granted';
@@ -39,7 +32,7 @@ export async function remindDueTodos(
 
     sendNotification({
       title: due.length === 1 ? 'Due today' : `${due.length} to-dos due today`,
-      body: due.map(t => t.name).join(', '),
+      body: due.map((t) => t.name).join(', '),
     });
     localStorage.setItem(NOTIFIED_KEY, todayStr);
   } catch (err) {
@@ -73,7 +66,9 @@ export async function remindDueEvents(events: CalendarEvent[]): Promise<void> {
   let sent: Record<string, number> = {};
   try {
     sent = JSON.parse(localStorage.getItem(EVENT_NOTIFIED_KEY) ?? '{}') ?? {};
-  } catch { /* corrupted store — start fresh */ }
+  } catch {
+    /* corrupted store — start fresh */
+  }
 
   const due: { occ: Occurrence; offset: number; key: string; start: number }[] = [];
   for (const occ of occs) {
@@ -89,8 +84,9 @@ export async function remindDueEvents(events: CalendarEvent[]): Promise<void> {
   if (due.length === 0) return;
 
   try {
-    const { isPermissionGranted, requestPermission, sendNotification } =
-      await import('@tauri-apps/plugin-notification');
+    const { isPermissionGranted, requestPermission, sendNotification } = await import(
+      '@tauri-apps/plugin-notification'
+    );
 
     let granted = await isPermissionGranted();
     if (!granted) granted = (await requestPermission()) === 'granted';
@@ -98,9 +94,14 @@ export async function remindDueEvents(events: CalendarEvent[]): Promise<void> {
 
     for (const { occ, key, start } of due) {
       const timed = !occ.event.allDay && occ.event.startTime;
-      const when = occ.startDate === todayStr
-        ? (timed ? `today at ${shortTime(occ.event.startTime!)}` : 'today')
-        : (timed ? `${shortDate(occ.startDate)} at ${shortTime(occ.event.startTime!)}` : shortDate(occ.startDate));
+      const when =
+        occ.startDate === todayStr
+          ? timed
+            ? `today at ${shortTime(occ.event.startTime!)}`
+            : 'today'
+          : timed
+            ? `${shortDate(occ.startDate)} at ${shortTime(occ.event.startTime!)}`
+            : shortDate(occ.startDate);
       sendNotification({ title: occ.event.title, body: `Starts ${when}` });
       sent[key] = start;
     }

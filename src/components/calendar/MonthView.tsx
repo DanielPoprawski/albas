@@ -1,14 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { fmt } from '../../dates';
 import AddModal from '../AddModal';
 import MonthViewDesktop, { PILL_CAP as DESKTOP_PILL_CAP } from './MonthViewDesktop';
-import MonthViewMobile, { DUE_DOTS as MOBILE_DUE_DOTS, MIN_WEEKS as MOBILE_MIN_WEEKS, PILL_CAP as MOBILE_PILL_CAP } from './MonthViewMobile';
+import MonthViewMobile, {
+  DUE_DOTS as MOBILE_DUE_DOTS,
+  MIN_WEEKS as MOBILE_MIN_WEEKS,
+  PILL_CAP as MOBILE_PILL_CAP,
+} from './MonthViewMobile';
 import { useMonthModel } from './monthModel';
 import type { Occurrence } from '../../eventLogic';
 import type { CalendarEvent, Todo } from '../../types';
-
-export { getCalendarDays } from './monthModel';
 
 /**
  * Month grid shell: derives the model, owns the edit/add modals, and hands the
@@ -18,25 +19,13 @@ export { getCalendarDays } from './monthModel';
  */
 interface MonthViewProps {
   isMobile?: boolean;
-  onAdd?: () => void;
 }
 
-export default function MonthView({ isMobile = false, onAdd: onAddProp }: MonthViewProps) {
-  const { setSelectedDate, setCalendarMode } = useApp();
+export default function MonthView({ isMobile = false }: MonthViewProps) {
+  const { setSelectedDate } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [editTodo, setEditTodo] = useState<Todo | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
-
-  // Connect the onAdd callback from the parent - open modal for today's date
-  const handleAdd = useCallback(() => {
-    const today = fmt(new Date());
-    if (onAddProp) {
-      onAddProp();
-    } else {
-      setAddDate(today);
-    }
-  }, [onAddProp]);
-
 
   const weeks = useMonthModel(
     isMobile
@@ -52,21 +41,21 @@ export default function MonthView({ isMobile = false, onAdd: onAddProp }: MonthV
       setEditEvent({ event: o.event, date: o.startDate });
     },
     onEditTodo: setEditTodo,
-    // A phone tile is too small to be a useful agenda, so tapping drills into
-    // that day. Desktop has the room, so clicking goes straight to "add here".
+    // Clicking a day adds to it, on every device — the phone's day view is a
+    // mode in the nav picker, not a tap away from the grid.
     onDayClick: (dateStr: string) => {
       setSelectedDate(dateStr);
-      if (isMobile) setCalendarMode('day');
-      else setAddDate(dateStr);
+      setAddDate(dateStr);
     },
-    onAdd: handleAdd,
   };
 
   return (
     <>
       {isMobile ? <MonthViewMobile {...layoutProps} /> : <MonthViewDesktop {...layoutProps} />}
 
-      {editEvent && <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />}
+      {editEvent && (
+        <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />
+      )}
       {editTodo && <AddModal editTodo={editTodo} onClose={() => setEditTodo(null)} />}
       {addDate && <AddModal defaultDate={addDate} defaultType="event" onClose={() => setAddDate(null)} />}
     </>

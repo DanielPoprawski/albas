@@ -1,82 +1,100 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  ActiveView, CalendarEvent, CalendarMode, FirstDayOfWeek, SharedGroup, ThemeName, Todo, WeightEntry, WeightUnit,
+  ActiveView,
+  CalendarEvent,
+  CalendarMode,
+  Category,
+  CategoryScope,
+  FirstDayOfWeek,
+  SharedGroup,
+  ThemeName,
+  Todo,
 } from '../types';
 import { fmt, parse, weekOf } from '../dates';
 import { inTauri, persistence, readLocalBlob } from '../persistence';
-import { DEFAULT_COLOR } from '../colors';
-import { migrateLegacyTask, migrateTodo, periodToEvent, taskToTodo } from '../migrations';
+import { DEFAULT_COLOR, deriveAccent, isHex, TODO_CATEGORIES } from '../colors';
+import { migrateLegacyTask, migrateTodo, periodToEvent, remapLegacyCategory, taskToTodo } from '../migrations';
 import { mapSharedRows } from '../sharedLogic';
-
-export { migrateLegacyTask, migrateTodo } from '../migrations';
+import * as ipc from '../ipc';
+import type { SyncOutcome } from '../ipc';
 
 const today = new Date();
 const todayStr = fmt(today);
 
 // Seed demo data on the current Mon–Sun week so it lines up with the weekly tracker,
 // but never on future days.
-const weekDates = weekOf(today).filter(d => d <= todayStr);
+const weekDates = weekOf(today).filter((d) => d <= todayStr);
 const weekAgo = new Date(today);
 weekAgo.setDate(today.getDate() - 7);
 const weekAgoStr = fmt(weekAgo);
 
 const baseTodo = {
-  kind: 'yesno' as const, unit: '', target: 1,
-  dueDate: null, time: null, createdAt: weekAgoStr, reminder: false,
-  category: '', important: false,
+  kind: 'yesno' as const,
+  unit: '',
+  target: 1,
+  dueDate: null,
+  time: null,
+  createdAt: weekAgoStr,
+  reminder: false,
+  category: '',
+  important: false,
 };
 
 const initialTodos: Todo[] = [
   {
-    ...baseTodo, id: '1', name: 'Deep Work', colorKey: '#10b981', kind: 'measurable', unit: 'h', target: 4,
+    ...baseTodo,
+    id: '1',
+    name: 'Deep Work',
+    colorKey: '#10b981',
+    kind: 'measurable',
+    unit: 'h',
+    target: 4,
     schedule: { type: 'weekdays', days: [1, 2, 3, 4, 5] },
     completions: Object.fromEntries(
-      weekDates.filter(d => { const day = parse(d).getDay(); return day >= 1 && day <= 5; }).map(d => [d, 4])
+      weekDates
+        .filter((d) => {
+          const day = parse(d).getDay();
+          return day >= 1 && day <= 5;
+        })
+        .map((d) => [d, 4]),
     ),
   },
   {
-    ...baseTodo, id: '2', name: 'Meditation', colorKey: '#a855f7',
+    ...baseTodo,
+    id: '2',
+    name: 'Meditation',
+    colorKey: '#a855f7',
     schedule: { type: 'daily' },
-    completions: Object.fromEntries(weekDates.filter((_, i) => i % 2 === 0).map(d => [d, 1])),
+    completions: Object.fromEntries(weekDates.filter((_, i) => i % 2 === 0).map((d) => [d, 1])),
   },
   {
-    ...baseTodo, id: '3', name: 'Take out trash', colorKey: '#f59e0b', reminder: true,
+    ...baseTodo,
+    id: '3',
+    name: 'Take out trash',
+    colorKey: '#f59e0b',
+    reminder: true,
     schedule: { type: 'every', n: 3, unit: 'day', fromDone: true },
     completions: weekDates.length > 2 ? { [weekDates[weekDates.length - 3]]: 1 } : {},
   },
   {
-    ...baseTodo, id: '4', name: 'Finalize Q4 roadmap', colorKey: DEFAULT_COLOR,
-    schedule: { type: 'once' }, dueDate: todayStr, completions: {},
+    ...baseTodo,
+    id: '4',
+    name: 'Finalize Q4 roadmap',
+    colorKey: DEFAULT_COLOR,
+    schedule: { type: 'once' },
+    dueDate: todayStr,
+    completions: {},
   },
 ];
 
 export type NewTodo = Omit<Todo, 'id' | 'completions' | 'createdAt'>;
 export type NewEvent = Omit<CalendarEvent, 'id'>;
 
-export type NewWeight = Omit<WeightEntry, 'id'>;
-
-/** Mirrors `SyncOutcome` from Rust's `sync_now` (src-tauri/src/sync.rs). */
-export interface SyncOutcome {
-  pushed: number;
-  pulled: number;
-  skipped: number;
-  sharedChanged: boolean;
-  /** Epoch millis as a string — an i64 that would lose precision as a JSON number. */
-  lastSync: string | null;
-}
-
-/** Mirrors `SyncStatus` from Rust's `sync_status`. */
-export interface SyncStatusInfo {
-  configured: boolean;
-  url: string | null;
-  account: string | null;
-  lastSync: string | null;
-}
+export type NewCategory = Omit<Category, 'id'>;
 
 interface AppContextType {
   todos: Todo[];
   events: CalendarEvent[];
-  weights: WeightEntry[];
   loaded: boolean;
   selectedDate: string | null;
   currentMonth: Date;
@@ -97,14 +115,26 @@ interface AppContextType {
   deleteEvent: (id: string) => void;
   /** Bulk upsert (by id), e.g. a Google Calendar import — re-importing updates in place. */
   importEvents: (incoming: CalendarEvent[]) => void;
-  addWeight: (weight: NewWeight) => void;
-  deleteWeight: (id: string) => void;
-  /** Bulk upsert (by id) for a Wyze sync — re-syncing a range updates in place. */
-  importWeights: (incoming: WeightEntry[]) => void;
+  /** User-managed, synced groupings (Settings › Categories). */
+  categories: Category[];
+  /** Returns the created category (with its new id) so a caller can select it immediately. */
+  addCategory: (category: NewCategory) => Category;
+  updateCategory: (id: string, updates: Partial<Omit<Category, 'id'>>) => void;
+  /** Also clears `category` on every referencing to-do/event (they persist as uncategorised). */
+  deleteCategory: (id: string) => void;
+  /** Own categories offered for a given surface, sorted by the user's manual order. */
+  categoriesFor: (scope: CategoryScope) => Category[];
+  /** Resolves an id against own categories, then shared ones (namespaced `${owner}:${pk}`). */
+  categoryById: (id: string) => Category | undefined;
   theme: ThemeName;
-  weightUnit: WeightUnit;
+  /** Settings › Appearance. Device-local, like every setting. */
+  accent: string;
+  font: FontChoice;
+  fontSize: FontSizeChoice;
   firstDayOfWeek: FirstDayOfWeek;
   setSetting: (key: string, value: string) => void;
+  /** Raw read of any setting, layout's included — closes CLAUDE.md TODO 2. */
+  getSetting: (key: string) => string | undefined;
   /**
    * Re-reads everything from the store. Needed after a server sync, which
    * writes straight to SQLite from Rust and so bypasses React state.
@@ -177,12 +207,170 @@ export function applyTheme(theme: ThemeName): void {
   }
 }
 
+// --- Appearance: accent colour, font, text size ---
+
+export type FontChoice = 'outfit' | 'sora' | 'slabo' | 'system';
+export type FontSizeChoice = 's' | 'm' | 'l' | 'xl' | 'xxl' | 'xxxl';
+
+export const FONT_STACKS: Record<FontChoice, { body: string; heading: string; label: string }> = {
+  outfit: {
+    body: "'Outfit', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
+    heading: "'Sora', 'Outfit', system-ui, -apple-system, sans-serif",
+    label: 'Outfit',
+  },
+  sora: {
+    body: "'Sora', 'Outfit', system-ui, -apple-system, sans-serif",
+    heading: "'Sora', 'Outfit', system-ui, -apple-system, sans-serif",
+    label: 'Sora',
+  },
+  slabo: {
+    body: "'Slabo 27px', Georgia, 'Times New Roman', serif",
+    heading: "'Slabo 27px', Georgia, 'Times New Roman', serif",
+    label: 'Slabo',
+  },
+  system: {
+    body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    heading: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    label: 'System',
+  },
+};
+
+/** Root font size per choice; everything is in rem, so this scales the app. */
+export const FONT_SIZES: Record<FontSizeChoice, { css: string; label: string }> = {
+  s: { css: '87.5%', label: 'Small' },
+  m: { css: '', label: 'Default' },
+  l: { css: '112.5%', label: 'Large' },
+  xl: { css: '125%', label: 'Extra large' },
+  xxl: { css: '150%', label: 'Huge' },
+  xxxl: { css: '175%', label: 'Largest' },
+};
+
+export interface Appearance {
+  /** `#rrggbb`, or '' for the theme's own accent. */
+  accent: string;
+  font: FontChoice;
+  fontSize: FontSizeChoice;
+}
+
+export function readAppearance(settings: Record<string, string>): Appearance {
+  const accent = settings.accent ?? '';
+  const font = settings.font as FontChoice | undefined;
+  const size = settings.fontSize as FontSizeChoice | undefined;
+  return {
+    accent: isHex(accent) ? accent : '',
+    font: font && font in FONT_STACKS ? font : 'outfit',
+    fontSize: size && size in FONT_SIZES ? size : 'm',
+  };
+}
+
+/**
+ * Stamps the appearance onto <html> as inline custom properties, which beat
+ * both `:root` and `[data-theme='dark']`. The accent's hover/deep/tint are
+ * derived here per theme (see `deriveAccent`), so it has to re-run whenever
+ * the theme changes too. Mirrored to localStorage, pre-derived, so the inline
+ * script in index.html can paint it before React mounts.
+ */
+export function applyAppearance(theme: ThemeName, a: Appearance): void {
+  const root = document.documentElement;
+  const vars: Record<string, string> = {};
+  if (a.accent) {
+    const surface =
+      getComputedStyle(root).getPropertyValue('--t-surface').trim() || (theme === 'dark' ? '#17191e' : '#ffffff');
+    const d = deriveAccent(a.accent, surface, theme === 'dark');
+    vars['--t-accent'] = a.accent;
+    vars['--t-accent-hover'] = d.hover;
+    vars['--t-accent-deep'] = d.deep;
+    vars['--t-accent-tint'] = d.tint;
+  }
+  if (a.font !== 'outfit') {
+    vars['--t-font-body'] = FONT_STACKS[a.font].body;
+    vars['--t-font-heading'] = FONT_STACKS[a.font].heading;
+  }
+  for (const name of [
+    '--t-accent',
+    '--t-accent-hover',
+    '--t-accent-deep',
+    '--t-accent-tint',
+    '--t-font-body',
+    '--t-font-heading',
+  ]) {
+    if (vars[name]) root.style.setProperty(name, vars[name]);
+    else root.style.removeProperty(name);
+  }
+  root.style.fontSize = FONT_SIZES[a.fontSize].css;
+  try {
+    localStorage.setItem('albas-appearance', JSON.stringify({ vars, fontSize: FONT_SIZES[a.fontSize].css }));
+  } catch {
+    // private mode / quota — still applied for this session
+  }
+}
+
+const APPEARANCE_KEYS = new Set(['theme', 'accent', 'font', 'fontSize']);
+
+// --- Layout: adjustable sidebar / right-panel widths ---
+
+export interface Layout {
+  /** Rem number as a string, or '' for "unset — CSS default wins". */
+  sidebar: string;
+  right: string;
+}
+
+/** Min/max/default rem widths for each resizable panel (Phase L). */
+export const LAYOUT_LIMITS = {
+  sidebar: { min: 10, max: 24, def: 12.5 },
+  right: { min: 14, max: 32, def: 20 },
+} as const;
+
+export function clampRem(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
+export function readLayout(settings: Record<string, string>): Layout {
+  return {
+    sidebar: settings.__layout_sidebar_w ?? '',
+    right: settings.__layout_right_w ?? '',
+  };
+}
+
+/**
+ * Stamps the two layout widths onto <html> as inline custom properties, the
+ * same trick `applyAppearance` uses. An unset (or unparsable) value removes
+ * the property instead of writing one, so `.sidebar`'s own
+ * `var(--layout-sidebar-w, 12.5rem)` fallback wins — this is what "reset"
+ * (the handle's double-click) relies on. Mirrored to localStorage, already
+ * clamped, so the inline script in index.html can paint it before React
+ * mounts and the layout doesn't jump on launch.
+ */
+export function applyLayout(l: Layout): void {
+  const root = document.documentElement;
+  const vars: Record<string, string> = {};
+  const sidebarNum = parseFloat(l.sidebar);
+  if (l.sidebar !== '' && Number.isFinite(sidebarNum)) {
+    vars['--layout-sidebar-w'] = `${clampRem(sidebarNum, LAYOUT_LIMITS.sidebar.min, LAYOUT_LIMITS.sidebar.max)}rem`;
+  }
+  const rightNum = parseFloat(l.right);
+  if (l.right !== '' && Number.isFinite(rightNum)) {
+    vars['--layout-right-w'] = `${clampRem(rightNum, LAYOUT_LIMITS.right.min, LAYOUT_LIMITS.right.max)}rem`;
+  }
+  for (const name of ['--layout-sidebar-w', '--layout-right-w'] as const) {
+    if (vars[name]) root.style.setProperty(name, vars[name]);
+    else root.style.removeProperty(name);
+  }
+  try {
+    localStorage.setItem('albas-layout', JSON.stringify(vars));
+  } catch {
+    // private mode / quota — the layout still applies for this session
+  }
+}
+
+const LAYOUT_KEYS = new Set(['__layout_sidebar_w', '__layout_right_w']);
+
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [weights, setWeights] = useState<WeightEntry[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [shared, setShared] = useState<SharedGroup[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
@@ -203,8 +391,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         let state = await persistence.load();
         setSettings(state.settings);
-        setWeights(state.weights);
         applyTheme(readTheme(state.settings));
+        applyAppearance(readTheme(state.settings), readAppearance(state.settings));
+        applyLayout(readLayout(state.settings));
 
         if (inTauri() && state.needsLegacyImport) {
           const blob = readLocalBlob();
@@ -214,12 +403,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        let finalTodos: Todo[];
         if (state.empty) {
           // first launch anywhere — seed the demo data through the store
-          initialTodos.forEach(t => {
+          initialTodos.forEach((t) => {
             persistence.saveTodo(t);
             Object.entries(t.completions).forEach(([d, v]) => persistence.setCompletion(t.id, d, v));
           });
+          finalTodos = initialTodos;
           setTodos(initialTodos);
         } else {
           const loadedTodos = state.todos.map(migrateTodo);
@@ -240,9 +431,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             persistence.deletePeriod(raw.id);
           }
 
+          finalTodos = loadedTodos;
           setTodos(loadedTodos);
           setEvents(loadedEvents);
         }
+
+        // Categories: seed the five starters only for a genuinely fresh,
+        // never-signed-in install — zero categories exist yet, nothing is
+        // signed in (a sync is not about to pull the real ones), and no
+        // loaded to-do already carries a pre-Phase-K free-text category (that
+        // data goes through the remap below instead of being buried under
+        // five defaults it never asked for). Everything else — an existing
+        // local install with free-text categories, or any signed-in device,
+        // which will get its real categories from the next sync — is left
+        // empty for the user to fill in from Settings.
+        let loadedCategories = state.categories;
+        const signedInAtLoad = !!state.settings.__sync_token?.trim();
+        const hasLegacyCategoryText = finalTodos.some((t) => t.category.trim());
+        if (loadedCategories.length === 0 && !signedInAtLoad && !hasLegacyCategoryText) {
+          loadedCategories = TODO_CATEGORIES.map((c, i) => ({
+            id: crypto.randomUUID(),
+            name: c.label,
+            colorKey: c.hex,
+            scopes: ['tasks'],
+            sort: i,
+          }));
+          loadedCategories.forEach((c) => persistence.saveCategory(c));
+        }
+        // Best-effort, cheap remap of any surviving free-text category to the
+        // matching id (see migrations.ts#remapLegacyCategory) — a no-op once
+        // everything already holds ids, which is every load after the first.
+        finalTodos = finalTodos.map((t) => {
+          const remapped = remapLegacyCategory(t.category, loadedCategories);
+          if (remapped === t.category) return t;
+          const next = { ...t, category: remapped };
+          persistence.saveTodo(next);
+          return next;
+        });
+        setTodos(finalTodos);
+        setCategories(loadedCategories);
+
         await refreshShared();
       } catch (err) {
         console.error('failed to load persisted data:', err);
@@ -261,8 +489,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     syncStarted.current = true;
     (async () => {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const status = await invoke<SyncStatusInfo>('sync_status');
+        const status = await ipc.syncStatus();
         if (!status.configured) return;
         await syncNow();
       } catch (err) {
@@ -273,36 +500,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   function addTodo(todo: NewTodo) {
     const full: Todo = { ...todo, id: crypto.randomUUID(), createdAt: todayStr, completions: {} };
-    setTodos(prev => [...prev, full]);
+    setTodos((prev) => [...prev, full]);
     persistence.saveTodo(full);
   }
 
   function updateTodo(id: string, updates: Partial<Omit<Todo, 'id' | 'completions'>>) {
-    const current = todos.find(t => t.id === id);
+    const current = todos.find((t) => t.id === id);
     if (!current) return;
     const next = { ...current, ...updates };
-    setTodos(prev => prev.map(t => (t.id === id ? next : t)));
+    setTodos((prev) => prev.map((t) => (t.id === id ? next : t)));
     persistence.saveTodo(next);
   }
 
   function deleteTodo(id: string) {
-    setTodos(prev => prev.filter(t => t.id !== id));
+    setTodos((prev) => prev.filter((t) => t.id !== id));
     persistence.deleteTodo(id);
   }
 
   function setTodoValue(todoId: string, date: string, value: number) {
-    setTodos(prev => prev.map(t => {
-      if (t.id !== todoId) return t;
-      const completions = { ...t.completions };
-      if (value <= 0) delete completions[date];
-      else completions[date] = value;
-      return { ...t, completions };
-    }));
+    setTodos((prev) =>
+      prev.map((t) => {
+        if (t.id !== todoId) return t;
+        const completions = { ...t.completions };
+        if (value <= 0) delete completions[date];
+        else completions[date] = value;
+        return { ...t, completions };
+      }),
+    );
     persistence.setCompletion(todoId, date, value);
   }
 
   function toggleTodo(todoId: string, date: string) {
-    const todo = todos.find(t => t.id === todoId);
+    const todo = todos.find((t) => t.id === todoId);
     if (!todo) return;
     const current = todo.completions[date] ?? 0;
     setTodoValue(todoId, date, current >= todo.target ? 0 : todo.target);
@@ -310,64 +539,88 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   function addEvent(event: NewEvent) {
     const full: CalendarEvent = { ...event, id: crypto.randomUUID() };
-    setEvents(prev => [...prev, full]);
+    setEvents((prev) => [...prev, full]);
     persistence.saveEvent(full);
   }
 
   function updateEvent(id: string, updates: Partial<Omit<CalendarEvent, 'id'>>) {
-    const current = events.find(e => e.id === id);
+    const current = events.find((e) => e.id === id);
     if (!current) return;
     const next = { ...current, ...updates };
-    setEvents(prev => prev.map(e => (e.id === id ? next : e)));
+    setEvents((prev) => prev.map((e) => (e.id === id ? next : e)));
     persistence.saveEvent(next);
   }
 
   function deleteEvent(id: string) {
-    setEvents(prev => prev.filter(e => e.id !== id));
+    setEvents((prev) => prev.filter((e) => e.id !== id));
     persistence.deleteEvent(id);
   }
 
   function importEvents(incoming: CalendarEvent[]) {
-    setEvents(prev => {
-      const byId = new Map(prev.map(e => [e.id, e]));
+    setEvents((prev) => {
+      const byId = new Map(prev.map((e) => [e.id, e]));
       for (const e of incoming) byId.set(e.id, e);
       return [...byId.values()];
     });
-    incoming.forEach(e => persistence.saveEvent(e));
+    incoming.forEach((e) => persistence.saveEvent(e));
   }
 
-  function addWeight(weight: NewWeight) {
-    const full: WeightEntry = { ...weight, id: crypto.randomUUID() };
-    setWeights(prev => [...prev, full].sort((a, b) => a.ts - b.ts));
-    persistence.saveWeight(full);
+  function addCategory(input: NewCategory): Category {
+    const full: Category = { ...input, id: crypto.randomUUID() };
+    setCategories((prev) => [...prev, full]);
+    persistence.saveCategory(full);
+    return full;
   }
 
-  function deleteWeight(id: string) {
-    setWeights(prev => prev.filter(w => w.id !== id));
-    persistence.deleteWeight(id);
+  function updateCategory(id: string, updates: Partial<Omit<Category, 'id'>>) {
+    const current = categories.find((c) => c.id === id);
+    if (!current) return;
+    const next = { ...current, ...updates };
+    setCategories((prev) => prev.map((c) => (c.id === id ? next : c)));
+    persistence.saveCategory(next);
   }
 
-  function importWeights(incoming: WeightEntry[]) {
-    setWeights(prev => {
-      const byId = new Map(prev.map(w => [w.id, w]));
-      for (const w of incoming) byId.set(w.id, w);
-      return [...byId.values()].sort((a, b) => a.ts - b.ts);
-    });
-    incoming.forEach(w => persistence.saveWeight(w));
+  function deleteCategory(id: string) {
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+    persistence.deleteCategory(id);
+    // Clear the reference through the normal update paths, not a direct
+    // write, so the clear itself persists (and syncs) like any other edit.
+    todos.filter((t) => t.category === id).forEach((t) => updateTodo(t.id, { category: '' }));
+    events.filter((e) => e.category === id).forEach((e) => updateEvent(e.id, { category: '' }));
+  }
+
+  function categoriesFor(scope: CategoryScope): Category[] {
+    return categories
+      .filter((c) => c.scopes.includes(scope))
+      .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+  }
+
+  function categoryById(id: string): Category | undefined {
+    if (!id) return undefined;
+    return categories.find((c) => c.id === id) ?? shared.flatMap((g) => g.categories).find((c) => c.id === id);
   }
 
   function setSetting(key: string, value: string) {
-    setSettings(prev => ({ ...prev, [key]: value }));
+    const next = { ...settings, [key]: value };
+    setSettings(next);
     persistence.setSetting(key, value);
     if (key === 'theme') applyTheme(value as ThemeName);
+    // The accent's derived shades depend on the theme, so any of the four
+    // re-derives all of them.
+    if (APPEARANCE_KEYS.has(key)) applyAppearance(readTheme(next), readAppearance(next));
+    if (LAYOUT_KEYS.has(key)) applyLayout(readLayout(next));
+  }
+
+  /** Raw read of any setting — Settings' display-name field and layout drags. */
+  function getSetting(key: string): string | undefined {
+    return settings[key];
   }
 
   /** Re-reads the shared cache. Tauri-only — the browser dev server has no sync. */
   async function refreshShared() {
     if (!inTauri()) return;
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const rows = await invoke<Parameters<typeof mapSharedRows>[0]>('load_shared');
+      const rows = await ipc.loadShared();
       setShared(mapSharedRows(rows));
     } catch (err) {
       console.warn('failed to load shared data:', err);
@@ -378,7 +631,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const state = await persistence.load();
     setTodos(state.todos.map(migrateTodo));
     setEvents([...state.events]);
-    setWeights(state.weights);
+    setCategories(state.categories);
     setSettings(state.settings);
     await refreshShared();
   }
@@ -390,10 +643,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    * when it last arrived.
    */
   async function syncNow(): Promise<SyncOutcome> {
-    const { invoke } = await import('@tauri-apps/api/core');
     setSyncing(true);
     try {
-      const out = await invoke<SyncOutcome>('sync_now');
+      const out = await ipc.syncNow();
       if (out.pulled > 0 || out.sharedChanged) await reloadFromStore();
       if (out.lastSync) setLastSync(Number(out.lastSync));
       return out;
@@ -410,16 +662,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return [];
     }
   }, [settings.__shared_hidden]);
-  const visibleShared = useMemo(
-    () => shared.filter(g => !hiddenOwners.includes(g.owner)),
-    [shared, hiddenOwners]
-  );
-  const sharedEvents = useMemo(() => visibleShared.flatMap(g => g.events), [visibleShared]);
+  const visibleShared = useMemo(() => shared.filter((g) => !hiddenOwners.includes(g.owner)), [shared, hiddenOwners]);
+  const sharedEvents = useMemo(() => visibleShared.flatMap((g) => g.events), [visibleShared]);
 
   function toggleOwnerHidden(owner: string) {
-    const next = hiddenOwners.includes(owner)
-      ? hiddenOwners.filter(o => o !== owner)
-      : [...hiddenOwners, owner];
+    const next = hiddenOwners.includes(owner) ? hiddenOwners.filter((o) => o !== owner) : [...hiddenOwners, owner];
     setSetting('__shared_hidden', JSON.stringify(next));
   }
 
@@ -437,8 +684,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     (async () => {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const status = await invoke<SyncStatusInfo>('sync_status');
+        const status = await ipc.syncStatus();
         setLastSync(status.lastSync ? Number(status.lastSync) : null);
       } catch {
         // backend not ready — the bar reads "never synced" until one runs
@@ -447,35 +693,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [signedIn]);
 
   return (
-    <AppContext.Provider value={{
-      todos, events, weights, loaded,
-      selectedDate, currentMonth, activeView, calendarMode,
-      setSelectedDate, setCurrentMonth, setActiveView, setCalendarMode,
-      addTodo, updateTodo, deleteTodo, toggleTodo, setTodoValue,
-      addEvent, updateEvent, deleteEvent, importEvents,
-      addWeight, deleteWeight, importWeights,
-      theme: readTheme(settings),
-      weightUnit: settings.weightUnit === 'kg' ? 'kg' : 'lb',
-      // Sunday by default as of v1.7; only an explicit '1' opts into Monday.
-      firstDayOfWeek: settings.firstDayOfWeek === '1' ? 1 : 0,
-      setSetting,
-      reloadFromStore,
-      shared,
-      visibleShared,
-      sharedEvents,
-      hiddenOwners,
-      toggleOwnerHidden,
-      signedIn,
-      syncAccount: settings.__sync_account?.trim() || null,
-      syncToken: settings.__sync_token?.trim() || null,
-      lastSync,
-      syncing,
-      syncNow,
-      // Compared against '1' rather than coerced: the flag is cleared by
-      // writing '0', and `!!'0'` is true in JS, so a presence check would make
-      // sign-out fail to return the user to the splash.
-      welcomeDone: settings.__welcome_done === '1' || signedIn,
-    }}>
+    <AppContext.Provider
+      value={{
+        todos,
+        events,
+        loaded,
+        selectedDate,
+        currentMonth,
+        activeView,
+        calendarMode,
+        setSelectedDate,
+        setCurrentMonth,
+        setActiveView,
+        setCalendarMode,
+        addTodo,
+        updateTodo,
+        deleteTodo,
+        toggleTodo,
+        setTodoValue,
+        addEvent,
+        updateEvent,
+        deleteEvent,
+        importEvents,
+        categories,
+        addCategory,
+        updateCategory,
+        deleteCategory,
+        categoriesFor,
+        categoryById,
+        theme: readTheme(settings),
+        ...readAppearance(settings),
+        // Sunday by default as of v1.7; only an explicit '1' opts into Monday.
+        firstDayOfWeek: settings.firstDayOfWeek === '1' ? 1 : 0,
+        setSetting,
+        getSetting,
+        reloadFromStore,
+        shared,
+        visibleShared,
+        sharedEvents,
+        hiddenOwners,
+        toggleOwnerHidden,
+        signedIn,
+        syncAccount: settings.__sync_account?.trim() || null,
+        syncToken: settings.__sync_token?.trim() || null,
+        lastSync,
+        syncing,
+        syncNow,
+        // Compared against '1' rather than coerced: the flag is cleared by
+        // writing '0', and `!!'0'` is true in JS, so a presence check would make
+        // sign-out fail to return the user to the splash.
+        welcomeDone: settings.__welcome_done === '1' || signedIn,
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

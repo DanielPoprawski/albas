@@ -1,15 +1,14 @@
 import * as React from 'react';
 
-import { accentOf, CATEGORY_ACCENTS, type CategoryAccentName } from '@/colors';
+import { accentNameOf, accentOf, CATEGORY_ACCENTS, CATEGORY_CLASSES, type CategoryAccentName } from '@/colors';
 import { cn } from '@/lib/utils';
 
 /** A category accent by name, or any stored hex. */
 export type AccentInput = CategoryAccentName | (string & {});
 
-function resolve(accent: AccentInput) {
-  return accent in CATEGORY_ACCENTS
-    ? CATEGORY_ACCENTS[accent as CategoryAccentName]
-    : accentOf(accent);
+/** A named accent, or the name a stored hex belongs to, or null for a custom colour. */
+function nameOf(accent: AccentInput): CategoryAccentName | null {
+  return accent in CATEGORY_ACCENTS ? (accent as CategoryAccentName) : accentNameOf(accent);
 }
 
 export interface TagProps extends React.HTMLAttributes<HTMLSpanElement> {
@@ -21,30 +20,28 @@ export interface TagProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 /**
  * The uppercase micro chip: a status, a category, a sign-in method's type.
- * Colours come from the accent trio rather than utility classes so a
- * user-picked hex renders the same way a built-in category does.
+ * A named accent paints from its `--t-cat-*` classes so it follows the theme;
+ * only a user-picked hex falls back to an inline translucent wash of itself.
  */
 export function Tag({ className, accent = 'purple', solid, style, ...props }: TagProps) {
-  const a = resolve(accent);
+  const name = nameOf(accent);
+  const c = name ? CATEGORY_CLASSES[name] : null;
+  const a = name ? null : accentOf(accent);
   return (
     <span
       data-slot="tag"
       className={cn(
-        'inline-flex items-center gap-[4px] px-[8px] py-[3px]',
-        'text-[10px] font-bold uppercase tracking-[0.5px] leading-none',
+        'inline-flex items-center gap-[0.25rem] px-[0.5rem] py-[0.1875rem]',
+        'text-xs font-bold uppercase tracking-[0.5px] leading-none',
+        c && (solid ? `${c.solid} text-on-accent` : `${c.tint} ${c.ink}`),
         className,
       )}
-      style={{
-        background: solid ? a.hex : a.tint,
-        color: solid ? '#ffffff' : a.ink,
-        ...style,
-      }}
+      // dynamic: the accent's own colour when it is not a named token
+      style={a ? { background: solid ? a.hex : a.tint, color: solid ? 'var(--t-on-accent)' : a.ink, ...style } : style}
       {...props}
     />
   );
 }
-
-export { Tag as Pill };
 
 export interface DotProps extends React.HTMLAttributes<HTMLSpanElement> {
   accent?: AccentInput;
@@ -57,13 +54,14 @@ export interface DotProps extends React.HTMLAttributes<HTMLSpanElement> {
  * else — a circle here is the single most common way this design gets broken.
  */
 export function Dot({ className, accent = 'purple', size = 8, style, ...props }: DotProps) {
-  const a = resolve(accent);
+  const name = nameOf(accent);
   return (
     <span
       data-slot="dot"
       aria-hidden
-      className={cn('inline-block shrink-0', className)}
-      style={{ width: size, height: size, background: a.hex, ...style }}
+      className={cn('inline-block shrink-0', name && CATEGORY_CLASSES[name].solid, className)}
+      // dynamic: size and accent come from the caller
+      style={{ width: size, height: size, ...(name ? {} : { background: accentOf(accent).hex }), ...style }}
       {...props}
     />
   );

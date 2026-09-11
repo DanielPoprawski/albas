@@ -12,20 +12,21 @@
  *  - `Action` is the control that adds/changes that method, rendered in the
  *    card's action row.
  *
- * Nothing here talks to the network itself; each module picks its own
- * transport. Passkeys go through Tauri (they need the OS authenticator);
- * password and TOTP are plain `fetch` against the sync server.
+ * Nothing here talks to the network itself. Each module calls the sync
+ * server through `apiRequest()` in `syncServer.ts`, which hops through Rust
+ * inside the app — the WebView cannot `fetch` the server itself (no CORS).
  */
 import type { ComponentType } from 'react';
+import type { CategoryAccentName } from '../colors';
 
 /** The pill text in the table's Type column. Only add a value that works. */
 export type AuthMethodType = 'Passkey' | 'Password' | '2FA';
 
-/** Type pill colours, kept here so every method's pill matches the design. */
-export const METHOD_PILL: Record<AuthMethodType, { bg: string; color: string }> = {
-  Passkey: { bg: '#dcfce7', color: '#166534' },
-  Password: { bg: '#fef3c7', color: '#92400e' },
-  '2FA': { bg: '#f3e8ff', color: '#6b21a8' },
+/** Type pill accent per method (a `<Tag accent>` name), so the pill follows the theme. */
+export const METHOD_PILL: Record<AuthMethodType, CategoryAccentName> = {
+  Passkey: 'green',
+  Password: 'amber',
+  '2FA': 'purple',
 };
 
 /** One credential attached to the account. */

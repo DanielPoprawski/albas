@@ -49,9 +49,9 @@ if [[ $DEPLOY -eq 0 ]]; then
     exit 0
 fi
 
-# The web console is static files served by nginx from ~/albas-sync/web on the
-# host — the image pull never updates it, so rebuild and upload it here.
-echo "Building web console"
+# The public site (web/) is static files served by nginx from ~/albas-sync/web
+# on the host — the image pull never updates it, so rebuild and upload it here.
+echo "Building public site"
 (cd ../web && bun run build)
 
 # One multiplexed SSH connection covers the rsync and the ssh below, so the

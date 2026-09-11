@@ -28,6 +28,20 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Percent-encoding the authorize-URL query params (redirect_uri, scope). Tiny,
 # no transitive deps of its own.
 urlencoding = "2"
+# Operator-facing timestamps in the admin CLI.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+tower_governor = { version = "0.5.0", default-features = false, features = ["axum"] }
+# Structured request/application logging. `RUST_LOG` (default `info`) filters;
+# `tower-http`'s TraceLayer logs one line per request. The CLI (`admin.rs`)
+# prints to stdout directly — that is user output, not a log.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.5", features = ["trace"] }
+base64 = "0.23.1"
+aes-gcm = "0.10"
+# `albas-sync admin …` / `albas-sync health` — the operator CLI that replaced the
+# HTTP admin routes. Derive only; no colour/suggestion extras.
+clap = { version = "4", features = ["derive"] }
 
 [profile.release]
 strip = true

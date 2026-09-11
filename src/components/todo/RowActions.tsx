@@ -12,22 +12,28 @@ import type { Todo } from '../../types';
  * There is no hover on a touchscreen, so below the phone breakpoint the pair
  * stays visible — otherwise editing a to-do would be unreachable there.
  */
-const ACTION = 'text-[10px] font-semibold uppercase tracking-wider transition-colors';
+const ACTION = 'micro-label transition-colors';
 
 export default function RowActions({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
   const { deleteTodo } = useApp();
   return (
     <span className="flex items-center gap-xs flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
       <button
-        onClick={e => { e.stopPropagation(); onEdit(todo); }}
-        className={`${ACTION} text-txt-muted hover:text-txt`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(todo);
+        }}
+        className={`${ACTION} text-ink-muted hover:text-ink`}
       >
         Edit
       </button>
-      <span className="text-[10px] text-txt-faint select-none">·</span>
+      <span className="text-xs text-ink-muted select-none">·</span>
       <button
-        onClick={e => { e.stopPropagation(); deleteTodo(todo.id); }}
-        className={`${ACTION} text-txt-muted hover:text-danger`}
+        onClick={(e) => {
+          e.stopPropagation();
+          deleteTodo(todo.id);
+        }}
+        className={`${ACTION} text-ink-muted hover:text-danger`}
       >
         Delete
       </button>

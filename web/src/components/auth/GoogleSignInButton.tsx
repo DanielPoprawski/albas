@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { getAuthConfig, startGoogleSignIn } from "../../lib/api";
+import { useEffect, useState } from 'react';
+import { getAuthConfig, startGoogleSignIn } from '../../lib/api';
 
 /**
  * Renders nothing until the server confirms Google sign-in is configured
@@ -37,12 +37,7 @@ export function GoogleSignInButton({ appSession }: { appSession?: string | null 
   return (
     <>
       <div className="auth-divider">or</div>
-      <button
-        type="button"
-        className="btn-secondary"
-        style={{ width: "100%" }}
-        onClick={() => startGoogleSignIn(appSession)}
-      >
+      <button type="button" className="btn-secondary btn-block" onClick={() => startGoogleSignIn(appSession)}>
         Continue with Google
       </button>
     </>

@@ -1,36 +1,48 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
-import { addDays, diffDays, fmt, shortDate } from '../../dates';
+import { addDays, addMinutes, diffDays, fmt, nowFloor15, shortDate } from '../../dates';
+import { samePatch } from '@/lib/utils';
+import { describeWhen, stripMatch, useNlDate } from '../../nlDate';
 import type { CalendarEvent, Recurrence } from '../../types';
-import { CheckboxRow, ColorPicker, EditActions, inputClass, labelClass, SegmentedControl, SubmitButton } from './shared';
+import {
+  CheckboxRow,
+  ColorPicker,
+  EditActions,
+  inputClass,
+  labelClass,
+  Select,
+  SegmentedControl,
+  SubmitButton,
+  type CommitRef,
+  type CommitResult,
+} from './shared';
+import DateField from './DateField';
 import RemindersField from './RemindersField';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
 
 type RecType = Recurrence['type'];
 
-/** Now, rounded *down* to a quarter hour — the start you'd have typed anyway. */
-function nowFloor15(): string {
-  const d = new Date();
-  d.setMinutes(Math.floor(d.getMinutes() / 15), 0, 0);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** `hh:mm` plus N minutes, clamped to 23:59 so an evening start can't wrap. */
-function addMinutes(time: string, mins: number): string {
-  const [h, m] = time.split(':').map(Number);
-  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
-export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }: {
+export default function EventForm({
+  edit,
+  occurrenceDate,
+  defaultDate,
+  onDone,
+  commitRef,
+}: {
   edit?: CalendarEvent;
   /** Start date of the specific occurrence being edited (for "just this event" deletes). */
   occurrenceDate?: string | null;
   defaultDate?: string | null;
   onDone: () => void;
+  /** Lets the modal commit on dismiss (scrim, Escape, back) without a submit. */
+  commitRef?: CommitRef;
 }) {
-  const { addEvent, updateEvent, deleteEvent, selectedDate } = useApp();
+  const { addEvent, updateEvent, deleteEvent, selectedDate, categoriesFor } = useApp();
+  const categoryOptions = [
+    { value: '', label: 'None' },
+    ...categoriesFor('calendar').map((c) => ({ value: c.id, label: c.name })),
+  ];
   const initialDate = edit?.startDate ?? defaultDate ?? selectedDate ?? fmt(new Date());
   // A new event defaults to "now for an hour": today, the current quarter hour,
   // ending sixty minutes later. Nearly every event is entered near its own time,
@@ -39,6 +51,7 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
 
   const [title, setTitle] = useState(edit?.title ?? '');
   const [description, setDescription] = useState(edit?.description ?? '');
+  const [category, setCategory] = useState(edit?.category ?? '');
   const [color, setColor] = useState(edit?.colorKey ?? DEFAULT_COLOR);
   const [allDay, setAllDay] = useState(edit?.allDay ?? false);
   const [startDate, setStartDate] = useState(initialDate);
@@ -47,14 +60,31 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
   const [endTime, setEndTime] = useState(edit?.endTime ?? addMinutes(initialStartTime, 60));
   const [recType, setRecType] = useState<RecType>(edit?.recurrence.type ?? 'none');
   const [interval, setInterval_] = useState(
-    edit && edit.recurrence.type !== 'none' ? String(edit.recurrence.interval) : '1'
+    edit && edit.recurrence.type !== 'none' ? String(edit.recurrence.interval) : '1',
   );
-  const [until, setUntil] = useState(
-    edit && edit.recurrence.type !== 'none' ? edit.recurrence.until ?? '' : ''
-  );
+  const [until, setUntil] = useState(edit && edit.recurrence.type !== 'none' ? (edit.recurrence.until ?? '') : '');
   const [reminders, setReminders] = useState<number[]>(edit?.reminders ?? []);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Natural-language date suggestion (Phase H). Apply-only — an edit form
+  // never auto-applies on submit, so a title that happens to contain a
+  // date-shaped phrase never silently reschedules an existing event.
+  const suggestion = useNlDate(title);
+  const suggestionKey = suggestion ? `${suggestion.matched.index}:${suggestion.matched.text}` : null;
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const dismissed = suggestionKey !== null && suggestionKey === dismissedKey;
+
+  function applySuggestion() {
+    if (!suggestion) return;
+    setStartDate(suggestion.start.date);
+    setEndDate(suggestion.end?.date ?? suggestion.start.date);
+    if (suggestion.start.time) {
+      setStartTime(suggestion.start.time);
+      setEndTime(suggestion.end?.time ?? addMinutes(suggestion.start.time, 60));
+    }
+    setTitle((t) => stripMatch(t, suggestion.matched));
+  }
 
   // Moving the start drags the end with it, keeping the gap — otherwise
   // rescheduling a meeting means editing both dates by hand.
@@ -66,19 +96,19 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
     setStartDate(next);
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !startDate) return;
+  /** Validates and persists. Pure of navigation: the caller decides whether the result closes the modal. */
+  function commit(): CommitResult {
+    if (!title.trim() || !startDate) return 'empty';
 
     const effEndDate = endDate || startDate;
     if (effEndDate < startDate) {
       setError('End date must be on or after the start date.');
-      return;
+      return 'invalid';
     }
     const effEndTime = allDay ? null : endTime || null;
     if (!allDay && effEndDate === startDate && endTime && endTime <= startTime) {
       setError('End time must be after the start time.');
-      return;
+      return 'invalid';
     }
 
     const n = parseInt(interval, 10);
@@ -104,10 +134,26 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
       endTime: allDay ? null : effEndTime,
       recurrence,
       reminders,
+      category,
     };
-    if (edit) updateEvent(edit.id, fields);
-    else addEvent(fields);
-    onDone();
+    if (edit) {
+      if (samePatch(fields, edit)) return 'unchanged';
+      updateEvent(edit.id, fields);
+    } else {
+      addEvent(fields);
+    }
+    return 'saved';
+  }
+
+  useEffect(() => {
+    if (commitRef) commitRef.current = commit;
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const result = commit();
+    if (result === 'saved' || result === 'unchanged') onDone();
+    else if (result === 'empty') setError('Give the event a title first.');
   }
 
   // Recurring events get a chooser; one-offs delete immediately.
@@ -155,9 +201,42 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
           className={inputClass}
           placeholder="e.g. Team sync, Dentist, 12-week program"
           value={title}
-          onChange={e => setTitle(e.target.value)}
+          onChange={(e) => setTitle(e.target.value)}
           autoFocus
         />
+        {suggestion && !dismissed && (
+          <div className="flex items-center justify-between gap-sm mt-xs">
+            <span className="text-sm text-ink-muted truncate">
+              {'→ '}
+              <span className="text-accent font-semibold">{describeWhen(suggestion)}</span>
+              {' — from “'}
+              {suggestion.matched.text}
+              {'”'}
+            </span>
+            <span className="flex items-center gap-sm flex-shrink-0">
+              <button
+                type="button"
+                onClick={applySuggestion}
+                className="text-sm font-semibold text-accent hover:underline"
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedKey(suggestionKey)}
+                aria-label="Dismiss date suggestion"
+                className="text-ink-muted hover:text-ink"
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className={labelClass}>Category</label>
+        <Select options={categoryOptions} value={category} onChange={setCategory} />
       </div>
 
       <div>
@@ -178,12 +257,7 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
         <div className="flex gap-sm">
           <div className="flex-1 min-w-0">
             <label className={labelClass}>Starts</label>
-            <input
-              type="date"
-              className={inputClass}
-              value={startDate}
-              onChange={e => changeStartDate(e.target.value)}
-            />
+            <DateField value={startDate} onChange={changeStartDate} aria-label="Start date" />
           </div>
           {!allDay && (
             <div className="w-32 flex-shrink-0">
@@ -192,7 +266,7 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
                 type="time"
                 className={inputClass}
                 value={startTime}
-                onChange={e => setStartTime(e.target.value)}
+                onChange={(e) => setStartTime(e.target.value)}
               />
             </div>
           )}
@@ -201,23 +275,12 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
         <div className="flex gap-sm">
           <div className="flex-1 min-w-0">
             <label className={labelClass}>Ends</label>
-            <input
-              type="date"
-              className={inputClass}
-              value={endDate}
-              min={startDate || undefined}
-              onChange={e => setEndDate(e.target.value)}
-            />
+            <DateField value={endDate} onChange={setEndDate} aria-label="End date" />
           </div>
           {!allDay && (
             <div className="w-32 flex-shrink-0">
               <label className={labelClass}>Time</label>
-              <input
-                type="time"
-                className={inputClass}
-                value={endTime}
-                onChange={e => setEndTime(e.target.value)}
-              />
+              <input type="time" className={inputClass} value={endTime} onChange={(e) => setEndTime(e.target.value)} />
             </div>
           )}
         </div>
@@ -237,25 +300,25 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
         />
         {recType !== 'none' && (
           <div className="flex items-center gap-sm mt-sm flex-wrap">
-            <span className="text-body-sm text-txt-muted">Every</span>
+            <span className="text-body-sm text-ink-muted">Every</span>
             <input
               type="number"
               min="1"
-              className={`${inputClass} text-center`}
+              className={`${inputClass} text-center w-16`}
               value={interval}
-              onChange={e => setInterval_(e.target.value)}
-              style={{ width: '4rem' }}
+              onChange={(e) => setInterval_(e.target.value)}
             />
-            <span className="text-body-sm text-txt-muted">
+            <span className="text-body-sm text-ink-muted">
               {recType === 'daily' ? 'day(s)' : recType === 'weekly' ? 'week(s)' : 'month(s)'}
             </span>
-            <span className="text-body-sm text-txt-muted ml-sm">until</span>
-            <input
-              type="date"
-              className={inputClass}
+            <span className="text-body-sm text-ink-muted ml-sm">until</span>
+            <DateField
               value={until}
-              onChange={e => setUntil(e.target.value)}
-              style={{ width: '10rem' }}
+              onChange={setUntil}
+              allowEmpty
+              placeholder="forever"
+              className="w-40"
+              aria-label="Repeat until"
             />
           </div>
         )}
@@ -270,17 +333,13 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
           rows={2}
           placeholder="Details, location, links…"
           value={description}
-          onChange={e => setDescription(e.target.value)}
+          onChange={(e) => setDescription(e.target.value)}
         />
       </div>
 
       {error && <p className="text-body-sm text-danger">{error}</p>}
 
-      {edit ? (
-        <EditActions saveLabel="Save Changes" onDelete={handleDelete} />
-      ) : (
-        <SubmitButton label="Add Event" />
-      )}
+      {edit ? <EditActions saveLabel="Done" onDelete={handleDelete} /> : <SubmitButton label="Add Event" />}
 
       {/* Nested inside the AddModal dialog. Radix stacks them: Escape closes
           only this one, and focus is trapped here until it goes away. */}
@@ -290,10 +349,10 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
             showCloseButton={false}
             className="block rounded-2xl p-md w-full max-w-[min(20rem,calc(100%-2rem))] shadow-2xl border-line"
           >
-            <DialogTitle className="text-body-md font-title font-normal text-txt mb-xs">
+            <DialogTitle className="text-body-md font-title font-normal text-ink mb-xs">
               Delete recurring event
             </DialogTitle>
-            <DialogDescription className="text-body-sm text-txt-muted mb-md">
+            <DialogDescription className="text-body-sm text-ink-muted mb-md">
               “{edit.title}” repeats. What should be deleted?
             </DialogDescription>
             <div className="space-y-xs">
@@ -302,15 +361,15 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
                   <button
                     type="button"
                     onClick={deleteJustThis}
-                    className="w-full py-sm px-sm rounded-lg text-left text-body-sm font-medium text-txt bg-fill hover:bg-fill-strong transition-colors"
+                    className="w-full py-sm px-sm rounded-lg text-left text-body-sm font-medium text-ink bg-subtle hover:bg-subtle-strong transition-colors"
                   >
                     Just this event
-                    <span className="text-txt-muted"> · {shortDate(occurrenceDate)}</span>
+                    <span className="text-ink-muted"> · {shortDate(occurrenceDate)}</span>
                   </button>
                   <button
                     type="button"
                     onClick={deleteFuture}
-                    className="w-full py-sm px-sm rounded-lg text-left text-body-sm font-medium text-txt bg-fill hover:bg-fill-strong transition-colors"
+                    className="w-full py-sm px-sm rounded-lg text-left text-body-sm font-medium text-ink bg-subtle hover:bg-subtle-strong transition-colors"
                   >
                     This and all future events
                   </button>
@@ -319,14 +378,14 @@ export default function EventForm({ edit, occurrenceDate, defaultDate, onDone }:
               <button
                 type="button"
                 onClick={deleteAll}
-                className="w-full py-sm px-sm rounded-lg text-left text-body-sm font-medium text-danger bg-fill hover:bg-tertiary-container/20 transition-colors"
+                className="w-full py-sm px-sm text-left text-body-sm font-medium text-danger bg-subtle hover:bg-cat-red-tint transition-colors"
               >
                 All events
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="w-full py-sm px-sm rounded-lg text-center text-body-sm text-txt-muted hover:bg-fill transition-colors"
+                className="w-full py-sm px-sm rounded-lg text-center text-body-sm text-ink-muted hover:bg-subtle transition-colors"
               >
                 Cancel
               </button>

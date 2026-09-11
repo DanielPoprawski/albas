@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_SYNC_URL } from '../../syncServer';
+import * as ipc from '../../ipc';
 
 /**
  * Drives a sign-in that happens in the system browser.
@@ -16,8 +17,12 @@ import { DEFAULT_SYNC_URL } from '../../syncServer';
 export type BrowserSignInState =
   | { kind: 'idle' }
   | { kind: 'starting' }
-  /** Browser is open; `code` is shown so the user can match it to the page. */
-  | { kind: 'waiting'; code: string }
+  /**
+   * Browser is open (or a QR is showing); `code` is shown so the user can match
+   * it to the other screen, and `url` is what the QR encodes — the same page
+   * the browser was opened on, so a plain camera app lands somewhere useful.
+   */
+  | { kind: 'waiting'; code: string; url: string }
   | { kind: 'error'; message: string };
 
 /** Matches the server's five-minute TTL in `app_session.rs`. */
@@ -43,62 +48,87 @@ export function useBrowserSignIn() {
     stopPolling();
     setState({ kind: 'idle' });
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('app_signin_cancel');
+      await ipc.appSigninCancel();
     } catch {
       // Cancelling is local bookkeeping; the server row expires on its own.
     }
   }, [stopPolling]);
 
-  const start = useCallback(
-    async (screen: 'login' | 'register') => {
-      setState({ kind: 'starting' });
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const { openUrl } = await import('@tauri-apps/plugin-opener');
-        const res = await invoke<{ nonce: string; code: string; url: string }>(
-          'app_signin_start',
-          { url: DEFAULT_SYNC_URL, screen },
-        );
-        await openUrl(res.url);
-        setState({ kind: 'waiting', code: res.code });
-
-        const deadline = Date.now() + TIMEOUT_MS;
-        stopPolling();
-        timer.current = setInterval(async () => {
-          if (Date.now() > deadline) {
+  const poll = useCallback(
+    (nonce: string) => {
+      const deadline = Date.now() + TIMEOUT_MS;
+      stopPolling();
+      timer.current = setInterval(async () => {
+        if (Date.now() > deadline) {
+          stopPolling();
+          setState({ kind: 'error', message: 'That sign-in timed out. Try again.' });
+          return;
+        }
+        try {
+          const res = await ipc.appSigninPoll(nonce);
+          if (res.status === 'ready') {
             stopPolling();
-            setState({ kind: 'error', message: 'That sign-in timed out. Try again.' });
-            return;
+            // Rust already wrote the token and reset the watermarks, so the
+            // React tree has to be re-read from SQLite before it can agree.
+            await reloadFromStore();
+            setSetting('__welcome_done', '1');
+            setState({ kind: 'idle' });
+            await syncNow();
+          } else if (res.status === 'expired') {
+            stopPolling();
+            setState({ kind: 'error', message: 'That sign-in expired. Try again.' });
           }
-          try {
-            const poll = await invoke<{ status: string; account?: string }>('app_signin_poll', {
-              nonce: res.nonce,
-            });
-            if (poll.status === 'ready') {
-              stopPolling();
-              // Rust already wrote the token and reset the watermarks, so the
-              // React tree has to be re-read from SQLite before it can agree.
-              await reloadFromStore();
-              setSetting('__welcome_done', '1');
-              setState({ kind: 'idle' });
-              await syncNow();
-            } else if (poll.status === 'expired') {
-              stopPolling();
-              setState({ kind: 'error', message: 'That sign-in expired. Try again.' });
-            }
-          } catch (err) {
-            // A dropped network shouldn't end the attempt: the browser half may
-            // still be in progress, and the deadline above bounds the retries.
-            console.warn('sign-in poll failed:', err);
-          }
-        }, INTERVAL_MS);
-      } catch (err) {
-        setState({ kind: 'error', message: String(err) });
-      }
+        } catch (err) {
+          // A dropped network shouldn't end the attempt: the browser half may
+          // still be in progress, and the deadline above bounds the retries.
+          console.warn('sign-in poll failed:', err);
+        }
+      }, INTERVAL_MS);
     },
     [reloadFromStore, syncNow, setSetting, stopPolling],
   );
 
-  return { state, start, cancel };
+  /**
+   * Opens a pending sign-in on the server. `open` = also launch the system
+   * browser on it; without it the caller shows the URL as a QR for a signed-in
+   * phone to scan (see `SessionCard`'s "Scan to sign in another device").
+   */
+  const start = useCallback(
+    async (screen: 'login' | 'register', open = true) => {
+      setState({ kind: 'starting' });
+      try {
+        const res = await ipc.appSigninStart(DEFAULT_SYNC_URL, screen);
+        if (open) {
+          const { openUrl } = await import('@tauri-apps/plugin-opener');
+          await openUrl(res.url);
+        }
+        setState({ kind: 'waiting', code: res.code, url: res.url });
+        poll(res.nonce);
+      } catch (err) {
+        setState({ kind: 'error', message: String(err) });
+      }
+    },
+    [poll],
+  );
+
+  /**
+   * The other direction: this device scanned a QR from a signed-in device
+   * (`app_session_offer` in `account.rs`), whose session is already claimed
+   * for that account — so all that's left is to poll it and adopt.
+   */
+  const attach = useCallback(
+    async (nonce: string) => {
+      setState({ kind: 'starting' });
+      try {
+        const res = await ipc.appSigninAttach(DEFAULT_SYNC_URL, nonce);
+        setState({ kind: 'waiting', code: '', url: '' });
+        poll(res.nonce);
+      } catch (err) {
+        setState({ kind: 'error', message: String(err) });
+      }
+    },
+    [poll],
+  );
+
+  return { state, start, attach, cancel };
 }

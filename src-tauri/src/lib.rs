@@ -1,7 +1,7 @@
 mod account;
 mod db;
 mod sync;
-mod wyze;
+mod token_store;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -27,15 +27,20 @@ async fn fetch_ics(url: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+    // The QR scanner for cross-device sign-in. The crate is `#![cfg(mobile)]`
+    // — it has no desktop half at all — and its capability lives in
+    // `capabilities/mobile.json` for the same reason.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    builder
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join("albas.db"))?;
             app.manage(db::Db(Mutex::new(conn)));
-            app.manage(wyze::WyzeSession::default());
             app.manage(account::AuthFlow::default());
             Ok(())
         })
@@ -52,21 +57,26 @@ pub fn run() {
             db::delete_period,
             db::import_legacy,
             db::set_setting,
-            db::save_weight,
-            db::delete_weight,
-            wyze::wyze_save_credentials,
-            wyze::wyze_clear_credentials,
-            wyze::wyze_status,
-            wyze::wyze_sync,
+            db::list_categories,
+            db::save_category,
+            db::delete_category,
             sync::sync_now,
             sync::sync_status,
             db::load_shared,
             account::app_signin_start,
             account::app_signin_poll,
             account::app_signin_cancel,
+            account::app_signin_attach,
+            account::app_session_claim,
+            account::app_session_offer,
+            account::account_register_password,
+            account::account_login_password,
+            account::sync_api,
             account::shares_list,
             account::shares_set,
             account::sync_sign_out,
+            account::account_delete,
+            account::account_export,
             fetch_ics,
         ])
         .run(tauri::generate_context!())

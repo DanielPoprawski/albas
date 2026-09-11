@@ -1,0 +1,16 @@
+# Litestream continuously replicates the sync database's WAL to a second
+# volume, so a bad disk or a bad deploy is a restore, not a loss. The replica
+# is a plain directory; `retention` bounds how far back a point-in-time
+# restore can reach. Swap the `url` for an S3/B2 bucket to go off-site
+# (`s3://bucket/albas-sync` plus LITESTREAM_ACCESS_KEY_ID / _SECRET_ACCESS_KEY
+# in the environment) — nothing else changes.
+#
+# Restore (server stopped):
+#   docker compose run --rm --entrypoint litestream litestream \
+#     restore -o /data/albas-sync.db file:///backup/albas-sync
+dbs:
+  - path: /data/albas-sync.db
+    replicas:
+      - url: file:///backup/albas-sync
+        retention: 720h
+        sync-interval: 10s

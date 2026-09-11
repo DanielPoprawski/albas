@@ -1,17 +1,10 @@
+import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
-import { isDone } from '../../todoLogic';
+import { isDone, UNCATEGORIZED } from '../../todoLogic';
 import { colorHex } from '../../colors';
 import type { Todo } from '../../types';
-
-const CATEGORY_DEFS = {
-  work: { name: 'Work', color: 'var(--t-cat-purple)' },
-  personal: { name: 'Personal', color: 'var(--t-cat-pink)' },
-  shopping: { name: 'Shopping', color: 'var(--t-cat-green)' },
-  health: { name: 'Health', color: 'var(--t-cat-teal)' },
-  finance: { name: 'Finance', color: 'var(--t-cat-amber)' },
-} as const;
 
 interface TodoTaskRowProps {
   task: Todo;
@@ -35,39 +28,19 @@ function getDueDateLabel(task: Todo): string {
   return `${month} ${day}`;
 }
 
-function getCategoryName(category: string): string {
-  const normalized = category.toLowerCase();
-  for (const [_key, def] of Object.entries(CATEGORY_DEFS)) {
-    if (def.name.toLowerCase() === normalized) {
-      return def.name;
-    }
-  }
-  return category || 'Uncategorized';
-}
-
-function getCategoryColor(category: string): string {
-  const normalized = category.toLowerCase();
-  for (const [_key, def] of Object.entries(CATEGORY_DEFS)) {
-    if (def.name.toLowerCase() === normalized) {
-      return def.color;
-    }
-  }
-  // Default color for uncategorized
-  return 'var(--t-cat-purple)';
-}
-
 export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskRowProps) {
-  const { toggleTodo, updateTodo } = useApp();
+  const { toggleTodo, updateTodo, categoryById } = useApp();
   const done = forceDone || isDone(task);
   const hex = colorHex(task.colorKey);
   const todayStr = fmt(new Date());
   const dueLabel = getDueDateLabel(task);
-  const categoryName = getCategoryName(task.category);
-  const categoryColor = getCategoryColor(task.category);
+  const category = categoryById(task.category);
+  const categoryName = category?.name ?? UNCATEGORIZED;
+  const categoryColor = category ? colorHex(category.colorKey) : 'var(--t-cat-purple)';
 
   const handleToggleDone = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const toggleDate = done ? undefined : task.dueDate ?? todayStr;
+    const toggleDate = done ? undefined : (task.dueDate ?? todayStr);
     if (toggleDate) {
       toggleTodo(task.id, toggleDate);
     }
@@ -81,15 +54,12 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
   return (
     <div
       onClick={() => onEdit(task)}
-      className={`group flex items-center gap-[var(--space-10)] px-[var(--space-12)] py-[var(--space-10)] bg-surface border border-border transition-all cursor-pointer hover:border-accent hover:bg-accent-tint ${
-        done ? 'opacity-55' : ''
-      }`}
+      className={`group row-hover flex items-center gap-2.5 px-3 py-2.5 cursor-pointer ${done ? 'opacity-55' : ''}`}
     >
       {/* Star (Importance) */}
       <button
         onClick={handleToggleImportant}
-        className="flex-shrink-0 text-[17px] transition-colors"
-        style={{ color: task.important ? 'var(--t-cat-amber)' : 'var(--t-border)' }}
+        className={cn('flex-shrink-0 text-lg transition-colors', task.important ? 'text-cat-amber' : 'text-line')}
         title={task.important ? 'Unmark important' : 'Mark important'}
       >
         {task.important ? '★' : '☆'}
@@ -98,13 +68,14 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
       {/* Checkbox */}
       <div
         onClick={handleToggleDone}
-        className="w-[18px] h-[18px] flex-shrink-0 border border-border-strong flex items-center justify-center cursor-pointer transition-all"
+        className="w-[1.125rem] h-[1.125rem] flex-shrink-0 border border-line-strong flex items-center justify-center cursor-pointer transition-all"
+        // dynamic: the to-do's own colour
         style={{
           backgroundColor: done ? hex : 'transparent',
           borderColor: done ? hex : 'var(--t-border-strong)',
         }}
       >
-        {done && <Check size={11} strokeWidth={3} className="text-white" />}
+        {done && <Check size="0.6875rem" strokeWidth={3} className="text-on-accent" />}
       </div>
 
       {/* Title & Meta */}
@@ -116,9 +87,10 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
         >
           {task.name}
         </p>
-        <div className="flex items-center gap-[var(--space-6)] mt-0.5">
+        <div className="flex items-center gap-1.5 mt-0.5">
           <span
-            className="w-[7px] h-[7px] flex-shrink-0"
+            className="w-[0.4375rem] h-[0.4375rem] flex-shrink-0"
+            // dynamic: the category's own colour
             style={{ backgroundColor: categoryColor }}
           />
           <span className="text-meta text-ink-muted">

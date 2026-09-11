@@ -5,35 +5,49 @@ import type { DayCell, WeekRow } from './monthModel';
 
 /** Layout-independent pieces of the month grid, shared by both variants. */
 
+/**
+ * Whether a cell's own content (chips, dots, titles, bars) should read as
+ * dulled: an elapsed day in the current month, or any day outside it. Kept
+ * separate from the cell *background* choice (outside beats past there) since
+ * both cases dim the same way.
+ */
+export function dimCell(cell: DayCell): boolean {
+  return cell.isPast || !cell.isCurrentMonth;
+}
+
 /** Half-border brackets marking the start/end days of a week-plus span. */
 export function PeriodCorners({ cell }: { cell: DayCell }) {
   return (
     <>
-      {cell.longStarts.map(o => {
+      {cell.longStarts.map((o) => {
         const hex = colorHex(o.event.colorKey);
         return (
           <span key={`s-${o.key}`} className="pointer-events-none">
             <span
               className="absolute top-0 left-0 w-2 h-2"
+              // dynamic: the span's own colour
               style={{ borderTop: `2px solid ${hex}`, borderLeft: `2px solid ${hex}` }}
             />
             <span
               className="absolute bottom-0 left-0 w-2 h-2"
+              // dynamic: the span's own colour
               style={{ borderBottom: `2px solid ${hex}`, borderLeft: `2px solid ${hex}` }}
             />
           </span>
         );
       })}
-      {cell.longEnds.map(o => {
+      {cell.longEnds.map((o) => {
         const hex = colorHex(o.event.colorKey);
         return (
           <span key={`e-${o.key}`} className="pointer-events-none">
             <span
               className="absolute top-0 right-0 w-2 h-2"
+              // dynamic: the span's own colour
               style={{ borderTop: `2px solid ${hex}`, borderRight: `2px solid ${hex}` }}
             />
             <span
               className="absolute bottom-0 right-0 w-2 h-2"
+              // dynamic: the span's own colour
               style={{ borderBottom: `2px solid ${hex}`, borderRight: `2px solid ${hex}` }}
             />
           </span>
@@ -43,39 +57,17 @@ export function PeriodCorners({ cell }: { cell: DayCell }) {
   );
 }
 
-/**
- * Strikes out an elapsed day. `preserveAspectRatio="none"` stretches the box to
- * the cell whatever its aspect, and `vector-effect` keeps the stroke a true 1px
- * instead of scaling with it. Rendered before the cell content so titles and
- * chips paint over the lines and stay legible.
- */
-export function PastX({ cell }: { cell: DayCell }) {
-  if (!cell.isPast) return null;
-  return (
-    <svg
-      className="absolute inset-0 w-full h-full pointer-events-none text-past-x"
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <line x1="0" y1="0" x2="100" y2="100" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-      <line x1="100" y1="0" x2="0" y2="100" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-
 /** Repeating-to-do markers: filled = done that day, hollow ring = still due. */
 export function DueDots({ cell }: { cell: DayCell }) {
   if (cell.dots.length === 0) return null;
   return (
-    <div className="flex gap-0.5 mt-0.5">
+    <div className={`flex gap-0.5 mt-0.5 ${dimCell(cell) ? 'opacity-50' : ''}`}>
       {cell.dots.map((dot, i) => (
         <div
           key={i}
           className="w-1.5 h-1.5 rounded-full"
-          style={dot.done
-            ? { backgroundColor: dot.hex }
-            : { border: `1.5px solid ${dot.hex}`, opacity: 0.55 }}
+          // dynamic: the to-do's own colour
+          style={dot.done ? { backgroundColor: dot.hex } : { border: `1.5px solid ${dot.hex}`, opacity: 0.55 }}
         />
       ))}
     </div>
@@ -83,22 +75,24 @@ export function DueDots({ cell }: { cell: DayCell }) {
 }
 
 /** The period name, shown once on its start day. */
-export function PeriodTitles({
-  cell,
-  onEditEvent,
-}: {
-  cell: DayCell;
-  onEditEvent: (o: Occurrence) => void;
-}) {
+export function PeriodTitles({ cell, onEditEvent }: { cell: DayCell; onEditEvent: (o: Occurrence) => void }) {
+  // Multiplied rather than a separate `opacity-50` class: an inline `style`
+  // always wins over a class, so a shared-event's own opacity would silently
+  // swallow the dim.
+  const dimFactor = dimCell(cell) ? 0.5 : 1;
   return (
     <>
-      {cell.longStarts.map(o => (
+      {cell.longStarts.map((o) => (
         <div
           key={`t-${o.key}`}
-          onClick={e => { e.stopPropagation(); onEditEvent(o); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditEvent(o);
+          }}
           title={sharedTitleAttr(o.event)}
-          className="text-[9px] font-bold uppercase tracking-wide truncate hover:opacity-70"
-          style={{ color: colorHex(o.event.colorKey), opacity: sharedOpacity(o.event) }}
+          className="text-xs font-bold uppercase tracking-wide truncate hover:opacity-70"
+          // dynamic: the event's own colour, dimmed when shared
+          style={{ color: colorHex(o.event.colorKey), opacity: (sharedOpacity(o.event) ?? 1) * dimFactor }}
         >
           {eventTitle(o.event)}
         </div>
@@ -110,43 +104,48 @@ export function PeriodTitles({
 /**
  * All-day/multi-day event bars, absolutely positioned over the week's cells.
  * `top` clears the day-number row, which is shorter under the phone's padding.
+ *
+ * Bars span multiple columns, so a single segment can straddle both dimmed
+ * and live days — splitting one visually would look broken, so a segment
+ * only dulls when *every* column it covers is dimmed (`week.days`, in
+ * column order); a bar still running into today or the future stays at full
+ * strength.
  */
 export function BarsOverlay({
   week,
-  top,
+  topClass,
   onEditEvent,
 }: {
   week: WeekRow;
-  top: number;
+  /** A `top-*` utility clearing the layout's day-number row. */
+  topClass: string;
   onEditEvent: (o: Occurrence) => void;
 }) {
-  if (week.barsHeight === 0) return null;
+  if (week.barLanes.length === 0) return null;
   return (
-    <div
-      className="absolute left-0 right-0 grid grid-cols-7 pointer-events-none"
-      style={{ top, gridAutoRows: 'min-content' }}
-    >
+    <div className={`absolute left-0 right-0 grid grid-cols-7 auto-rows-min pointer-events-none ${topClass}`}>
       {week.barLanes.map(({ seg, lane }) => {
         const hex = colorHex(seg.item.event.colorKey);
+        // Multiplied, not a separate `opacity-50` class — an inline `style`
+        // always wins over a class, so a shared-event's own opacity would
+        // silently swallow the dim.
+        const dimFactor = week.days.slice(seg.startCol - 1, seg.startCol - 1 + seg.span).every(dimCell) ? 0.5 : 1;
         return (
           <div
             key={seg.item.key}
-            onClick={e => { e.stopPropagation(); onEditEvent(seg.item); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditEvent(seg.item);
+            }}
             title={sharedTitleAttr(seg.item.event)}
-            className="pointer-events-auto cursor-pointer text-[10px] font-bold px-xs truncate hover:opacity-90"
+            className={`pointer-events-auto cursor-pointer text-xs font-bold px-xs truncate hover:opacity-90 h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
+            // dynamic: grid placement and the event's own colour
             style={{
               gridColumn: `${seg.startCol} / span ${seg.span}`,
               gridRow: lane + 1,
-              height: 18,
-              lineHeight: '18px',
-              marginBottom: 2,
-              marginLeft: seg.startsHere ? 4 : 0,
-              marginRight: seg.endsHere ? 4 : 0,
-              // No radius: the redesign is 90° everywhere, and an inline
-              // style would beat the global `border-radius: 0` reset.
               backgroundColor: `${hex}cc`,
-              color: '#fff',
-              opacity: sharedOpacity(seg.item.event),
+              color: 'var(--t-on-accent)',
+              opacity: (sharedOpacity(seg.item.event) ?? 1) * dimFactor,
             }}
           >
             {seg.startsHere ? eventTitle(seg.item.event) : '…'}

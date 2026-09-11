@@ -13,10 +13,8 @@
 //! app's data, so adding a column here needs no server change — only an entry
 //! in `TABLES` below.
 //!
-//! Settings are deliberately *not* synced. On Android the Wyze credentials live
-//! in `meta` under `setting:__wyze_credentials` (no keyring backend there), so
-//! syncing settings wholesale would upload a plaintext password. Device-local
-//! preferences like `theme` are also reasonable to keep per-device.
+//! Settings are deliberately *not* synced: they are device-local preferences
+//! (theme, layout, the endpoint itself) and some hold local-only markers.
 
 use crate::db::{self, Db};
 use rusqlite::types::{Value as SqlValue, ValueRef};
@@ -34,8 +32,8 @@ const META_LAST_AT: &str = "sync_last_at";
 pub(crate) const META_SHARED_SEQ: &str = "sync_shared_seq";
 pub(crate) const META_GRANT_REV: &str = "sync_grant_rev";
 
-/// Settings keys holding the endpoint. Named with the `__` prefix to match
-/// `__wyze_credentials`: secret-ish, and never synced.
+/// Settings keys holding the endpoint. Named with the `__` prefix: local-only,
+/// never synced.
 pub(crate) const URL_SETTING: &str = "__sync_url";
 /// Endpoint this build defaults to when `__sync_url` was never written — a
 /// fresh install can sync the moment it has a token, without anyone typing a
@@ -45,6 +43,13 @@ pub(crate) const URL_SETTING: &str = "__sync_url";
 /// The API lives under `/api` because the same origin also serves the web
 /// console — nginx strips the prefix, so the routes here are unchanged.
 pub(crate) const DEFAULT_URL: &str = "https://albas.danni-dev.com/api/sync";
+/// **No longer holds the real bearer token** — see `token_store.rs`, which
+/// moved the secret itself into the OS keyring (desktop) or a separate
+/// mobile-only settings key. This key now holds only a non-secret marker
+/// (`"1"` signed in, `""` signed out), kept under its old name so
+/// `AppContext.tsx`'s `signedIn = !!settings.__sync_token?.trim()` check
+/// (presence-only, never reads the value) keeps working unchanged. Nothing
+/// outside `token_store.rs` should read or write this key directly.
 pub(crate) const TOKEN_SETTING: &str = "__sync_token";
 /// Display name of the signed-in account (set by passkey login, cleared on
 /// sign-out). Purely informational — the token is the actual identity.
@@ -101,6 +106,7 @@ const TABLES: &[Spec] = &[
             "end_time",
             "recurrence",
             "reminders",
+            "category",
         ],
     },
     Spec {
@@ -109,18 +115,9 @@ const TABLES: &[Spec] = &[
         cols: &["name", "color_key", "start_date", "end_date", "notes", "habit_ids"],
     },
     Spec {
-        tbl: "weights",
+        tbl: "categories",
         pk: &["id"],
-        cols: &[
-            "date",
-            "ts",
-            "weight_kg",
-            "body_fat",
-            "bmi",
-            "muscle",
-            "body_water",
-            "source",
-        ],
+        cols: &["name", "color_key", "scopes", "sort", "created_at"],
     },
 ];
 
@@ -346,8 +343,7 @@ fn apply_one(conn: &Connection, spec: &Spec, c: &Change) -> rusqlite::Result<boo
 /// Applies the shared stream to the `shared_rows` cache. A grant-revision
 /// change means shares were granted/changed/revoked since our snapshot, so the
 /// cache is wiped first and the server's full snapshot rebuilds it. Returns
-/// true when anything changed. Weights can never legitimately appear here; a
-/// row claiming to be one is dropped rather than cached.
+/// true when anything changed.
 fn apply_shared(
     conn: &Connection,
     shared: &[SharedChange],
@@ -359,9 +355,6 @@ fn apply_shared(
         changed |= conn.execute("DELETE FROM shared_rows", [])? > 0;
     }
     for c in shared {
-        if c.tbl == "weights" {
-            continue;
-        }
         if c.deleted {
             changed |= conn.execute(
                 "DELETE FROM shared_rows WHERE owner = ?1 AND tbl = ?2 AND pk = ?3",
@@ -398,20 +391,21 @@ fn post(url: &str, token: &str, req: &SyncReq) -> Result<SyncRes, String> {
 }
 
 fn run(db: &Db) -> Result<SyncOutcome, String> {
-    let (url, token, since, push_at, shared_since, grant_rev) = {
+    // The token lives in the OS keyring (desktop) or a dedicated mobile
+    // settings key (see `token_store.rs`), never in this `conn`-scoped read —
+    // `token_store::get` takes its own lock on `db.0`, so it must run before
+    // or after this block, never inside it (the Mutex is not reentrant).
+    let token = crate::token_store::get(db).ok_or("No sync token configured.")?;
+    let (url, since, push_at, shared_since, grant_rev) = {
         let conn = db.0.lock().map_err(err)?;
         let url = db::read_setting(&conn, URL_SETTING)
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_URL.to_string());
-        let token = db::read_setting(&conn, TOKEN_SETTING)
-            .filter(|s| !s.trim().is_empty())
-            .ok_or("No sync token configured.")?;
         let meta_i64 = |key: &str| {
             db::read_meta(&conn, key).and_then(|v| v.parse().ok()).unwrap_or(0i64)
         };
         (
             url.trim().to_string(),
-            token.trim().to_string(),
             meta_i64(META_PULL_SEQ),
             meta_i64(META_PUSH_AT),
             meta_i64(META_SHARED_SEQ),
@@ -615,9 +609,9 @@ mod tests {
         let conn = d.0.lock().unwrap();
         conn.execute(
             "INSERT INTO events (id, title, description, color_key, all_day, start_date,
-                 start_time, end_date, end_time, recurrence, reminders, updated_at, deleted)
+                 start_time, end_date, end_time, recurrence, reminders, category, updated_at, deleted)
              VALUES ('e1', 'Local wins', '', '#fff', 1, '2026-07-01', NULL, '2026-07-01',
-                 NULL, '{}', '[]', 900, 0)",
+                 NULL, '{}', '[]', '', 900, 0)",
             [],
         )
         .unwrap();
@@ -630,7 +624,7 @@ mod tests {
                 "title": "Remote loses", "description": "", "color_key": "#000",
                 "all_day": 1, "start_date": "2026-07-01", "start_time": null,
                 "end_date": "2026-07-01", "end_time": null,
-                "recurrence": "{}", "reminders": "[]"
+                "recurrence": "{}", "reminders": "[]", "category": ""
             }),
             updated_at: 800,
             deleted: false,
@@ -694,9 +688,14 @@ mod tests {
             panic!("set ALBAS_SYNC_TEST_URL and ALBAS_SYNC_TEST_TOKEN");
         };
         let configure = |d: &Db| {
-            let conn = d.0.lock().unwrap();
-            db::write_setting(&conn, URL_SETTING, &url).unwrap();
-            db::write_setting(&conn, TOKEN_SETTING, &token).unwrap();
+            {
+                let conn = d.0.lock().unwrap();
+                db::write_setting(&conn, URL_SETTING, &url).unwrap();
+            }
+            // The real token lives via `token_store`, not directly under
+            // `TOKEN_SETTING` any more (see `token_store.rs`) — `run()` reads
+            // it from there.
+            crate::token_store::set(d, &token).unwrap();
         };
 
         let id = format!("e2e-{}", now_ms());
@@ -797,22 +796,18 @@ mod tests {
     }
 
     #[test]
-    fn shared_stream_applies_tombstones_and_rejects_weights() {
+    fn shared_stream_applies_tombstones() {
         let d = db();
         let conn = d.0.lock().unwrap();
         let changed = apply_shared(
             &conn,
-            &[
-                shared_change("events", "e1", false),
-                shared_change("habits", "h1", false),
-                shared_change("weights", "w1", false),
-            ],
+            &[shared_change("events", "e1", false), shared_change("habits", "h1", false)],
             1,
             1,
         )
         .unwrap();
         assert!(changed);
-        assert_eq!(shared_pks(&conn), vec!["e1", "h1"], "weights must never be cached");
+        assert_eq!(shared_pks(&conn), vec!["e1", "h1"]);
 
         let changed = apply_shared(&conn, &[shared_change("events", "e1", true)], 1, 1).unwrap();
         assert!(changed);

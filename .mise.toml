@@ -1,0 +1,14 @@
+[tools]
+rust = "1.95"
+bun = "1.4.0"
+
+[env]
+_.file = "sync-server/.env"
+
+[tasks.dev]
+description = "Run the Tauri app in dev mode"
+run = "bun run tauri dev"
+
+[tasks.build]
+description = "Build the desktop app"
+run = "bun run tauri build"

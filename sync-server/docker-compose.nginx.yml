@@ -21,7 +21,8 @@ services:
       - certbot-etc:/etc/letsencrypt:ro
       - certbot-www:/var/www/certbot:ro
     depends_on:
-      - albas-sync
+      albas-sync:
+        condition: service_healthy
 
   # Not started by `up` — invoked on demand with `docker compose run --rm certbot ...`
   certbot:

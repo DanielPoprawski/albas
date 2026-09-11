@@ -1,42 +1,67 @@
-import type { CalendarMode, FirstDayOfWeek } from './types';
+import {
+  addDays as dfAddDays,
+  addMonths as dfAddMonths,
+  differenceInCalendarDays,
+  differenceInCalendarMonths,
+  eachDayOfInterval,
+  format,
+  parseISO,
+  startOfWeek,
+} from 'date-fns';
+import type { FirstDayOfWeek } from './types';
+
+/*
+ * Dates are `YYYY-MM-DD` strings in local wall-clock time everywhere in the
+ * app (they sort as dates, and the whole model is timezone-free). These are
+ * the string-in/string-out helpers over date-fns.
+ */
 
 export function fmt(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return format(d, 'yyyy-MM-dd');
 }
 
+/** Local midnight of a `YYYY-MM-DD` string. */
 export function parse(dateStr: string): Date {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  return parseISO(dateStr);
+}
+
+/** Wall-clock `HH:MM` of a Date. */
+export function hhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Now, rounded *down* to a quarter hour — the start you'd have typed anyway. */
+export function nowFloor15(): string {
+  const d = new Date();
+  d.setMinutes(Math.floor(d.getMinutes() / 15) * 15, 0, 0);
+  return hhmm(d);
+}
+
+/** `HH:MM` plus N minutes, clamped to 23:59 so an evening start can't wrap. */
+export function addMinutes(time: string, mins: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 /** Whole days from `fromStr` to `toStr` (negative if `toStr` is earlier). */
 export function diffDays(fromStr: string, toStr: string): number {
-  const ms = parse(toStr).getTime() - parse(fromStr).getTime();
-  // Math.round absorbs DST's ±1h drift
-  return Math.round(ms / 86_400_000);
+  return differenceInCalendarDays(parse(toStr), parse(fromStr));
 }
 
 /** `dateStr` shifted by `n` days (n may be negative). */
 export function addDays(dateStr: string, n: number): string {
-  const d = parse(dateStr);
-  d.setDate(d.getDate() + n);
-  return fmt(d);
+  return fmt(dfAddDays(parse(dateStr), n));
 }
 
 /** `dateStr` shifted by `n` calendar months, day-of-month clamped to the target month's end. */
 export function addMonths(dateStr: string, n: number): string {
-  const d = parse(dateStr);
-  const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
-  const lastDay = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
-  t.setDate(Math.min(d.getDate(), lastDay));
-  return fmt(t);
+  return fmt(dfAddMonths(parse(dateStr), n));
 }
 
 /** Whole calendar months from `fromStr`'s month to `toStr`'s month. */
 export function monthsBetween(fromStr: string, toStr: string): number {
-  const a = parse(fromStr);
-  const b = parse(toStr);
-  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  return differenceInCalendarMonths(parse(toStr), parse(fromStr));
 }
 
 /** "2026-07-04" -> "Jul 4" */
@@ -44,9 +69,15 @@ export function shortDate(dateStr: string): string {
   return parse(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-/** "2026-07-04" -> "Saturday, Jul 4" */
-export function longDate(dateStr: string): string {
-  return parse(dateStr).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+/** "2026-09-18" -> "Fri 18 Sep 2026" — how a `DateField` shows its value; '' stays ''. */
+export function fieldDate(dateStr: string): string {
+  if (!dateStr) return '';
+  return parse(dateStr).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 /**
@@ -55,13 +86,8 @@ export function longDate(dateStr: string): string {
  * default setting — a missing argument and an unconfigured app agree.
  */
 export function weekOf(d: Date, firstDay: FirstDayOfWeek = 0): string[] {
-  const start = new Date(d);
-  start.setDate(d.getDate() - ((d.getDay() - firstDay + 7) % 7));
-  return Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(start);
-    day.setDate(start.getDate() + i);
-    return fmt(day);
-  });
+  const start = startOfWeek(d, { weekStartsOn: firstDay });
+  return eachDayOfInterval({ start, end: dfAddDays(start, 6) }).map(fmt);
 }
 
 /**
@@ -76,36 +102,6 @@ export function rotateWeek<T>(sundayFirst: readonly T[], firstDay: FirstDayOfWee
 /** `getDay()` value shown in display column `i`. */
 export function weekdayAt(i: number, firstDay: FirstDayOfWeek): number {
   return (firstDay + i) % 7;
-}
-
-export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
-
-/**
- * The calendar's header label, shared by `Calendar` and the top bar so the
- * month name isn't rendered twice. The year is dropped in the current year —
- * it's the common case, and on a phone the title now shares its row with the
- * calendar nav, so a week range that keeps it truncates.
- */
-export function calendarTitle(
-  mode: CalendarMode,
-  currentMonth: Date,
-  anchor: string,
-  firstDay: FirstDayOfWeek = 0,
-): string {
-  const thisYear = new Date().getFullYear();
-
-  if (mode === 'week') {
-    const weekDays = weekOf(parse(anchor), firstDay);
-    const endYear = parse(weekDays[6]).getFullYear();
-    const range = `${shortDate(weekDays[0])} – ${shortDate(weekDays[6])}`;
-    return endYear === thisYear ? range : `${range}, ${endYear}`;
-  }
-  if (mode === 'day') return longDate(anchor);
-
-  const name = MONTH_NAMES[currentMonth.getMonth()];
-  const year = currentMonth.getFullYear();
-  return year === thisYear ? name : `${name} ${year}`;
 }
 
 /**

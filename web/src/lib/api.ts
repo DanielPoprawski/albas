@@ -2,6 +2,7 @@
 // sync-server endpoints (see web/CLAUDE.md, "The public site: auth flows")
 // through the `/api` prefix nginx strips before proxying.
 
+import { ApiError, request } from './http';
 import {
   type AuthenticationChallenge,
   prepareCreationOptions,
@@ -9,9 +10,11 @@ import {
   type RegistrationChallenge,
   serializeAssertedCredential,
   serializeCreatedCredential,
-} from "./webauthn";
+} from './webauthn';
 
-const SESSION_KEY = "albas-session";
+export { ApiError };
+
+const SESSION_KEY = 'albas-session';
 
 export interface Session {
   name: string;
@@ -35,95 +38,128 @@ export function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
-export class ApiError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
-
 /** `login/password`'s signal to prompt for a TOTP code and retry with it set. */
-export class TotpRequiredError extends Error {
+export class TotpRequiredError extends ApiError {
   constructor() {
-    super("A two-factor code is required.");
-    this.name = "TotpRequiredError";
+    super('A two-factor code is required.', 428);
+    this.name = 'TotpRequiredError';
   }
 }
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method: "POST",
-    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const text = (await res.text().catch(() => "")).trim();
-    throw new ApiError(text || `Request failed (${res.status}).`, res.status);
+function post<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(path, { method: 'POST', body });
+}
+
+function get<T>(path: string, token?: string): Promise<T> {
+  return request<T>(path, { token });
+}
+
+/** `post`, with the signed-in session's bearer token. */
+function postAuthed<T>(path: string, token: string, body?: unknown): Promise<T> {
+  return request<T>(path, { method: 'POST', token, body });
+}
+
+// --- Password: the mandatory first credential ---
+
+/** `POST /register/password`: creates the account and signs this browser in. */
+export function registerWithPassword(name: string, password: string): Promise<Session> {
+  return post<Session>('/register/password', { name, password });
+}
+
+/** Thrown by `loginWithPassword`/`enrollTotp` on a `423` — the account (or
+ * this specific credential on it) is temporarily locked out after repeated
+ * failures. See `sync-server/src/lockout.rs`. */
+export class LockedOutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LockedOutError';
   }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`);
-  if (!res.ok) {
-    const text = (await res.text().catch(() => "")).trim();
-    throw new ApiError(text || `Request failed (${res.status}).`, res.status);
-  }
-  return (await res.json()) as T;
-}
-
-// --- Passkey ---
-
-function registerStart(name: string): Promise<RegistrationChallenge> {
-  return post<RegistrationChallenge>("/register/start", { name });
-}
-
-function registerFinish(regId: string, credential: PublicKeyCredential): Promise<Session> {
-  return post<Session>("/register/finish", { regId, credential: serializeCreatedCredential(credential) });
-}
-
-function loginStart(): Promise<AuthenticationChallenge> {
-  return post<AuthenticationChallenge>("/login/start");
-}
-
-function loginFinish(authId: string, credential: PublicKeyCredential): Promise<Session> {
-  return post<Session>("/login/finish", { authId, credential: serializeAssertedCredential(credential) });
-}
-
-/** Full passkey registration ceremony: start -> navigator.credentials.create() -> finish. */
-export async function registerWithPasskey(name: string): Promise<Session> {
-  const { regId, options } = await registerStart(name);
-  const credential = (await navigator.credentials.create(
-    prepareCreationOptions(options.publicKey),
-  )) as PublicKeyCredential | null;
-  if (!credential) throw new Error("Passkey creation was cancelled.");
-  return registerFinish(regId, credential);
-}
-
-/** Full passkey login ceremony. Usernameless — the authenticator identifies the account. */
-export async function loginWithPasskey(): Promise<Session> {
-  const { authId, options } = await loginStart();
-  const credential = (await navigator.credentials.get(
-    prepareRequestOptions(options.publicKey),
-  )) as PublicKeyCredential | null;
-  if (!credential) throw new Error("Sign-in was cancelled.");
-  return loginFinish(authId, credential);
-}
-
-// --- Password / TOTP backup login ---
-
-export async function loginWithPassword(name: string, password: string, code?: string): Promise<Session> {
+/**
+ * `code` and `recoveryCode` are mutually exclusive — pass whichever the user
+ * is entering. Both are ignored server-side unless the account has confirmed
+ * TOTP.
+ */
+export async function loginWithPassword(
+  name: string,
+  password: string,
+  code?: string,
+  recoveryCode?: string,
+): Promise<Session> {
   try {
-    return await post<Session>("/login/password", code ? { name, password, code } : { name, password });
+    const body: Record<string, string> = { name, password };
+    if (code) body.code = code;
+    if (recoveryCode) body.recovery_code = recoveryCode;
+    return await post<Session>('/login/password', body);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401 && e.message === "A two-factor code is required.") {
+    if (e instanceof ApiError && e.status === 423) {
+      throw new LockedOutError(e.message || 'Too many failed attempts. Try again in a few minutes.');
+    }
+    // 428 is the server's "confirmed authenticator, no code sent" — distinct
+    // from a wrong password, which stays 401. (Older servers said 401 with
+    // this exact message; both are matched.)
+    if (
+      e instanceof ApiError &&
+      (e.status === 428 || (e.status === 401 && e.message === 'A two-factor code is required.'))
+    ) {
       throw new TotpRequiredError();
     }
     throw e;
   }
+}
+
+// --- Passkey ---
+
+/**
+ * The challenge half of passkey login, split out so the page can fetch it
+ * *before* the click: WebKit (Safari, GNOME Web) drops the user gesture across
+ * an `await`, and `navigator.credentials.get()` outside a gesture rejects with
+ * NotAllowedError. Passing the prefetched challenge to `loginWithPasskey`
+ * keeps `get()` synchronous with the click.
+ */
+export function loginStart(): Promise<AuthenticationChallenge> {
+  return post<AuthenticationChallenge>('/login/start');
+}
+
+function loginFinish(authId: string, credential: PublicKeyCredential): Promise<Session> {
+  return post<Session>('/login/finish', { authId, credential: serializeAssertedCredential(credential) });
+}
+
+/** Full passkey login ceremony. Usernameless — the authenticator identifies the account. */
+export async function loginWithPasskey(challenge?: AuthenticationChallenge): Promise<Session> {
+  const { authId, options } = challenge ?? (await loginStart());
+  const credential = (await navigator.credentials.get(
+    prepareRequestOptions(options.publicKey),
+  )) as PublicKeyCredential | null;
+  if (!credential) throw new Error('Sign-in was cancelled.');
+  return loginFinish(authId, credential);
+}
+
+/** What `GET /passkeys` lists for the signed-in account. */
+export interface PasskeyInfo {
+  credId: string;
+  label: string;
+  createdAt: number;
+}
+
+export function listPasskeys(token: string): Promise<PasskeyInfo[]> {
+  return get<PasskeyInfo[]>('/passkeys', token);
+}
+
+/**
+ * Attaches a passkey to the signed-in account: the self-service
+ * `/passkeys/start` + `/finish` pair. The account already exists (created
+ * with a password), so unlike the old passkey *registration* this mints no
+ * session — the browser keeps the one it has.
+ */
+export async function addPasskey(token: string): Promise<{ name: string; credId: string }> {
+  const { regId, options } = await postAuthed<RegistrationChallenge>('/passkeys/start', token);
+  const credential = (await navigator.credentials.create(
+    prepareCreationOptions(options.publicKey),
+  )) as PublicKeyCredential | null;
+  if (!credential) throw new Error('Passkey creation was cancelled.');
+  return postAuthed('/passkeys/finish', token, { regId, credential: serializeCreatedCredential(credential) });
 }
 
 // --- Google sign-in (server-side OAuth; see sync-server/src/google.rs) ---
@@ -139,7 +175,7 @@ export interface AuthConfig {
 }
 
 export function getAuthConfig(): Promise<AuthConfig> {
-  return get<AuthConfig>("/auth/config");
+  return get<AuthConfig>('/auth/config');
 }
 
 /**
@@ -151,7 +187,7 @@ export function getAuthConfig(): Promise<AuthConfig> {
  * rejoins the ordinary one below unchanged.
  */
 export function startGoogleSignIn(appSession?: string | null): void {
-  const qs = appSession ? `?app_session=${encodeURIComponent(appSession)}` : "";
+  const qs = appSession ? `?app_session=${encodeURIComponent(appSession)}` : '';
   window.location.href = `/api/auth/google/start${qs}`;
 }
 
@@ -180,15 +216,66 @@ export interface AppSessionClaim {
   account: string;
 }
 
-export async function claimAppSession(nonce: string, token: string): Promise<AppSessionClaim> {
-  const res = await fetch("/api/app-session/claim", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ nonce }),
-  });
-  if (!res.ok) {
-    const text = (await res.text().catch(() => "")).trim();
-    throw new ApiError(text || `Request failed (${res.status}).`, res.status);
-  }
-  return (await res.json()) as AppSessionClaim;
+export function claimAppSession(nonce: string, token: string): Promise<AppSessionClaim> {
+  return request<AppSessionClaim>('/app-session/claim', { method: 'POST', token, body: { nonce } });
 }
+
+// --- TOTP (two-factor authentication) ---
+//
+// Enrollment/management from the signed-in page (`SignedIn.tsx`) — a second
+// factor for password login only, never for passkeys (see
+// sync-server/src/totp.rs's module doc comment for why).
+
+async function authedRequest<T>(
+  method: 'GET' | 'POST' | 'DELETE',
+  path: string,
+  token: string,
+  body?: unknown,
+): Promise<T> {
+  try {
+    return await request<T>(path, { method, token, body });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 423) {
+      throw new LockedOutError(e.body || 'Too many failed attempts. Try again in a few minutes.');
+    }
+    throw e;
+  }
+}
+
+export interface TotpStatus {
+  enrolled: boolean;
+  confirmed: boolean;
+}
+
+export function getTotpStatus(token: string): Promise<TotpStatus> {
+  return authedRequest<TotpStatus>('GET', '/totp', token);
+}
+
+export interface TotpEnrollment {
+  secret: string;
+  uri: string;
+}
+
+/** Requires the account's current password again — see `sync-server/src/
+ * totp.rs`'s `enroll_start` doc comment for why a bearer token alone isn't
+ * treated as proof enough to mint a fresh 2FA secret. */
+export function enrollTotp(token: string, password: string): Promise<TotpEnrollment> {
+  return authedRequest<TotpEnrollment>('POST', '/totp/enroll', token, { password });
+}
+
+export interface TotpConfirmation {
+  confirmed: true;
+  /** Eight one-time codes, shown exactly once — the caller must display
+   * these to the user now; the server never hands them back again. */
+  recoveryCodes: string[];
+}
+
+export function confirmTotp(token: string, code: string): Promise<TotpConfirmation> {
+  return authedRequest<TotpConfirmation>('POST', '/totp/confirm', token, { code });
+}
+
+export function disableTotp(token: string): Promise<void> {
+  return authedRequest<void>('DELETE', '/totp', token);
+}
+
+// --- Sessions (Settings -> Sessions equivalent for the web portal) ---

@@ -26,7 +26,11 @@ val keystoreProperties = Properties().apply {
 val hasReleaseKey = keystoreProperties.containsKey("storeFile")
 
 android {
-    compileSdk = 34
+    // 36, not 34: tauri-plugin-barcode-scanner (the QR sign-in scanner) pulls
+    // CameraX 1.5, which refuses to compile against anything under 35, and 36
+    // is the platform this machine has installed. targetSdk stays 34 — the
+    // runtime behaviour the app was tested under is unchanged.
+    compileSdk = 36
     namespace = "dev.daniel_p.albas"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -82,6 +86,14 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+    lint {
+        // AGP 8.7.3's bundled lint crashes (IncompatibleClassChangeError on
+        // KaCallableMemberCall) running androidx.lifecycle's
+        // NonNullableMutableLiveDataDetector — a Kotlin Analysis API version
+        // mismatch in that shipped lint jar, unrelated to this app's code
+        // (nothing here uses LiveData; it's a transitive check).
+        disable += "NullSafeMutableLiveData"
     }
 }
 

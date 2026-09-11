@@ -4,7 +4,7 @@ import { fmt } from '../../dates';
 import { isDoneOn, isDueOn, isRepeating } from '../../todoLogic';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
 import { colorHex } from '../../colors';
-import { assignLanes, weekSegments } from './spans';
+import { assignLanes, laneCount, weekSegments } from './spans';
 import type { Segment } from './spans';
 import type { Occurrence } from '../../eventLogic';
 import type { FirstDayOfWeek, Todo } from '../../types';
@@ -40,7 +40,6 @@ export function getCalendarDays(
   return days;
 }
 
-export const EVENT_LANE_H = 20; // 18px bar + 2px gap
 const MAX_BAR_LANES = 3;
 
 /** A repeating to-do due on a day: filled = completed, hollow = still due. */
@@ -74,8 +73,8 @@ export interface WeekRow {
   key: string;
   days: DayCell[];
   barLanes: { seg: Segment<Occurrence>; lane: number }[];
-  /** Vertical space the bar overlay needs; 0 when the week has no bars. */
-  barsHeight: number;
+  /** Lanes the bar overlay occupies (each `--spacing-lane-row` tall); 0 when the week has no bars. */
+  barLaneCount: number;
 }
 
 /** What each layout variant receives; all state lives in the MonthView shell. */
@@ -84,7 +83,6 @@ export interface MonthLayoutProps {
   onEditEvent: (o: Occurrence) => void;
   onEditTodo: (t: Todo) => void;
   onDayClick: (dateStr: string) => void;
-  onAdd?: () => void;
 }
 
 /**
@@ -95,9 +93,7 @@ function periodBackground(hexes: string[]): string | undefined {
   if (hexes.length === 0) return undefined;
   if (hexes.length === 1) return `${hexes[0]}26`;
   const stripe = 9; // px per color band
-  const stops = hexes
-    .map((hex, i) => `${hex}2e ${i * stripe}px, ${hex}2e ${(i + 1) * stripe}px`)
-    .join(', ');
+  const stops = hexes.map((hex, i) => `${hex}2e ${i * stripe}px, ${hex}2e ${(i + 1) * stripe}px`).join(', ');
   return `repeating-linear-gradient(135deg, ${stops})`;
 }
 
@@ -132,7 +128,7 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
   // each carries `sharedBy`, which the render sites use to dim and de-click.
   const occurrences = useMemo(
     () => expandEvents([...events, ...sharedEvents], rangeStart, rangeEnd),
-    [events, sharedEvents, rangeStart, rangeEnd]
+    [events, sharedEvents, rangeStart, rangeEnd],
   );
 
   return useMemo(() => {
@@ -140,21 +136,21 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
     const repeatingTodos = todos.filter(isRepeating);
-    const onceTodos = todos.filter(t => !isRepeating(t));
+    const onceTodos = todos.filter((t) => !isRepeating(t));
 
     // week-plus spans (trips, programs — the old periods) tint their day cells
     // instead of taking a lane
     const longOccs = occurrences.filter(isLongOccurrence);
-    const barOccs = occurrences.filter(o => isBarOccurrence(o) && !isLongOccurrence(o));
+    const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
 
-    return weeks.map(week => {
-      const weekDays = week.map(d => fmt(d.date));
+    return weeks.map((week) => {
+      const weekDays = week.map((d) => fmt(d.date));
 
       const allBarLanes = assignLanes(weekSegments(barOccs, weekDays));
-      const barLanes = allBarLanes.filter(l => l.lane < MAX_BAR_LANES);
+      const barLanes = allBarLanes.filter((l) => l.lane < MAX_BAR_LANES);
       // bars that didn't fit fall back to pills in their start cell
-      const overflowBars = allBarLanes.filter(l => l.lane >= MAX_BAR_LANES).map(l => l.seg.item);
-      const nBarLanes = barLanes.length === 0 ? 0 : Math.max(...barLanes.map(l => l.lane)) + 1;
+      const overflowBars = allBarLanes.filter((l) => l.lane >= MAX_BAR_LANES).map((l) => l.seg.item);
+      const nBarLanes = laneCount(barLanes);
 
       const cells = week.map(({ date, isCurrentMonth }): DayCell => {
         const dateStr = fmt(date);
@@ -162,21 +158,20 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
         // One-time to-dos render as pills, so dots represent repeating ones only
         const dots = dueDots
           ? repeatingTodos
-            .filter(t => isDueOn(t, dateStr, firstDayOfWeek) || isDoneOn(t, dateStr))
-            .map(t => ({ hex: colorHex(t.colorKey), done: isDoneOn(t, dateStr) }))
-            .slice(0, 4)
+              .filter((t) => isDueOn(t, dateStr, firstDayOfWeek) || isDoneOn(t, dateStr))
+              .map((t) => ({ hex: colorHex(t.colorKey), done: isDoneOn(t, dateStr) }))
+              .slice(0, 4)
           : [];
 
-        const dayOnce = onceTodos.filter(t => isDueOn(t, dateStr, firstDayOfWeek));
+        const dayOnce = onceTodos.filter((t) => isDueOn(t, dateStr, firstDayOfWeek));
         // timed single-day events + bars that overflowed the lane cap
         const dayPillOccs = occurrences.filter(
-          o => o.startDate === dateStr &&
-            (!isBarOccurrence(o) || overflowBars.some(b => b.key === o.key))
+          (o) => o.startDate === dateStr && (!isBarOccurrence(o) || overflowBars.some((b) => b.key === o.key)),
         );
         const shownOccs = dayPillOccs.slice(0, pillCap);
         const shownOnce = dayOnce.slice(0, Math.max(0, pillCap - shownOccs.length));
 
-        const cellLongs = longOccs.filter(o => o.startDate <= dateStr && o.endDate >= dateStr);
+        const cellLongs = longOccs.filter((o) => o.startDate <= dateStr && o.endDate >= dateStr);
 
         return {
           date,
@@ -188,13 +183,12 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
           isPast: dateStr < todayStr,
           isWeekend: date.getDay() === 0 || date.getDay() === 6,
           dots,
-          background: periodBackground(cellLongs.map(o => colorHex(o.event.colorKey))),
-          longStarts: cellLongs.filter(o => o.startDate === dateStr),
-          longEnds: cellLongs.filter(o => o.endDate === dateStr),
+          background: periodBackground(cellLongs.map((o) => colorHex(o.event.colorKey))),
+          longStarts: cellLongs.filter((o) => o.startDate === dateStr),
+          longEnds: cellLongs.filter((o) => o.endDate === dateStr),
           shownOccs,
           shownOnce,
-          hiddenCount:
-            dayPillOccs.length + dayOnce.length - shownOccs.length - shownOnce.length,
+          hiddenCount: dayPillOccs.length + dayOnce.length - shownOccs.length - shownOnce.length,
         };
       });
 
@@ -202,7 +196,7 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
         key: weekDays[0],
         days: cells,
         barLanes,
-        barsHeight: nBarLanes * EVENT_LANE_H,
+        barLaneCount: nBarLanes,
       };
     });
     // `days` is rebuilt each render from currentMonth, so key on that instead

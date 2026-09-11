@@ -1,15 +1,13 @@
 import { useApp } from '../context/AppContext';
-import CalendarNav from './calendar/CalendarNav';
 import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
 
 interface CalendarProps {
   isMobile?: boolean;
-  onAdd?: () => void;
 }
 
-export default function Calendar({ isMobile = false, onAdd }: CalendarProps) {
+export default function Calendar({ isMobile = false }: CalendarProps) {
   const { calendarMode } = useApp();
 
   return (
@@ -22,14 +20,10 @@ export default function Calendar({ isMobile = false, onAdd }: CalendarProps) {
           calendar categories mean a schema column, `sync.rs` TABLES and
           `sharedLogic.ts` moving together; until then the slot stays empty. */}
       <div className="flex flex-col h-full min-h-0 bg-surface">
-        {/* Mobile navigation — desktop header is in MonthViewDesktop */}
-        {isMobile && (
-          <div className="flex items-center mb-0 flex-shrink-0">
-            <CalendarNav compact />
-          </div>
-        )}
-
-        {calendarMode === 'month' && <MonthView isMobile={isMobile} onAdd={onAdd} />}
+        {/* No navigation row here: the desktop header lives in
+            MonthViewDesktop, and the phone's mode button rides in the top bar
+            (`HomeView`'s `MobileShell`). */}
+        {calendarMode === 'month' && <MonthView isMobile={isMobile} />}
         {calendarMode === 'week' && <WeekView />}
         {calendarMode === 'day' && <DayView />}
       </div>

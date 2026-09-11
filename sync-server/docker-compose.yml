@@ -17,8 +17,6 @@ services:
       # The owner's personal sync token — creates (or re-keys) the 'owner'
       # account's env credential. Optional once other accounts exist.
       ALBAS_SYNC_TOKEN: ${ALBAS_SYNC_TOKEN:-}
-      # Enables the admin endpoints (/accounts, /invites).
-      ALBAS_SYNC_ADMIN_TOKEN: ${ALBAS_SYNC_ADMIN_TOKEN:-}
       # Public https URL of this server (e.g. https://sync.example.com).
       # Required for passkey registration/login; unset disables them.
       ALBAS_SYNC_ORIGIN: ${ALBAS_SYNC_ORIGIN:-}
@@ -31,8 +29,39 @@ services:
       # Raw JSON served at /.well-known/assetlinks.json (Android Digital
       # Asset Links, binds the app's signing cert to this domain).
       ALBAS_SYNC_ASSETLINKS: ${ALBAS_SYNC_ASSETLINKS:-}
+      # Base64 of 32 raw bytes — encrypts TOTP secrets at rest. Generate once
+      # with `openssl rand -base64 32` and keep it; unset means two-factor
+      # enrollment refuses (503) rather than storing a secret in the clear.
+      ALBAS_SYNC_KEK: ${ALBAS_SYNC_KEK:-}
+      # Log filter for the server's tracing output (`docker compose logs`).
+      RUST_LOG: ${RUST_LOG:-info}
     volumes:
       - albas-sync-data:/data
+    # `albas-sync health` is a GET /health from inside the container (the
+    # image has no curl). nginx's overlay waits on this before starting.
+    healthcheck:
+      test: ["CMD", "albas-sync", "health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Continuous backup: streams the SQLite WAL to a second location (see
+  # litestream.yml). Same uid as albas-sync so the `-wal`/`-shm` side files it
+  # touches stay writable by the server. /srv/albas-backups is a host directory;
+  # pull it off-site with rsync, or point the replica at S3/B2 instead.
+  litestream:
+    image: litestream/litestream:0.3
+    restart: unless-stopped
+    user: "10001:10001"
+    command: replicate
+    volumes:
+      - albas-sync-data:/data
+      - ./litestream.yml:/etc/litestream.yml:ro
+      - ${ALBAS_BACKUP_DIR:-/srv/albas-backups}:/backup
+    depends_on:
+      albas-sync:
+        condition: service_healthy
 
 volumes:
   albas-sync-data:

@@ -6,5 +6,5 @@ import { AppProvider } from './context/AppContext';
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <AppProvider>
     <AppShell />
-  </AppProvider>
+  </AppProvider>,
 );

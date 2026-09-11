@@ -6,24 +6,24 @@
  * it can say about a password. A row appears here when, and only when, the
  * account really can be opened with one.
  *
- * The action sets or changes it via `PUT /password`. Plain fetch throughout:
- * unlike a passkey, a password needs no OS authenticator and so no Tauri hop.
+ * The action sets or changes it via `PUT /password`. Every request goes
+ * through `apiRequest` — a Rust hop inside the app, since the WebView can't
+ * reach the server directly (see `syncServer.ts`).
  */
 import { useState } from 'react';
+import { apiError, apiRequest, MIN_PASSWORD_LENGTH } from '../syncServer';
 import { registerAuthMethod, type AuthMethodContext, type AuthMethodRow } from './registry';
 
 async function load(ctx: AuthMethodContext): Promise<AuthMethodRow[]> {
   if (!ctx.token) return [];
 
-  const res = await fetch(`${ctx.server}/password`, {
-    headers: { Authorization: `Bearer ${ctx.token}` },
-  });
+  const res = await apiRequest('GET', '/password', undefined, ctx);
   // A server too old to know this route has no password support at all, so the
   // honest answer is "no password", not an error in the user's face.
   if (res.status === 404 || res.status === 405 || res.status === 501) return [];
-  if (!res.ok) throw new Error((await res.text().catch(() => '')).trim() || `HTTP ${res.status}`);
+  if (res.status < 200 || res.status >= 300) throw new Error(apiError(res, "Couldn't check the password"));
 
-  const { set } = (await res.json()) as { set?: boolean };
+  const { set } = res.body as { set?: boolean };
   return set ? [{ key: 'password', name: 'Password', type: 'Password' }] : [];
 }
 
@@ -34,8 +34,8 @@ function SetPasswordAction({ ctx }: { ctx: AuthMethodContext }) {
   const [loading, setLoading] = useState(false);
 
   async function handleSetPassword() {
-    if (!password || password.length < 12) {
-      setError('Password must be at least 12 characters long.');
+    if (!password || password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
       return;
     }
 
@@ -44,18 +44,9 @@ function SetPasswordAction({ ctx }: { ctx: AuthMethodContext }) {
     setSuccess(false);
 
     try {
-      const res = await fetch(`${ctx.server}/password`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ctx.token}`,
-        },
-        body: JSON.stringify({ password }),
-      });
-
-      if (!res.ok) {
-        const message = await res.text().catch(() => `HTTP ${res.status}`);
-        setError(message.trim() || `Failed to set password (HTTP ${res.status}).`);
+      const res = await apiRequest('PUT', '/password', { password }, ctx);
+      if (res.status < 200 || res.status >= 300) {
+        setError(apiError(res, 'Failed to set password'));
         return;
       }
 
@@ -73,8 +64,8 @@ function SetPasswordAction({ ctx }: { ctx: AuthMethodContext }) {
     <div>
       <input
         type="password"
-        className="input-text"
-        placeholder="New password (min 12 chars)"
+        className="field-input max-w-[12.5rem]"
+        placeholder={`New password (min ${MIN_PASSWORD_LENGTH} chars)`}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         disabled={!ctx.token || loading}

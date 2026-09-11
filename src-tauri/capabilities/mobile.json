@@ -1,0 +1,7 @@
+{
+  "identifier": "mobile",
+  "description": "Phone-only plugins: the QR scanner used to sign another device in (or be signed in by one).",
+  "windows": ["main"],
+  "platforms": ["android", "iOS"],
+  "permissions": ["barcode-scanner:default"]
+}

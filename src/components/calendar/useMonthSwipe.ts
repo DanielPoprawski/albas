@@ -32,8 +32,7 @@ export function useMonthSwipe() {
   const wheelAt = useRef(0);
   const wheelLock = useRef(0);
 
-  const step = (dir: 1 | -1) =>
-    setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() + dir, 1));
+  const step = (dir: 1 | -1) => setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() + dir, 1));
 
   return {
     // let the browser keep vertical scrolling; we only claim the x axis
@@ -57,7 +56,9 @@ export function useMonthSwipe() {
       // dragging left pulls the next month in, as the pages were side by side
       step(dx < 0 ? 1 : -1);
       swiped.current = true;
-      setTimeout(() => { swiped.current = false; }, TAP_SUPPRESS);
+      setTimeout(() => {
+        swiped.current = false;
+      }, TAP_SUPPRESS);
     },
 
     // touchend is followed by a click on whichever cell the finger lifted over,

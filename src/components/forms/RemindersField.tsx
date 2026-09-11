@@ -27,10 +27,15 @@ const UNIT_MINUTES: Record<Unit, number> = {
 /** Minutes-before as words, picking the largest unit that divides evenly. */
 export function reminderLabel(minutes: number): string {
   if (minutes === 0) return 'At start time';
-  const preset = PRESETS.find(p => p.minutes === minutes);
+  const preset = PRESETS.find((p) => p.minutes === minutes);
   if (preset) return preset.label;
 
-  const units: [Unit, number][] = [['weeks', 10080], ['days', 1440], ['hours', 60], ['minutes', 1]];
+  const units: [Unit, number][] = [
+    ['weeks', 10080],
+    ['days', 1440],
+    ['hours', 60],
+    ['minutes', 1],
+  ];
   for (const [unit, size] of units) {
     if (minutes % size === 0) {
       const n = minutes / size;
@@ -44,13 +49,18 @@ export function reminderLabel(minutes: number): string {
  * Add/edit one reminder. Presets cover the common cases; "Custom" is there so
  * the list doesn't have to guess every lead time anyone might want.
  */
-function ReminderDialog({ initial, taken, onSave, onClose }: {
+function ReminderDialog({
+  initial,
+  taken,
+  onSave,
+  onClose,
+}: {
   initial: number | null;
   taken: number[];
   onSave: (minutes: number) => void;
   onClose: () => void;
 }) {
-  const isPreset = initial != null && PRESETS.some(p => p.minutes === initial);
+  const isPreset = initial != null && PRESETS.some((p) => p.minutes === initial);
   const [custom, setCustom] = useState(initial != null && !isPreset);
   const [amount, setAmount] = useState(() => {
     if (initial == null || isPreset) return '15';
@@ -79,13 +89,18 @@ function ReminderDialog({ initial, taken, onSave, onClose }: {
   }
 
   return (
-    <Dialog open onOpenChange={next => { if (!next) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
       <DialogContent
         showCloseButton={false}
         aria-describedby={undefined}
         className="block rounded-2xl p-md w-full max-w-[min(22rem,calc(100%-2rem))] max-h-[80vh] overflow-y-auto scrollbar-hide border-line shadow-2xl"
       >
-        <DialogTitle className="text-body-md font-title font-normal text-txt mb-md">
+        <DialogTitle className="text-body-md font-title font-normal text-ink mb-md">
           {initial == null ? 'Add notification' : 'Edit notification'}
         </DialogTitle>
 
@@ -101,20 +116,18 @@ function ReminderDialog({ initial, taken, onSave, onClose }: {
                   disabled={used}
                   onClick={() => save(minutes)}
                   className={`w-full py-sm px-sm rounded-lg text-left text-body-sm transition-colors ${
-                    used
-                      ? 'text-txt-faint cursor-default'
-                      : 'text-txt bg-fill hover:bg-fill-strong'
+                    used ? 'text-ink-muted cursor-default' : 'text-ink bg-subtle hover:bg-subtle-strong'
                   }`}
                 >
                   {label}
-                  {used && <span className="text-[10px] ml-xs">already added</span>}
+                  {used && <span className="text-xs ml-xs">already added</span>}
                 </button>
               );
             })}
             <button
               type="button"
               onClick={() => setCustom(true)}
-              className="w-full py-sm px-sm rounded-lg text-left text-body-sm text-primary-fixed-dim bg-fill hover:bg-fill-strong transition-colors"
+              className="w-full py-sm px-sm rounded-lg text-left text-body-sm text-primary-fixed-dim bg-subtle hover:bg-subtle-strong transition-colors"
             >
               Custom…
             </button>
@@ -130,7 +143,7 @@ function ReminderDialog({ initial, taken, onSave, onClose }: {
                   autoFocus
                   className={`${inputClass} w-24 text-center`}
                   value={amount}
-                  onChange={e => setAmount(e.target.value)}
+                  onChange={(e) => setAmount(e.target.value)}
                 />
                 <Select
                   className="flex-1"
@@ -149,7 +162,7 @@ function ReminderDialog({ initial, taken, onSave, onClose }: {
               <button
                 type="button"
                 onClick={() => setCustom(false)}
-                className="px-md py-sm rounded-lg text-body-sm text-txt-muted hover:bg-fill transition-colors"
+                className="px-md py-sm rounded-lg text-body-sm text-ink-muted hover:bg-subtle transition-colors"
               >
                 Back
               </button>
@@ -167,7 +180,7 @@ function ReminderDialog({ initial, taken, onSave, onClose }: {
         <button
           type="button"
           onClick={onClose}
-          className="w-full mt-sm py-sm rounded-lg text-center text-body-sm text-txt-muted hover:bg-fill transition-colors"
+          className="w-full mt-sm py-sm rounded-lg text-center text-body-sm text-ink-muted hover:bg-subtle transition-colors"
         >
           Cancel
         </button>
@@ -181,17 +194,14 @@ function ReminderDialog({ initial, taken, onSave, onClose }: {
  * toggles: the presets could only ever offer four lead times, and there was no
  * way to see at a glance which ones an event actually had.
  */
-export default function RemindersField({ value, onChange }: {
-  value: number[];
-  onChange: (next: number[]) => void;
-}) {
+export default function RemindersField({ value, onChange }: { value: number[]; onChange: (next: number[]) => void }) {
   // null = closed; 'new' = adding; a number = editing that reminder
   const [editing, setEditing] = useState<number | 'new' | null>(null);
 
   const sorted = [...value].sort((a, b) => a - b);
 
   function save(minutes: number) {
-    const without = editing === 'new' ? value : value.filter(m => m !== editing);
+    const without = editing === 'new' ? value : value.filter((m) => m !== editing);
     if (without.includes(minutes)) return; // no duplicates
     onChange([...without, minutes].sort((a, b) => a - b));
   }
@@ -203,41 +213,36 @@ export default function RemindersField({ value, onChange }: {
         <button
           type="button"
           onClick={() => setEditing('new')}
-          className="flex items-center gap-0.5 text-label-md font-semibold text-primary-fixed-dim hover:bg-fill-strong rounded px-xs py-0.5 transition-colors"
+          className="flex items-center gap-0.5 text-label-md font-semibold text-primary-fixed-dim hover:bg-subtle-strong rounded px-xs py-0.5 transition-colors"
         >
-          <Plus size={14} />
+          <Plus size="0.875rem" />
           Add
         </button>
       </div>
 
       {sorted.length === 0 ? (
-        <p className="text-[11px] text-txt-muted">No notifications for this event.</p>
+        <p className="text-xs text-ink-muted">No notifications for this event.</p>
       ) : (
         <div className="space-y-xs">
-          {sorted.map(minutes => (
-            <div
-              key={minutes}
-              className="flex items-center gap-sm py-xs px-sm rounded-lg bg-fill"
-            >
-              <Bell size={15} className="text-txt-faint flex-shrink-0" />
-              <span className="text-body-sm text-txt flex-1 min-w-0 truncate">
-                {reminderLabel(minutes)}
-              </span>
+          {sorted.map((minutes) => (
+            <div key={minutes} className="flex items-center gap-sm py-xs px-sm rounded-lg bg-subtle">
+              <Bell size="0.9375rem" className="text-ink-muted flex-shrink-0" />
+              <span className="text-body-sm text-ink flex-1 min-w-0 truncate">{reminderLabel(minutes)}</span>
               <button
                 type="button"
                 title="Edit"
                 onClick={() => setEditing(minutes)}
-                className="text-txt-muted hover:text-txt transition-colors flex-shrink-0"
+                className="text-ink-muted hover:text-ink transition-colors flex-shrink-0"
               >
-                <Pencil size={14} />
+                <Pencil size="0.875rem" />
               </button>
               <button
                 type="button"
                 title="Delete"
-                onClick={() => onChange(value.filter(m => m !== minutes))}
-                className="text-txt-muted hover:text-danger transition-colors flex-shrink-0"
+                onClick={() => onChange(value.filter((m) => m !== minutes))}
+                className="text-ink-muted hover:text-danger transition-colors flex-shrink-0"
               >
-                <Trash2 size={14} />
+                <Trash2 size="0.875rem" />
               </button>
             </div>
           ))}

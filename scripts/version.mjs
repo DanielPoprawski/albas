@@ -78,7 +78,10 @@ for (const t of targets) {
 // not greater than the installed one.
 const props = read(PROPS);
 const code = Number(CODE_RE.exec(props)[2]) + 1;
-writeFileSync(join(root, PROPS), props.replace(CODE_RE, (_, k) => `${k}${code}`));
+writeFileSync(
+  join(root, PROPS),
+  props.replace(CODE_RE, (_, k) => `${k}${code}`),
+);
 console.log(`  ${PROPS} -> versionCode ${code}`);
 
 console.log(`\nnow tag it:  git tag v${arg}`);

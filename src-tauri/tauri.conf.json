@@ -14,12 +14,11 @@
                   {
                         "title": "Albas",
                         "width": 1400,
-                        "height": 900,
-                        "devtools": true
+                        "height": 900
                   }
             ],
             "security": {
-                  "csp": null
+                  "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
             }
       },
       "bundle": {

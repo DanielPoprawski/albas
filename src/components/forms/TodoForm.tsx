@@ -1,10 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Star } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
 import { rotateWeek } from '../../dates';
+import { samePatch } from '@/lib/utils';
+import { describeWhen, stripMatch, useNlDate } from '../../nlDate';
 import type { Repeat, RepeatUnit, Todo, TodoKind } from '../../types';
-import { CheckboxRow, ColorPicker, EditActions, inputClass, labelClass, SegmentedControl, Select, SubmitButton } from './shared';
+import {
+  CheckboxRow,
+  ColorPicker,
+  EditActions,
+  inputClass,
+  labelClass,
+  SegmentedControl,
+  Select,
+  SubmitButton,
+  type CommitRef,
+  type CommitResult,
+} from './shared';
+import DateField from './DateField';
 
 /**
  * One form for everything that needs doing. The repeat rule is the whole
@@ -22,21 +36,34 @@ const REPEAT_OPTIONS: { value: RepeatChoice; label: string }[] = [
 
 // Sunday-first (matching getDay()); rotated into the user's display order
 const WEEKDAY_OPTIONS = [
-  { day: 0, label: 'S' }, { day: 1, label: 'M' }, { day: 2, label: 'T' }, { day: 3, label: 'W' },
-  { day: 4, label: 'T' }, { day: 5, label: 'F' }, { day: 6, label: 'S' },
+  { day: 0, label: 'S' },
+  { day: 1, label: 'M' },
+  { day: 2, label: 'T' },
+  { day: 3, label: 'W' },
+  { day: 4, label: 'T' },
+  { day: 5, label: 'F' },
+  { day: 6, label: 'S' },
 ];
 
-export default function TodoForm({ edit, defaultDate, onDone }: {
+export default function TodoForm({
+  edit,
+  defaultDate,
+  onDone,
+  commitRef,
+}: {
   edit?: Todo;
   defaultDate?: string | null;
   onDone: () => void;
+  /** Lets the modal commit on dismiss (scrim, Escape, back) without a submit. */
+  commitRef?: CommitRef;
 }) {
-  const { addTodo, updateTodo, deleteTodo, selectedDate, firstDayOfWeek, todos } = useApp();
+  const { addTodo, updateTodo, deleteTodo, selectedDate, firstDayOfWeek, categoriesFor } = useApp();
   const sched = edit?.schedule;
 
-  // Autocomplete source: categories exist only because a to-do uses one, so
-  // the list is derived rather than stored.
-  const knownCategories = [...new Set(todos.map(t => t.category).filter(Boolean))].sort();
+  const categoryOptions = [
+    { value: '', label: 'None' },
+    ...categoriesFor('tasks').map((c) => ({ value: c.id, label: c.name })),
+  ];
 
   const [name, setName] = useState(edit?.name ?? '');
   const [category, setCategory] = useState(edit?.category ?? '');
@@ -45,7 +72,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
   const [kind, setKind] = useState<TodoKind>(edit?.kind ?? 'yesno');
   const [target, setTarget] = useState(edit && edit.kind === 'measurable' ? String(edit.target) : '');
   const [unit, setUnit] = useState(edit?.unit ?? '');
-  const [date, setDate] = useState(edit ? edit.dueDate ?? '' : defaultDate ?? selectedDate ?? '');
+  const [date, setDate] = useState(edit ? (edit.dueDate ?? '') : (defaultDate ?? selectedDate ?? ''));
   const [time, setTime] = useState(edit?.time ?? '');
   const [repeat, setRepeat] = useState<RepeatChoice>(sched?.type ?? 'once');
   const [weekdays, setWeekdays] = useState<number[]>(sched?.type === 'weekdays' ? sched.days : [1, 2, 3, 4, 5]);
@@ -55,15 +82,34 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
   const [times, setTimes] = useState(sched?.type === 'timesPer' ? String(sched.times) : '3');
   const [per, setPer] = useState<'week' | 'month'>(sched?.type === 'timesPer' ? sched.per : 'week');
   const [reminder, setReminder] = useState(edit?.reminder ?? false);
+  const [error, setError] = useState('');
+
+  // Natural-language date suggestion (Phase H). Apply-only here — unlike the
+  // Add modal's create path, this form can be editing an existing to-do, and
+  // silently moving its date on submit just because the title contains a
+  // date-shaped phrase would be a surprise, not a convenience.
+  const suggestion = useNlDate(name);
+  const suggestionKey = suggestion ? `${suggestion.matched.index}:${suggestion.matched.text}` : null;
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const dismissed = suggestionKey !== null && suggestionKey === dismissedKey;
+
+  function applySuggestion() {
+    if (!suggestion) return;
+    setDate(suggestion.start.date);
+    if (suggestion.start.time) setTime(suggestion.start.time);
+    setName((n) => stripMatch(n, suggestion.matched));
+  }
 
   function toggleWeekday(day: number) {
-    setWeekdays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+    setWeekdays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
   }
 
   function buildRepeat(): Repeat | null {
     switch (repeat) {
-      case 'once': return { type: 'once' };
-      case 'daily': return { type: 'daily' };
+      case 'once':
+        return { type: 'once' };
+      case 'daily':
+        return { type: 'daily' };
       case 'weekdays':
         return weekdays.length === 0 ? null : { type: 'weekdays', days: weekdays };
       case 'every': {
@@ -79,11 +125,14 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
+  /** Validates and persists. Pure of navigation: the caller decides whether the result closes the modal. */
+  function commit(): CommitResult {
+    if (!name.trim()) return 'empty';
     const schedule = buildRepeat();
-    if (!schedule) return;
+    if (!schedule) {
+      setError(repeat === 'weekdays' ? 'Pick at least one day of the week.' : 'Enter a number of 1 or more.');
+      return 'invalid';
+    }
     const parsedTarget = parseInt(target, 10);
     const fields = {
       name: name.trim(),
@@ -98,9 +147,24 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
       category: category.trim(),
       important,
     };
-    if (edit) updateTodo(edit.id, fields);
-    else addTodo(fields);
-    onDone();
+    if (edit) {
+      if (samePatch(fields, edit)) return 'unchanged';
+      updateTodo(edit.id, fields);
+    } else {
+      addTodo(fields);
+    }
+    return 'saved';
+  }
+
+  useEffect(() => {
+    if (commitRef) commitRef.current = commit;
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const result = commit();
+    if (result === 'saved' || result === 'unchanged') onDone();
+    else if (result === 'empty') setError('Give it a name first.');
   }
 
   const repeating = repeat !== 'once';
@@ -114,49 +178,67 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
             className={inputClass}
             placeholder="e.g. Client meeting prep, Pushups, Take out trash"
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             autoFocus
           />
           {/* Star lives beside the name: it's a property of the to-do itself,
               not a scheduling detail, and this keeps it one tap from the top. */}
           <button
             type="button"
-            onClick={() => setImportant(v => !v)}
+            onClick={() => setImportant((v) => !v)}
             title={important ? 'Not important' : 'Mark important'}
             aria-pressed={important}
             className={`flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
-              important ? 'text-amber-400 bg-fill-strong' : 'text-txt-faint hover:text-txt hover:bg-fill'
+              important ? 'text-cat-amber bg-subtle-strong' : 'text-ink-muted hover:text-ink hover:bg-subtle'
             }`}
           >
-            <span
-              className="block"
-            >
-              <Star size={20} fill={important ? 'currentColor' : 'none'} />
+            <span className="block">
+              <Star size="1.25rem" fill={important ? 'currentColor' : 'none'} />
             </span>
           </button>
         </div>
+        {suggestion && !dismissed && (
+          <div className="flex items-center justify-between gap-sm mt-xs">
+            <span className="text-sm text-ink-muted truncate">
+              {'→ '}
+              <span className="text-accent font-semibold">{describeWhen(suggestion)}</span>
+              {' — from “'}
+              {suggestion.matched.text}
+              {'”'}
+            </span>
+            <span className="flex items-center gap-sm flex-shrink-0">
+              <button
+                type="button"
+                onClick={applySuggestion}
+                className="text-sm font-semibold text-accent hover:underline"
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedKey(suggestionKey)}
+                aria-label="Dismiss date suggestion"
+                className="text-ink-muted hover:text-ink"
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        )}
       </div>
 
       <div>
         <label className={labelClass}>Category</label>
-        {/* Native datalist: free text that suggests what you've already used,
-            with no list to manage and nothing to migrate when one goes unused. */}
-        <input
-          className={inputClass}
-          list="todo-categories"
-          placeholder="Optional — e.g. Work, Home"
-          value={category}
-          onChange={e => setCategory(e.target.value)}
-        />
-        <datalist id="todo-categories">
-          {knownCategories.map(c => <option key={c} value={c} />)}
-        </datalist>
+        <Select options={categoryOptions} value={category} onChange={setCategory} />
       </div>
 
       <div>
         <label className={labelClass}>Type</label>
         <SegmentedControl
-          options={[{ value: 'yesno', label: 'Yes / No' }, { value: 'measurable', label: 'Measurable' }]}
+          options={[
+            { value: 'yesno', label: 'Yes / No' },
+            { value: 'measurable', label: 'Measurable' },
+          ]}
           value={kind}
           onChange={setKind}
         />
@@ -172,8 +254,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
               className={inputClass}
               placeholder="e.g. 30"
               value={target}
-              onChange={e => setTarget(e.target.value)}
-              
+              onChange={(e) => setTarget(e.target.value)}
             />
           </div>
           <div className="flex-1">
@@ -182,7 +263,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
               className={inputClass}
               placeholder="e.g. pushups, glasses"
               value={unit}
-              onChange={e => setUnit(e.target.value)}
+              onChange={(e) => setUnit(e.target.value)}
             />
           </div>
         </div>
@@ -191,23 +272,11 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
       <div className="flex gap-sm">
         <div className="flex-1">
           <label className={labelClass}>{repeating ? 'Starts (optional)' : 'Day (optional)'}</label>
-          <input
-            type="date"
-            className={inputClass}
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            
-          />
+          <DateField value={date} onChange={setDate} allowEmpty placeholder="none" aria-label="Date" />
         </div>
         <div className="w-28">
           <label className={labelClass}>Time</label>
-          <input
-            type="time"
-            className={inputClass}
-            value={time}
-            onChange={e => setTime(e.target.value)}
-            
-          />
+          <input type="time" className={inputClass} value={time} onChange={(e) => setTime(e.target.value)} />
         </div>
       </div>
 
@@ -225,7 +294,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
                 className={`flex-1 h-8 rounded-lg text-label-md font-bold transition-all ${
                   weekdays.includes(day)
                     ? 'bg-primary text-on-primary'
-                    : 'bg-fill-strong text-txt-muted hover:bg-fill-stronger'
+                    : 'bg-subtle-strong text-ink-muted hover:bg-line-strong'
                 }`}
               >
                 {label}
@@ -237,14 +306,13 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
         {repeat === 'every' && (
           <div className="mt-sm space-y-sm">
             <div className="flex items-center gap-sm">
-              <span className="text-body-sm text-txt-muted">Every</span>
+              <span className="text-body-sm text-ink-muted">Every</span>
               <input
                 type="number"
                 min="1"
-                className={`${inputClass} text-center`}
+                className={`${inputClass} text-center w-[4.5rem]`}
                 value={everyN}
-                onChange={e => setEveryN(e.target.value)}
-                style={{ width: '4.5rem' }}
+                onChange={(e) => setEveryN(e.target.value)}
               />
               <Select
                 className="flex-1"
@@ -271,15 +339,17 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
             <input
               type="number"
               min="1"
-              className={`${inputClass} text-center`}
+              className={`${inputClass} text-center w-[4.5rem]`}
               value={times}
-              onChange={e => setTimes(e.target.value)}
-              style={{ width: '4.5rem' }}
+              onChange={(e) => setTimes(e.target.value)}
             />
-            <span className="text-body-sm text-txt-muted">times per</span>
+            <span className="text-body-sm text-ink-muted">times per</span>
             <Select
               className="flex-1"
-              options={[{ value: 'week', label: 'week' }, { value: 'month', label: 'month' }]}
+              options={[
+                { value: 'week', label: 'week' },
+                { value: 'month', label: 'month' },
+              ]}
               value={per}
               onChange={setPer}
             />
@@ -289,11 +359,7 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
 
       <div>
         <label className={labelClass}>Notifications</label>
-        <CheckboxRow
-          checked={reminder}
-          onChange={setReminder}
-          label="Remind me on days it's due"
-        />
+        <CheckboxRow checked={reminder} onChange={setReminder} label="Remind me on days it's due" />
       </div>
 
       <div>
@@ -301,8 +367,16 @@ export default function TodoForm({ edit, defaultDate, onDone }: {
         <ColorPicker value={color} onChange={setColor} />
       </div>
 
+      {error && <p className="text-body-sm text-danger">{error}</p>}
+
       {edit ? (
-        <EditActions saveLabel="Save Changes" onDelete={() => { deleteTodo(edit.id); onDone(); }} />
+        <EditActions
+          saveLabel="Done"
+          onDelete={() => {
+            deleteTodo(edit.id);
+            onDone();
+          }}
+        />
       ) : (
         <SubmitButton label="Add To-Do" />
       )}

@@ -12,6 +12,8 @@ export interface SegmentedProps<T extends string> {
   value: T;
   onChange: (value: T) => void;
   className?: string;
+  /** Stretch across the container, each option an equal share. */
+  fill?: boolean;
   'aria-label'?: string;
 }
 
@@ -31,6 +33,7 @@ export function Segmented<T extends string>({
   value,
   onChange,
   className,
+  fill,
   ...props
 }: SegmentedProps<T>) {
   const move = (delta: number) => {
@@ -44,7 +47,7 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       data-slot="segmented"
-      className={cn('inline-flex', className)}
+      className={cn(fill ? 'flex w-full' : 'inline-flex', className)}
       onKeyDown={(e) => {
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
           e.preventDefault();
@@ -67,10 +70,11 @@ export function Segmented<T extends string>({
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(option.value)}
             className={cn(
-              'relative -ml-px cursor-pointer border px-[12px] py-[8px] first:ml-0',
-              'text-[12px] font-semibold leading-none transition-colors duration-150',
+              'relative -ml-px cursor-pointer border px-[0.75rem] py-[0.5rem] first:ml-0',
+              fill && 'flex-1 min-w-0 px-1',
+              'text-sm font-semibold leading-none transition-colors duration-150',
               active
-                ? 'z-10 border-accent bg-accent text-white'
+                ? 'z-10 border-accent bg-accent text-on-accent'
                 : 'border-line bg-surface text-ink-secondary hover:bg-subtle hover:text-ink',
             )}
           >

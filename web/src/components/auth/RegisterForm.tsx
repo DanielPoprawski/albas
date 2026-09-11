@@ -1,10 +1,8 @@
-import { useState } from "react";
-import type { Screen } from "../../screens";
-import { registerWithPasskey, saveSession, type Session } from "../../lib/api";
-import { webauthnSupported } from "../../lib/webauthn";
-import { GoogleSignInButton } from "./GoogleSignInButton";
-
-const NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+import { useState } from 'react';
+import type { Screen } from '../../screens';
+import { registerWithPassword, saveSession, type Session } from '../../lib/api';
+import { GoogleSignInButton } from './GoogleSignInButton';
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, NAME_PATTERN } from '../../../../shared/authRules';
 
 export function RegisterForm({
   onNavigate,
@@ -17,25 +15,38 @@ export function RegisterForm({
    * Google sign-in so the handoff survives the round trip. See `App.tsx`. */
   appSession?: string | null;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supported = webauthnSupported();
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!NAME_PATTERN.test(name)) {
       setError("Account names are 1–64 characters: letters, digits, '-' or '_'.");
       return;
     }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Passwords are at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      setError(`Passwords are at most ${MAX_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (password !== confirm) {
+      setError("Those passwords don't match.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const session = await registerWithPasskey(name);
+      const session = await registerWithPassword(name, password);
       saveSession(session);
       onSignedIn(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed.");
+      setError(err instanceof Error ? err.message : 'Registration failed.');
     } finally {
       setBusy(false);
     }
@@ -58,28 +69,49 @@ export function RegisterForm({
               placeholder="letters, digits, - or _"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              autoComplete="username"
               required
             />
           </div>
 
-          {!supported && (
-            <div className="form-error">
-              This browser doesn't support passkeys, so it can't complete registration. Try a browser or device with
-              passkey support.
-            </div>
-          )}
+          <div className="form-group">
+            <label htmlFor="register-password">Password</label>
+            <input
+              id="register-password"
+              type="password"
+              placeholder={`at least ${MIN_PASSWORD_LENGTH} characters`}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              maxLength={MAX_PASSWORD_LENGTH}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="register-confirm">Confirm password</label>
+            <input
+              id="register-confirm"
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+              required
+            />
+          </div>
+
           {error && <div className="form-error">{error}</div>}
 
           <div className="passkey-note">
-            🔐 You'll create a passkey to protect your account — a security key, fingerprint, or face unlock. No
-            password needed (though you can add one as a backup later).
+            🔐 Your password is the first key to the account. Once you're in, you can add a passkey (security key,
+            fingerprint or face unlock) and an authenticator app from the signed-in page.
           </div>
 
           <div className="form-actions">
-            <button type="submit" className="btn-primary" disabled={busy || !supported}>
-              {busy ? "Creating…" : "Create Account"}
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? 'Creating…' : 'Create Account'}
             </button>
-            <button type="button" className="btn-text" onClick={() => onNavigate("splash")}>
+            <button type="button" className="btn-text" onClick={() => onNavigate('splash')}>
               Back
             </button>
           </div>
@@ -89,8 +121,8 @@ export function RegisterForm({
 
         <div className="form-footer">
           <p className="form-footer-text">
-            Already have an account?{" "}
-            <button type="button" className="form-footer-link" onClick={() => onNavigate("login")}>
+            Already have an account?{' '}
+            <button type="button" className="form-footer-link" onClick={() => onNavigate('login')}>
               Sign in
             </button>
           </p>

@@ -1,0 +1,39 @@
+name: ci
+
+# Lint, typecheck and build the app frontend and the web portal, run the
+# sync-server tests, and the CSS hygiene audit. Publishing the server image is
+# the separate, manual `sync-server.yml`.
+on:
+  push:
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx biome ci src web/src scripts
+      - run: bun run audit:css
+      - run: bun run knip
+      - run: bun run build
+      - name: web portal
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+  sync-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sync-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sync-server
+      - run: cargo check --message-format=short
+      - run: cargo test -- -q

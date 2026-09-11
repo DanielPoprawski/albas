@@ -6,11 +6,13 @@
  * credentials, and a passkey added on another device must still show up here.
  *
  * Adding a passkey is no longer an in-app ceremony: `tauri-plugin-webauthn`
- * is gone, so the action just sends the user to the browser sign-in portal,
- * where passkeys, password and TOTP all live now. This method is otherwise
+ * is gone, so the action just sends the user to the browser sign-in portal.
+ * They sign in there with their password (the mandatory first credential)
+ * and the signed-in page offers "Add a passkey". This method is otherwise
  * informational — it lists what's attached, it doesn't drive attaching one.
  */
 import { inTauri } from '../persistence';
+import { apiError, apiRequest } from '../syncServer';
 import { registerAuthMethod, type AuthMethodContext, type AuthMethodRow } from './registry';
 
 /** What `GET /passkeys` returns. The server stores no device name, so `label`
@@ -34,15 +36,10 @@ function added(ms: number): string | undefined {
 
 async function load(ctx: AuthMethodContext): Promise<AuthMethodRow[]> {
   if (!ctx.token) return [];
-  const res = await fetch(`${ctx.server}/passkeys`, {
-    headers: { Authorization: `Bearer ${ctx.token}` },
-  });
-  if (!res.ok) {
-    const message = (await res.text().catch(() => '')).trim();
-    throw new Error(message || `Couldn't list passkeys (HTTP ${res.status}).`);
-  }
-  const list = (await res.json()) as PasskeyInfo[];
-  return list.map(p => ({
+  const res = await apiRequest('GET', '/passkeys', undefined, ctx);
+  if (res.status < 200 || res.status >= 300) throw new Error(apiError(res, "Couldn't list passkeys"));
+  const list = res.body as PasskeyInfo[];
+  return list.map((p) => ({
     key: p.credId,
     name: p.label,
     type: 'Passkey' as const,
@@ -74,9 +71,12 @@ function AddPasskey({ ctx }: { ctx: AuthMethodContext }) {
   return (
     <div>
       <button className="button-primary" disabled={!ctx.token} onClick={() => void openPortal(ctx.server)}>
-        Manage in browser
+        Add a passkey in browser
       </button>
-      <p className="setting-desc">Passkeys are added and removed from the browser sign-in page.</p>
+      <p className="setting-desc">
+        Sign in on the web page with your password, then choose "Add a passkey". Passkeys need a browser with passkey
+        support (Chrome, Edge, Safari, or Android).
+      </p>
     </div>
   );
 }

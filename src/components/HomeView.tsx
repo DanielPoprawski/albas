@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { Settings, Repeat2, Home, CheckSquare } from 'lucide-react';
 import Calendar from './Calendar';
+import CalendarNav from './calendar/CalendarNav';
 import AddModal from './AddModal';
+import QuickAddField from './QuickAddField';
 import HabitsSection from './todo/HabitsSection';
 import TasksSection from './todo/TasksSection';
 import { useIsMobile } from '../useMedia';
+import { MOBILE_HEADER_BUTTON } from './mobileChrome';
+import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
 import type { Todo } from '../types';
 
@@ -25,19 +29,14 @@ export default function HomeView() {
 
   if (isMobile) {
     return (
-      <MobileShell
-        editing={editing}
-        setEditing={setEditing}
-        currentTab={mobileTab}
-        setCurrentTab={setMobileTab}
-      />
+      <MobileShell editing={editing} setEditing={setEditing} currentTab={mobileTab} setCurrentTab={setMobileTab} />
     );
   }
 
   // Desktop view (unchanged)
   return (
     <div className="h-full overflow-y-auto scrollbar-hide">
-      <div className="h-[60vh] min-h-[260px] flex flex-col">
+      <div className="h-[60vh] min-h-[16.25rem] flex flex-col">
         <Calendar isMobile />
       </div>
 
@@ -50,6 +49,20 @@ export default function HomeView() {
     </div>
   );
 }
+
+type MobileTab = 'dashboard' | 'habits' | 'tasks';
+
+const TABS: { tab: MobileTab; label: string; Icon: typeof Home }[] = [
+  { tab: 'habits', label: 'Habits', Icon: Repeat2 },
+  { tab: 'dashboard', label: 'Dashboard', Icon: Home },
+  { tab: 'tasks', label: 'Tasks', Icon: CheckSquare },
+];
+
+const TAB =
+  'flex min-h-11 flex-1 cursor-pointer flex-col items-center justify-center gap-1 border-0 bg-transparent p-2 text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted transition-all active:bg-subtle';
+const SCREEN = 'flex w-full flex-col';
+/** A hairline of side padding, and room at the bottom for the tab bar. */
+const CONTENT = 'px-1 pt-1 pb-20';
 
 /**
  * Mobile dashboard with header, tabbed screens, and bottom navigation.
@@ -69,56 +82,51 @@ function MobileShell({
   const today = new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
 
   return (
-    <div className="mobile-shell">
-      {/* Mobile Header */}
-      <div className="mobile-header">
-        <div className="mobile-header-title">
+    <div className="flex h-full w-full flex-col bg-page">
+      {/* Mobile Header: [calendar view] [date / tab name] [settings] */}
+      <div className="z-10 flex h-10 shrink-0 items-center justify-between border-b border-line bg-surface px-2">
+        <div className="flex gap-2">
+          {currentTab === 'dashboard' ? (
+            <CalendarNav compact />
+          ) : (
+            // Keeps the title centred on the other tabs.
+            <div className={cn(MOBILE_HEADER_BUTTON, 'invisible')} aria-hidden="true" />
+          )}
+        </div>
+        <div className="flex-1 text-center font-heading text-sm font-bold text-ink">
           {currentTab === 'dashboard' && today}
           {currentTab === 'habits' && 'Habits'}
           {currentTab === 'tasks' && 'Tasks'}
         </div>
-        <div className="mobile-header-buttons">
-          {/* The only route to Settings on a phone: `.sidebar` and `.bottom-bar`
-              are both display:none under 768px, and the tab row has no slot. */}
-          <button className="mobile-header-button" title="Settings" onClick={() => setActiveView('settings')}>
-            <Settings size={16} />
+        <div className="flex gap-2">
+          {/* The only route to Settings on a phone: the sidebar and bottom bar
+              are `max-md:hidden`, and the tab row has no slot. */}
+          <button className={MOBILE_HEADER_BUTTON} title="Settings" onClick={() => setActiveView('settings')}>
+            <Settings size="1rem" />
           </button>
         </div>
       </div>
 
       {/* Screen Container */}
-      <div className="mobile-screen-container">
+      <div className="relative flex-1 overflow-x-hidden overflow-y-auto bg-page">
         {currentTab === 'dashboard' && <DashboardScreen setEditing={setEditing} />}
         {currentTab === 'habits' && <HabitsScreen setEditing={setEditing} />}
         {currentTab === 'tasks' && <TasksScreen setEditing={setEditing} />}
       </div>
 
       {/* Bottom Tabs */}
-      <div className="mobile-tabs">
-        <button
-          className={`mobile-tab ${currentTab === 'habits' ? 'active' : ''}`}
-          onClick={() => setCurrentTab('habits')}
-          title="Habits"
-        >
-          <Repeat2 size={18} className="mobile-tab-icon" />
-          <span className="mobile-tab-label">Habits</span>
-        </button>
-        <button
-          className={`mobile-tab ${currentTab === 'dashboard' ? 'active' : ''}`}
-          onClick={() => setCurrentTab('dashboard')}
-          title="Dashboard"
-        >
-          <Home size={18} className="mobile-tab-icon" />
-          <span className="mobile-tab-label">Dashboard</span>
-        </button>
-        <button
-          className={`mobile-tab ${currentTab === 'tasks' ? 'active' : ''}`}
-          onClick={() => setCurrentTab('tasks')}
-          title="Tasks"
-        >
-          <CheckSquare size={18} className="mobile-tab-icon" />
-          <span className="mobile-tab-label">Tasks</span>
-        </button>
+      <div className="fixed bottom-0 left-0 z-20 flex h-15 w-full items-center justify-around gap-2 border-t border-line bg-surface">
+        {TABS.map(({ tab, label, Icon }) => (
+          <button
+            key={tab}
+            className={cn(TAB, currentTab === tab && 'text-accent')}
+            onClick={() => setCurrentTab(tab)}
+            title={label}
+          >
+            <Icon size="1.125rem" strokeWidth={1.5} />
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
 
       {editing && <AddModal editTodo={editing} onClose={() => setEditing(null)} />}
@@ -131,11 +139,14 @@ function MobileShell({
  */
 function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
   return (
-    <div className="mobile-screen">
-      <div className="mobile-calendar-section">
+    <div className={SCREEN}>
+      <QuickAddField type="event" className="mx-2 mt-2" />
+      {/* Edge to edge: every pixel of side padding is a letter of an event
+          title that doesn't fit in a cell. */}
+      <div className="shrink-0 border-b border-line">
         <Calendar isMobile />
       </div>
-      <div className="mobile-content-section">
+      <div className={CONTENT}>
         <HabitsSection onEdit={setEditing} />
         <TasksSection onEdit={setEditing} />
       </div>
@@ -148,8 +159,9 @@ function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void 
  */
 function HabitsScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
   return (
-    <div className="mobile-screen">
-      <div className="mobile-content-section">
+    <div className={SCREEN}>
+      <div className={CONTENT}>
+        <QuickAddField type="habit" className="mb-3" />
         <HabitsSection onEdit={setEditing} />
       </div>
     </div>
@@ -161,8 +173,9 @@ function HabitsScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) 
  */
 function TasksScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
   return (
-    <div className="mobile-screen">
-      <div className="mobile-content-section">
+    <div className={SCREEN}>
+      <div className={CONTENT}>
+        <QuickAddField type="task" className="mb-3" />
         <TasksSection onEdit={setEditing} />
       </div>
     </div>

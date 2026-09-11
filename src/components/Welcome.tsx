@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { useBrowserSignIn, type BrowserSignInState } from './auth/useBrowserSignIn';
+import { useBrowserSignIn } from './auth/useBrowserSignIn';
+import { usePasswordSignIn } from './auth/usePasswordSignIn';
+import PasswordForm from './auth/PasswordForm';
+import { SignedOutPanel } from './auth/CrossDevice';
+import { Card } from './ui/card';
+import { Logo } from './Logo';
 
 type Screen = 'splash' | 'signin' | 'register' | 'offline';
 
@@ -8,20 +13,28 @@ type Screen = 'splash' | 'signin' | 'register' | 'offline';
  * Entry point: splash screen + three auth cards (sign in, register, offline).
  * Full-screen gate rendering instead of the app while awaiting welcomeDone.
  *
- * Sign-in and account creation both happen in the system browser now — see
- * `useBrowserSignIn` — since passkeys, password + TOTP and (later) Google
- * OAuth all live on the public site rather than an in-app WebAuthn ceremony.
+ * Username + password is the mandatory first credential and runs in-app
+ * (`usePasswordSignIn`). Passkeys and Google still live on the public site
+ * and are reached through `useBrowserSignIn`; a QR handoff covers signing in
+ * with another device (`auth/CrossDevice.tsx`).
  */
 export default function Welcome() {
   const { setSetting } = useApp();
   const browser = useBrowserSignIn();
+  const password = usePasswordSignIn();
   const [screen, setScreen] = useState<Screen>('splash');
+
+  const leave = (next: Screen) => {
+    void browser.cancel();
+    password.reset();
+    setScreen(next);
+  };
 
   const handleUseOffline = () => {
     setSetting('__welcome_done', '1');
   };
 
-  const busy = browser.state.kind === 'starting' || browser.state.kind === 'waiting';
+  const busy = browser.state.kind === 'starting' || browser.state.kind === 'waiting' || password.state.kind === 'busy';
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-gradient-to-br from-[var(--t-page)] to-[var(--t-page-shade)]">
@@ -34,39 +47,27 @@ export default function Welcome() {
       )}
 
       {screen === 'signin' && (
-        <BrowserAuthCard
+        <AuthCard
           mode="login"
-          state={browser.state}
-          onStart={() => void browser.start('login')}
-          onCancel={() => void browser.cancel()}
-          onBack={() => {
-            void browser.cancel();
-            setScreen('splash');
-          }}
-          onFooterClick={() => setScreen('register')}
+          password={password}
+          browser={browser}
+          onBack={() => leave('splash')}
+          onFooterClick={() => leave('register')}
         />
       )}
 
       {screen === 'register' && (
-        <BrowserAuthCard
+        <AuthCard
           mode="register"
-          state={browser.state}
-          onStart={() => void browser.start('register')}
-          onCancel={() => void browser.cancel()}
-          onBack={() => {
-            void browser.cancel();
-            setScreen('splash');
-          }}
-          onFooterClick={() => setScreen('signin')}
+          password={password}
+          browser={browser}
+          onBack={() => leave('splash')}
+          onFooterClick={() => leave('signin')}
         />
       )}
 
       {screen === 'offline' && (
-        <OfflineCard
-          onStart={handleUseOffline}
-          onBack={() => setScreen('splash')}
-          busy={busy}
-        />
+        <OfflineCard onStart={handleUseOffline} onBack={() => setScreen('splash')} busy={busy} />
       )}
     </div>
   );
@@ -85,57 +86,46 @@ function SplashScreen({
   onUseOffline: () => void;
 }) {
   return (
-    <div className="h-full flex flex-col items-center justify-center gap-[40px] px-[20px]">
-      <div className="text-center max-w-[500px]">
+    <div className="h-full flex flex-col items-center justify-center gap-[2.5rem] px-[1.25rem]">
+      <div className="text-center max-w-[31.25rem]">
         {/* Logo */}
-        <div
-          className="w-[80px] h-[80px] mx-auto mb-[24px] flex items-center justify-center text-white font-bold text-[48px] font-heading"
-          style={{ background: 'linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%)' }}
-        >
-          <svg viewBox="0 0 512 512" width="56" height="56">
-            <path d="M 352.64213,163.92994 413.28,52.08 l 58.95456,422.68234 -78.20532,-0.0413 z" fill="#fff" fillOpacity="0.55"></path>
-            <path d="M 313.80273 46.6875 C 313.78856 46.714256 313.77394 46.740823 313.75977 46.767578 L 286.22266 46.767578 L 255.42969 105.83398 L 281.96094 105.83398 C 249.48628 165.31906 216.10526 224.31592 183.19531 283.55859 L 154.49609 283.55859 L 123.70312 342.625 L 150.38477 342.625 L 114.07422 409.05273 L 86.029297 409.05273 L 55.236328 468.11914 L 81.789062 468.11914 L 81.765625 468.16211 L 168.49414 468.36133 L 238.37305 342.625 L 475.24219 342.625 L 462.71484 283.55859 L 271.19922 283.55859 L 402.84375 46.6875 L 313.80273 46.6875 z" fill="#fff"></path>
-          </svg>
+        <div className="w-[5rem] h-[5rem] mx-auto mb-[1.5rem] flex items-center justify-center text-on-accent font-bold text-5xl font-heading gradient-accent">
+          <Logo variant="bw" width={56} height={56} />
         </div>
 
         {/* Title */}
-        <h1 className="text-[42px] font-bold font-heading text-[var(--t-ink)] mb-[8px] tracking-tight">
-          Albas
-        </h1>
+        <h1 className="text-4xl font-bold font-heading text-[var(--t-ink)] mb-[0.5rem] tracking-tight">Albas</h1>
 
         {/* Subtitle */}
-        <p className="text-[18px] text-[var(--t-ink-secondary)] font-medium mb-[12px]">
-          Productivity Suite
-        </p>
+        <p className="text-lg text-[var(--t-ink-secondary)] font-medium mb-[0.75rem]">Productivity Suite</p>
 
         {/* Description */}
-        <p className="text-[14px] text-[var(--t-ink-muted)] mb-[40px] leading-relaxed">
+        <p className="text-base text-[var(--t-ink-muted)] mb-[2.5rem] leading-relaxed">
           Organize your schedule, habits, and tasks in one intuitive workspace. Everything you need to do, in one place.
         </p>
       </div>
 
       {/* Button stack */}
-      <div className="flex flex-col gap-[12px] w-full max-w-[300px]">
+      <div className="flex flex-col gap-[0.75rem] w-full max-w-[18.75rem]">
         <button
           onClick={onSignIn}
-          className="px-[24px] py-[12px] text-white font-semibold text-[16px] cursor-pointer transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg shadow-[0_4px_16px_rgba(168,85,247,0.3)]"
-          style={{ background: 'linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%)' }}
+          className="px-[1.5rem] py-[0.75rem] text-on-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg shadow-accent gradient-accent"
         >
           Sign In
         </button>
         <button
           onClick={onCreateAccount}
-          className="px-[24px] py-[12px] bg-white text-[var(--t-accent)] border-2 border-[var(--t-accent)] font-semibold text-[16px] cursor-pointer transition-all duration-300 hover:bg-[var(--t-cat-purple-tint)]"
+          className="px-[1.5rem] py-[0.75rem] bg-surface text-[var(--t-accent)] border-2 border-[var(--t-accent)] font-semibold text-lg cursor-pointer transition-all duration-300 hover:bg-[var(--t-cat-purple-tint)]"
         >
           Create Account
         </button>
       </div>
 
       {/* Offline link */}
-      <div className="mt-[24px] pt-[24px] border-t border-[var(--t-border)]">
+      <div className="mt-[1.5rem] pt-[1.5rem] border-t border-[var(--t-border)]">
         <button
           onClick={onUseOffline}
-          className="text-[13px] text-[var(--t-ink-muted)] cursor-pointer transition-colors duration-300 hover:text-[var(--t-accent)] text-center"
+          className="text-sm text-[var(--t-ink-muted)] cursor-pointer transition-colors duration-300 hover:text-[var(--t-accent)] text-center"
         >
           ⚙️ Use Offline — Set up later
         </button>
@@ -147,144 +137,115 @@ function SplashScreen({
 /**
  * Offline entry card with warning callout.
  */
-function OfflineCard({
-  onStart,
-  onBack,
-  busy,
-}: {
-  onStart: () => void;
-  onBack: () => void;
-  busy: boolean;
-}) {
+function OfflineCard({ onStart, onBack, busy }: { onStart: () => void; onBack: () => void; busy: boolean }) {
   return (
-    <div className="h-full flex items-center justify-center px-[20px]">
-      <div className="bg-white w-full max-w-[420px] p-[40px] shadow-[0_10px_40px_rgba(0,0,0,0.08)]">
+    <div className="h-full flex items-center justify-center px-[1.25rem]">
+      <Card className="border-0 w-full max-w-[26.25rem] p-[2.5rem] shadow-modal">
         {/* Header */}
-        <div className="text-center mb-[32px]">
-          <h2 className="text-[28px] font-bold font-heading text-[var(--t-ink)] mb-[8px]">
-            Use Offline
-          </h2>
-          <p className="text-[14px] text-[var(--t-ink-muted)]">Get started without signing in</p>
+        <div className="text-center mb-[2rem]">
+          <h2 className="text-3xl font-bold font-heading text-[var(--t-ink)] mb-[0.5rem]">Use Offline</h2>
+          <p className="text-base text-[var(--t-ink-muted)]">Get started without signing in</p>
         </div>
 
         {/* Description */}
-        <p className="text-[13px] text-[var(--t-ink-muted)] mb-[20px] leading-relaxed">
-          Albas works fully offline on your device. Your data stays on your machine unless you set up sync later in Settings.
+        <p className="text-sm text-[var(--t-ink-muted)] mb-[1.25rem] leading-relaxed">
+          Albas works fully offline on your device. Your data stays on your machine unless you set up sync later in
+          Settings.
         </p>
 
         {/* Warning callout */}
-        <div className="bg-[var(--t-cat-amber-tint)] border-l-4 border-[var(--t-cat-amber)] px-[16px] py-[12px] text-[13px] text-[var(--t-warn-ink)] mb-[20px] leading-relaxed">
+        <div className="bg-warn-tint border-l-4 border-warn px-[1rem] py-[0.75rem] text-sm text-warn-ink mb-[1.25rem] leading-relaxed">
           ⚠️ <strong>No cloud backup:</strong> Your data is stored locally only. Back up your device regularly.
         </div>
 
         {/* Actions */}
-        <div className="flex gap-[12px] mt-[28px]">
+        <div className="flex gap-[0.75rem] mt-[1.75rem]">
           <button
             onClick={onStart}
             disabled={busy}
-            className="flex-1 px-[12px] py-[12px] text-white font-semibold text-[16px] cursor-pointer transition-all duration-300 hover:translate-y-[-2px] disabled:opacity-40 disabled:pointer-events-none"
-            style={{ background: 'linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%)' }}
+            className="flex-1 px-[0.75rem] py-[0.75rem] text-on-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:translate-y-[-2px] disabled:opacity-40 disabled:pointer-events-none gradient-accent"
           >
             Start Using Albas
           </button>
           <button
             onClick={onBack}
             disabled={busy}
-            className="flex-1 px-[12px] py-[12px] bg-transparent text-[var(--t-accent)] font-semibold text-[16px] cursor-pointer transition-colors duration-300 hover:bg-[var(--t-cat-purple-tint)] disabled:opacity-40 disabled:pointer-events-none"
+            className="flex-1 px-[0.75rem] py-[0.75rem] bg-transparent text-[var(--t-accent)] font-semibold text-lg cursor-pointer transition-colors duration-300 hover:bg-[var(--t-cat-purple-tint)] disabled:opacity-40 disabled:pointer-events-none"
           >
             Back
           </button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
 /**
- * Sign-in / create-account card for the browser flow. The ceremony happens
- * on the public site (login or register screen, picked by `mode`), so this
- * card's job is to open it, show the code that proves the page belongs to
- * *this* request, and let the user give up.
+ * Sign-in / create-account card. Username + password happen right here, in
+ * the app (`usePasswordSignIn`); the browser handoff and the QR flows are
+ * the secondary options underneath (`SignedOutPanel`).
  */
-function BrowserAuthCard({
+function AuthCard({
   mode,
-  state,
-  onStart,
-  onCancel,
+  password,
+  browser,
   onBack,
   onFooterClick,
 }: {
   mode: 'login' | 'register';
-  state: BrowserSignInState;
-  onStart: () => void;
-  onCancel: () => void;
+  password: ReturnType<typeof usePasswordSignIn>;
+  browser: ReturnType<typeof useBrowserSignIn>;
   onBack: () => void;
   onFooterClick: () => void;
 }) {
-  const waiting = state.kind === 'waiting';
-  const busy = waiting || state.kind === 'starting';
   const isLogin = mode === 'login';
+  const browserBusy = browser.state.kind === 'starting' || browser.state.kind === 'waiting';
+  const busy = password.state.kind === 'busy' || browserBusy;
 
   return (
-    <div className="h-full flex items-center justify-center px-[20px]">
-      <div className="bg-white w-full max-w-[420px] p-[40px] shadow-[0_10px_40px_rgba(0,0,0,0.08)]">
-        <div className="text-center mb-[32px]">
-          <h2 className="text-[28px] font-bold font-heading text-[var(--t-ink)] mb-[8px]">
+    <div className="h-full flex items-center justify-center px-[1.25rem] overflow-y-auto">
+      <Card className="border-0 w-full max-w-[26.25rem] p-[2.5rem] shadow-modal my-[1.25rem]">
+        <div className="text-center mb-[1.5rem]">
+          <h2 className="text-3xl font-bold font-heading text-[var(--t-ink)] mb-[0.5rem]">
             {isLogin ? 'Welcome Back' : 'Get Started'}
           </h2>
-          <p className="text-[14px] text-[var(--t-ink-muted)]">
-            {waiting
-              ? `Finish ${isLogin ? 'signing in' : 'creating your account'} in your browser`
-              : isLogin
-                ? 'Sign in through your browser'
-                : 'Create your account in your browser'}
+          <p className="text-base text-[var(--t-ink-muted)]">
+            {isLogin ? 'Sign in to sync your schedule, habits and tasks' : 'Create your Albas account'}
           </p>
         </div>
 
-        {waiting ? (
-          <div className="bg-[var(--t-cat-purple-tint)] border-l-4 border-[var(--t-accent)] px-[16px] py-[12px] text-[13px] text-[var(--t-cat-purple-ink)] mb-[20px] leading-relaxed">
-            Your browser should show this code:
-            <div className="text-[28px] font-bold font-heading tracking-[0.3em] my-[8px]">
-              {state.code}
-            </div>
-            If it shows a different code, cancel here — that request was started somewhere else.
+        {!browserBusy && (
+          <PasswordForm
+            mode={mode}
+            state={password.state}
+            onLogin={(n, p, c, rc) => void password.login(n, p, c, rc)}
+            onRegister={(n, p, c) => void password.register(n, p, c)}
+            submitClass="w-full px-[0.75rem] py-[0.75rem] text-on-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:translate-y-[-2px] disabled:opacity-40 disabled:pointer-events-none gradient-accent"
+          />
+        )}
+
+        {!isLogin && !browserBusy && (
+          <p className="text-sm text-[var(--t-ink-muted)] mt-[0.75rem] leading-relaxed">
+            You can add a passkey or an authenticator app afterwards in Settings.
+          </p>
+        )}
+
+        {isLogin && (
+          <div className="mt-[1.25rem] pt-[1.25rem] border-t border-[var(--t-border)]">
+            <SignedOutPanel browser={browser} busy={busy} />
           </div>
-        ) : (
-          <div className="bg-[var(--t-cat-purple-tint)] border-l-4 border-[var(--t-accent)] px-[16px] py-[12px] text-[13px] text-[var(--t-cat-purple-ink)] mb-[20px] leading-relaxed">
-            🔐 Your browser handles passkeys, passwords and two-factor codes, so you can use whichever you set up.
-          </div>
         )}
 
-        <div className="flex gap-[12px] mt-[28px]">
-          <button
-            onClick={waiting ? onCancel : onStart}
-            disabled={state.kind === 'starting'}
-            className="flex-1 px-[12px] py-[12px] text-white font-semibold text-[16px] cursor-pointer transition-all duration-300 hover:translate-y-[-2px] disabled:opacity-40 disabled:pointer-events-none"
-            style={{ background: 'linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%)' }}
-          >
-            {waiting ? 'Cancel' : isLogin ? 'Sign In' : 'Create Account'}
-          </button>
-          <button
-            onClick={onBack}
-            disabled={state.kind === 'starting'}
-            className="flex-1 px-[12px] py-[12px] bg-transparent text-[var(--t-accent)] font-semibold text-[16px] cursor-pointer transition-colors duration-300 hover:bg-[var(--t-cat-purple-tint)] disabled:opacity-40 disabled:pointer-events-none"
-          >
-            Back
-          </button>
-        </div>
+        <button
+          onClick={onBack}
+          disabled={busy}
+          className="w-full mt-[1rem] px-[0.75rem] py-[0.625rem] bg-transparent text-[var(--t-accent)] font-semibold text-base cursor-pointer transition-colors duration-300 hover:bg-[var(--t-cat-purple-tint)] disabled:opacity-40 disabled:pointer-events-none"
+        >
+          Back
+        </button>
 
-        {state.kind === 'starting' && (
-          <p className="text-[14px] text-[var(--t-ink-muted)] mt-[20px]">Opening your browser…</p>
-        )}
-        {state.kind === 'waiting' && (
-          <p className="text-[14px] text-[var(--t-ink-muted)] mt-[20px]">Waiting for your browser…</p>
-        )}
-        {state.kind === 'error' && (
-          <p className="text-[14px] text-[var(--t-danger)] mt-[20px]">{state.message}</p>
-        )}
-
-        <div className="text-center mt-[24px] pt-[24px] border-t border-[var(--t-border)]">
-          <p className="text-[13px] text-[var(--t-ink-muted)] leading-relaxed">
+        <div className="text-center mt-[1rem] pt-[1rem] border-t border-[var(--t-border)]">
+          <p className="text-sm text-[var(--t-ink-muted)] leading-relaxed">
             {isLogin ? "Don't have an account? " : 'Already have an account? '}
             <button
               onClick={onFooterClick}
@@ -295,7 +256,7 @@ function BrowserAuthCard({
             </button>
           </p>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

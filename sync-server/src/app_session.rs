@@ -39,6 +39,15 @@ type Rejection = (StatusCode, String);
 /// standing credential.
 const TTL_MS: i64 = 5 * 60 * 1000;
 
+/// Hard cap on pending rows, checked (after sweeping expired ones) before
+/// `create` inserts another. `app_sessions` has no per-caller identity to
+/// rate-limit by — it's the one truly anonymous, unauthenticated write in
+/// this server — so without a ceiling a script could grow the table without
+/// bound between sweeps. Five minutes' worth of legitimate sign-in attempts
+/// is nowhere near this many; hitting it means something is abusing the
+/// endpoint, not that real traffic needs more room.
+const MAX_PENDING: i64 = 1000;
+
 fn internal(e: impl std::fmt::Display) -> Rejection {
     (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {e}"))
 }
@@ -62,6 +71,16 @@ fn sweep(conn: &Connection) -> rusqlite::Result<()> {
 pub(crate) async fn create(State(state): State<Arc<AppState>>) -> Result<Json<Value>, Rejection> {
     let conn = state.conn.lock().unwrap();
     sweep(&conn).map_err(internal)?;
+
+    let pending: i64 = conn
+        .query_row("SELECT COUNT(*) FROM app_sessions", [], |r| r.get(0))
+        .map_err(internal)?;
+    if pending >= MAX_PENDING {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Too many sign-in requests are pending right now. Try again shortly.".into(),
+        ));
+    }
 
     let nonce = random_token();
     let hash = token_hash(&nonce);
@@ -174,7 +193,6 @@ mod tests {
     fn state_with(c: Connection) -> Arc<AppState> {
         Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,

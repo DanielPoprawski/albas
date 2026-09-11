@@ -11,7 +11,10 @@ COPY src ./src
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 \
+# sqlite3 is for operators: `scripts/admin.sh --sql` opens the live database
+# read-only inside the container (the image has no curl/psql-style client
+# otherwise). Everything else the CLI needs is in the binary itself.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 sqlite3 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 albas \
     && mkdir -p /data && chown albas /data

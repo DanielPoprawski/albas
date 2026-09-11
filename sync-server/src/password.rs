@@ -7,9 +7,16 @@
 //!   `PUT    /password`       — authenticated by bearer token (`account_for`).
 //!                              Sets or changes this account's password.
 //!   `DELETE /password`       — authenticated. Removes it.
-//!   `POST   /login/password` — unauthenticated. `{ name, password }` in,
-//!                              a minted token out, exactly as passkey login
-//!                              does via `mint_token`.
+//!   `POST   /login/password` — unauthenticated. `{ name, password, code? }`
+//!                              in, a minted token out, exactly as passkey
+//!                              login does via `mint_token`. A confirmed TOTP
+//!                              with no `code` answers 428 so a client can ask
+//!                              for the code instead of reporting a bad password.
+//!   `POST   /register/password` — unauthenticated. `{ name, password, invite? }`
+//!                              creates the account (same signup/invite matrix
+//!                              as passkey registration) and mints a token.
+//!                              A password is the mandatory first credential;
+//!                              passkeys and TOTP are added afterwards.
 //!
 //! Hash with the `argon2` crate (Argon2id, PHC string into `accounts.password_hash`).
 //! Never reuse `token_hash` — that is a SHA for high-entropy tokens.
@@ -31,6 +38,10 @@ use std::sync::Arc;
 type Rejection = (StatusCode, String);
 
 const MIN_PASSWORD_LENGTH: usize = 12;
+/// Mirrors `MAX_PASSWORD_LENGTH` in `src/syncServer.ts` and
+/// `web/src/lib/api.ts`. Argon2 hashes the whole input, so an unbounded
+/// password is a cheap way to burn CPU on this server.
+const MAX_PASSWORD_LENGTH: usize = 128;
 
 /// Whether this account has a password set. Only ever a boolean — the hash is
 /// never handed out, and there is nothing else honest to report about a
@@ -52,6 +63,97 @@ pub(crate) async fn password_status(
     Ok(Json(json!({ "set": hash.is_some() })))
 }
 
+/// Argon2id PHC string for `accounts.password_hash`, after the length check.
+pub(crate) fn hash_password(password: &str) -> Result<String, Rejection> {
+    if password.len() < MIN_PASSWORD_LENGTH {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Password must be at least {} characters long.", MIN_PASSWORD_LENGTH),
+        ));
+    }
+    if password.len() > MAX_PASSWORD_LENGTH {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Password must be at most {} characters long.", MAX_PASSWORD_LENGTH),
+        ));
+    }
+    let mut salt_bytes = [0u8; 16];
+    getrandom::getrandom(&mut salt_bytes).expect("OS randomness unavailable");
+    let salt = SaltString::encode_b64(&salt_bytes)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Salt error: {}", e)))?;
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Hash error: {}", e)))
+}
+
+/// Creates an account with a password as its first credential. Reuses the
+/// passkey registration's `resolve_registration` so invites, invite-only
+/// servers and name rules behave identically; an invite pinned to an existing
+/// name sets that account's password instead (the bootstrap path).
+pub(crate) async fn register_password(
+    State(state): State<Arc<AppState>>,
+    body: Json<Value>,
+) -> Result<Json<Value>, Rejection> {
+    let name = body
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'name' field.".into()))?;
+    let password = body
+        .get("password")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'password' field.".into()))?;
+    let invite = body.get("invite").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty());
+
+    let password_hash = hash_password(password)?;
+
+    let mut guard = state.conn.lock().unwrap();
+    let info = crate::passkey::resolve_registration(&guard, state.signups, invite, name)?;
+
+    let tx = guard
+        .transaction()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+    if let Some(invite_id) = info.invite_id {
+        let burned = tx
+            .execute(
+                "UPDATE invites SET used_at = ?1 WHERE id = ?2 AND used_at IS NULL",
+                params![crate::now_ms(), invite_id],
+            )
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+        if burned == 0 {
+            return Err((StatusCode::GONE, "This invite has already been used.".into()));
+        }
+    }
+    let account_id = match info.account_id {
+        Some(id) => {
+            tx.execute(
+                "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
+                params![&password_hash, id],
+            )
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+            id
+        }
+        None => match tx.execute(
+            "INSERT INTO accounts (name, created_at, password_hash) VALUES (?1, ?2, ?3)",
+            params![info.name, crate::now_ms(), &password_hash],
+        ) {
+            Ok(_) => tx.last_insert_rowid(),
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                return Err((StatusCode::CONFLICT, "That account name is taken.".into()))
+            }
+            Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e))),
+        },
+    };
+    let token = crate::mint_token(&tx, account_id, "password")
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Token error: {}", e)))?;
+    tx.commit()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+
+    Ok(Json(json!({ "name": info.name, "token": token })))
+}
+
 pub(crate) async fn set_password(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -66,24 +168,7 @@ pub(crate) async fn set_password(
         .and_then(|v| v.as_str())
         .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'password' field.".into()))?;
 
-    if password.len() < MIN_PASSWORD_LENGTH {
-        return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            format!("Password must be at least {} characters long.", MIN_PASSWORD_LENGTH),
-        ));
-    }
-
-    // Generate random salt using getrandom
-    let mut salt_bytes = [0u8; 16];
-    getrandom::getrandom(&mut salt_bytes).expect("OS randomness unavailable");
-    let salt = SaltString::encode_b64(&salt_bytes)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Salt error: {}", e)))?;
-
-    let argon2 = Argon2::default();
-    let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Hash error: {}", e)))?
-        .to_string();
+    let password_hash = hash_password(password)?;
 
     conn.execute(
         "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
@@ -142,6 +227,7 @@ pub(crate) async fn login_password(
         .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'password' field.".into()))?;
 
     let code = body.get("code").and_then(|v| v.as_str());
+    let recovery_code = body.get("recovery_code").and_then(|v| v.as_str());
 
     let conn = state.conn.lock().unwrap();
 
@@ -173,22 +259,67 @@ pub(crate) async fn login_password(
         }
     };
 
+    // Per-account lockout, checked before spending an Argon2 verify — a
+    // locked account answers 423 regardless of whether this attempt's
+    // password would have been right.
+    crate::lockout::check(&conn, account_id, "password")?;
+
     // Verify password
     let parsed_hash = PasswordHash::new(&password_hash)
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Invalid stored hash".into()))?;
 
-    Argon2::default()
-        .verify_password(password.as_bytes(), &parsed_hash)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid name or password.".into()))?;
+    if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_err() {
+        crate::lockout::record_failure(&conn, account_id, "password")?;
+        return Err((StatusCode::UNAUTHORIZED, "Invalid name or password.".into()));
+    }
 
-    // Verify TOTP if enrolled
-    crate::totp::verify_if_enrolled(&conn, account_id, code)?;
+    // Verify TOTP if enrolled — either a code or, in its place, a one-time
+    // recovery code. "Code missing" gets its own status so a client can
+    // reveal the code field rather than telling the user their password was
+    // wrong. Its own lockout ("totp") is enforced inside `verify_if_enrolled`.
+    crate::totp::verify_if_enrolled(&conn, account_id, code, recovery_code).map_err(|(status, msg)| {
+        if msg == crate::totp::CODE_REQUIRED {
+            (StatusCode::PRECONDITION_REQUIRED, msg)
+        } else {
+            (status, msg)
+        }
+    })?;
+
+    crate::lockout::reset(&conn, account_id, "password")?;
 
     // Mint a new token
     let token = crate::mint_token(&conn, account_id, "password")
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Token error: {}", e)))?;
 
     Ok(Json(json!({ "name": name, "token": token })))
+}
+
+/// Re-verifies the signed-in account's current password against a freshly
+/// supplied one — the "prove you're still you" step before a sensitive
+/// action (enrolling TOTP, deleting the account) rather than trusting a
+/// bearer token alone, which could be a stolen session rather than the
+/// account holder at the keyboard.
+pub(crate) fn verify_account_password(
+    conn: &rusqlite::Connection,
+    account_id: i64,
+    password: &str,
+) -> Result<(), Rejection> {
+    let hash: Option<String> = conn
+        .query_row("SELECT password_hash FROM accounts WHERE id = ?1", params![account_id], |r| r.get(0))
+        .optional()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?
+        .flatten();
+    let Some(hash) = hash else {
+        return Err((
+            StatusCode::CONFLICT,
+            "Set a password on this account first.".into(),
+        ));
+    };
+    let parsed_hash = PasswordHash::new(&hash)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Invalid stored hash".into()))?;
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "Incorrect password.".into()))
 }
 
 #[cfg(test)]
@@ -232,7 +363,6 @@ mod tests {
         let token = crate::mint_token(&c, account_id, "device").unwrap();
         let state = Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -279,7 +409,6 @@ mod tests {
         // Set a password
         let state = Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -310,7 +439,6 @@ mod tests {
 
         let state = Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -339,7 +467,6 @@ mod tests {
 
         let state = Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -366,7 +493,6 @@ mod tests {
 
         let state = Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -397,7 +523,6 @@ mod tests {
 
         let state = Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -424,7 +549,6 @@ mod tests {
 
         let state = Arc::new(AppState {
             conn: std::sync::Mutex::new(c),
-            admin_token: None,
             signups: crate::Signups::Open,
             webauthn: None,
             assetlinks: None,
@@ -441,5 +565,62 @@ mod tests {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(msg.contains("at least"));
         assert!(msg.contains("characters"));
+    }
+
+    fn state_for(c: Connection) -> Arc<AppState> {
+        Arc::new(AppState {
+            conn: std::sync::Mutex::new(c),
+            signups: crate::Signups::Open,
+            webauthn: None,
+            assetlinks: None,
+            pending: Default::default(),
+            google: None,
+            google_pending: Default::default(),
+        })
+    }
+
+    /// Password-first signup: the account exists afterwards with a working
+    /// password, the token it minted resolves, and the name can't be reused.
+    #[tokio::test]
+    async fn register_then_login_round_trip_and_duplicate_name_conflicts() {
+        let state = state_for(mem());
+        let body = json!({ "name": "bob", "password": "CorrectHorseBattery1" });
+        let created = register_password(axum::extract::State(state.clone()), Json(body.clone()))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(created["name"], "bob");
+        let token = created["token"].as_str().unwrap().to_string();
+        {
+            let c = state.conn.lock().unwrap();
+            assert!(crate::account_for(&c, &headers_for(&token)).is_some());
+        }
+
+        let again = register_password(axum::extract::State(state.clone()), Json(body)).await;
+        assert_eq!(again.unwrap_err().0, StatusCode::CONFLICT);
+
+        let login = login_password(
+            axum::extract::State(state.clone()),
+            Json(json!({ "name": "bob", "password": "CorrectHorseBattery1" })),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(login["name"], "bob");
+        assert!(login["token"].as_str().is_some());
+
+        let wrong = login_password(
+            axum::extract::State(state.clone()),
+            Json(json!({ "name": "bob", "password": "not-it-not-it-1" })),
+        )
+        .await;
+        assert_eq!(wrong.unwrap_err().0, StatusCode::UNAUTHORIZED);
+
+        let short = register_password(
+            axum::extract::State(state),
+            Json(json!({ "name": "carol", "password": "short" })),
+        )
+        .await;
+        assert_eq!(short.unwrap_err().0, StatusCode::UNPROCESSABLE_ENTITY);
     }
 }

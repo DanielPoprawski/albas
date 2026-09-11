@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS events (
   end_time TEXT,
   recurrence TEXT NOT NULL DEFAULT '{\"type\":\"none\"}',
   reminders TEXT NOT NULL DEFAULT '[]',
+  category TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0
 );
@@ -70,24 +71,6 @@ CREATE TABLE IF NOT EXISTS periods (
   end_date TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
   habit_ids TEXT NOT NULL DEFAULT '[]',
-  updated_at INTEGER NOT NULL,
-  deleted INTEGER NOT NULL DEFAULT 0
-);
-";
-
-/// v3 addition, kept separate so the migration can replay it on existing DBs.
-/// Weights are always stored in kg; the lb/kg choice is a display setting.
-const SCHEMA_V3: &str = "
-CREATE TABLE IF NOT EXISTS weights (
-  id TEXT PRIMARY KEY,
-  date TEXT NOT NULL,
-  ts INTEGER NOT NULL,
-  weight_kg REAL NOT NULL,
-  body_fat REAL,
-  bmi REAL,
-  muscle REAL,
-  body_water REAL,
-  source TEXT NOT NULL DEFAULT 'manual',
   updated_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0
 );
@@ -111,10 +94,28 @@ CREATE TABLE IF NOT EXISTS shared_rows (
 );
 ";
 
+/// v6 addition (custom categories): a synced table of user-defined groupings
+/// shared by to-dos, habits, and events — `scopes` is a CSV of
+/// `calendar|tasks|habits` saying which. `habits.category` / `events.category`
+/// now hold a category **id** (empty = none) instead of free text; `tasks`
+/// (legacy, import-only) is untouched since nothing writes new rows there.
+const SCHEMA_V6: &str = "
+CREATE TABLE IF NOT EXISTS categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color_key TEXT NOT NULL,
+  scopes TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+";
+
 /// The full current schema, for tests that need a throwaway in-memory DB.
 #[cfg(test)]
 pub fn test_schema() -> String {
-    format!("{SCHEMA}{SCHEMA_V3}{SCHEMA_V5}")
+    format!("{SCHEMA}{SCHEMA_V5}{SCHEMA_V6}")
 }
 
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
@@ -142,21 +143,25 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
                  ALTER TABLE habits ADD COLUMN important INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
+        // v6 (custom categories): events gained a category column too; a
+        // fresh database gets it straight from SCHEMA above instead.
+        if version < 6 {
+            conn.execute_batch("ALTER TABLE events ADD COLUMN category TEXT NOT NULL DEFAULT '';")?;
+        }
     }
-    // v3 (weight tracking). CREATE TABLE IF NOT EXISTS, so replaying is harmless.
-    if version < 3 {
-        conn.execute_batch(SCHEMA_V3)?;
-        conn.pragma_update(None, "user_version", 3)?;
-    }
+    // v7: weight tracking was removed; drop its table wherever it still exists.
+    conn.execute_batch("DROP TABLE IF EXISTS weights;")?;
     // v5 (shared rows cache). CREATE TABLE IF NOT EXISTS, so replaying is
-    // harmless — same pattern as v3.
+    // harmless.
     if version < 5 {
         conn.execute_batch(SCHEMA_V5)?;
     }
-    // v4 (categorised to-dos): free-text category and an important flag. An
-    // empty category means uncategorised — no sentinel string, so the grouping
-    // in TodoPanel never has to special-case a magic name.
-    conn.pragma_update(None, "user_version", 5)?;
+    // v6 (custom categories). CREATE TABLE IF NOT EXISTS, so replaying is
+    // harmless — same pattern as v5.
+    if version < 6 {
+        conn.execute_batch(SCHEMA_V6)?;
+    }
+    conn.pragma_update(None, "user_version", 7)?;
     repoint_default_server(&conn)?;
     Ok(conn)
 }
@@ -191,10 +196,10 @@ fn repoint_default_server(conn: &Connection) -> rusqlite::Result<()> {
         }
         write_meta(conn, &flag, "1")?;
     }
-    if let Some(stored) = read_setting(conn, crate::sync::URL_SETTING) {
-        if crate::sync::check_url(&stored).is_err() {
-            write_setting(conn, crate::sync::URL_SETTING, crate::sync::DEFAULT_URL)?;
-        }
+    if let Some(stored) = read_setting(conn, crate::sync::URL_SETTING)
+        && crate::sync::check_url(&stored).is_err()
+    {
+        write_setting(conn, crate::sync::URL_SETTING, crate::sync::DEFAULT_URL)?;
     }
     Ok(())
 }
@@ -296,6 +301,26 @@ pub struct Event {
     pub end_time: Option<String>,
     pub recurrence: serde_json::Value,
     pub reminders: serde_json::Value,
+    /// Category id; empty means uncategorised. Mirrors `habits.category`.
+    #[serde(default)]
+    pub category: String,
+}
+
+/// A user-defined grouping shared by to-dos, habits, and events. `scopes` is
+/// a CSV of `calendar|tasks|habits` — kept as a plain string column (like
+/// every other JSON/CSV-ish column here) rather than a join table, since the
+/// server never parses payloads and a join table would need its own sync
+/// handling. `created_at` (the DB column) never reaches JSON, same as
+/// `updated_at`/`deleted` — nothing on the frontend needs it, so
+/// `upsert_category` stamps it once on insert and leaves it alone after.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Category {
+    pub id: String,
+    pub name: String,
+    pub color_key: String,
+    pub scopes: String,
+    pub sort: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -310,22 +335,6 @@ pub struct Period {
     pub habit_ids: serde_json::Value,
 }
 
-/// One scale reading. `source` is 'wyze' or 'manual'; for Wyze rows the id is
-/// the upstream `data_id`, which makes re-syncing a range idempotent.
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Weight {
-    pub id: String,
-    pub date: String,
-    pub ts: i64,
-    pub weight_kg: f64,
-    pub body_fat: Option<f64>,
-    pub bmi: Option<f64>,
-    pub muscle: Option<f64>,
-    pub body_water: Option<f64>,
-    pub source: String,
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppData {
@@ -333,7 +342,7 @@ pub struct AppData {
     pub habits: Vec<Habit>,
     pub events: Vec<Event>,
     pub periods: Vec<Period>,
-    pub weights: Vec<Weight>,
+    pub categories: Vec<Category>,
     pub settings: HashMap<String, String>,
     pub needs_legacy_import: bool,
 }
@@ -412,7 +421,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         .collect();
 
     let events = conn
-        .prepare("SELECT id, title, description, color_key, all_day, start_date, start_time, end_date, end_time, recurrence, reminders FROM events WHERE deleted = 0")
+        .prepare("SELECT id, title, description, color_key, all_day, start_date, start_time, end_date, end_time, recurrence, reminders, category FROM events WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
             Ok(Event {
@@ -427,6 +436,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
                 end_time: r.get(8)?,
                 recurrence: parse_json(r.get(9)?),
                 reminders: parse_json(r.get(10)?),
+                category: r.get(11)?,
             })
         })
         .map_err(err)?
@@ -451,20 +461,16 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(err)?;
 
-    let weights = conn
-        .prepare("SELECT id, date, ts, weight_kg, body_fat, bmi, muscle, body_water, source FROM weights WHERE deleted = 0 ORDER BY ts")
+    let categories = conn
+        .prepare("SELECT id, name, color_key, scopes, sort FROM categories WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
-            Ok(Weight {
+            Ok(Category {
                 id: r.get(0)?,
-                date: r.get(1)?,
-                ts: r.get(2)?,
-                weight_kg: r.get(3)?,
-                body_fat: r.get(4)?,
-                bmi: r.get(5)?,
-                muscle: r.get(6)?,
-                body_water: r.get(7)?,
-                source: r.get(8)?,
+                name: r.get(1)?,
+                color_key: r.get(2)?,
+                scopes: r.get(3)?,
+                sort: r.get(4)?,
             })
         })
         .map_err(err)?
@@ -490,30 +496,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         )
         .is_err();
 
-    Ok(AppData { tasks, habits, events, periods, weights, settings, needs_legacy_import })
-}
-
-pub fn upsert_weight(conn: &Connection, w: &Weight) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT INTO weights (id, date, ts, weight_kg, body_fat, bmi, muscle, body_water, source, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)
-         ON CONFLICT(id) DO UPDATE SET date=?2, ts=?3, weight_kg=?4, body_fat=?5, bmi=?6,
-           muscle=?7, body_water=?8, source=?9, updated_at=?10, deleted=0",
-        params![w.id, w.date, w.ts, w.weight_kg, w.body_fat, w.bmi, w.muscle, w.body_water, w.source, now_ms()],
-    )?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn save_weight(db: tauri::State<Db>, weight: Weight) -> Result<(), String> {
-    let conn = db.0.lock().map_err(err)?;
-    upsert_weight(&conn, &weight).map_err(err)
-}
-
-#[tauri::command]
-pub fn delete_weight(db: tauri::State<Db>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(err)?;
-    tombstone(&conn, "weights", &id).map_err(err)
+    Ok(AppData { tasks, habits, events, periods, categories, settings, needs_legacy_import })
 }
 
 fn upsert_task(conn: &Connection, t: &Task) -> rusqlite::Result<()> {
@@ -589,13 +572,13 @@ pub fn set_completion(db: tauri::State<Db>, habit_id: String, date: String, valu
 pub fn save_event(db: tauri::State<Db>, event: Event) -> Result<(), String> {
     let conn = db.0.lock().map_err(err)?;
     conn.execute(
-        "INSERT INTO events (id, title, description, color_key, all_day, start_date, start_time, end_date, end_time, recurrence, reminders, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0)
-         ON CONFLICT(id) DO UPDATE SET title=?2, description=?3, color_key=?4, all_day=?5, start_date=?6, start_time=?7, end_date=?8, end_time=?9, recurrence=?10, reminders=?11, updated_at=?12, deleted=0",
+        "INSERT INTO events (id, title, description, color_key, all_day, start_date, start_time, end_date, end_time, recurrence, reminders, category, updated_at, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0)
+         ON CONFLICT(id) DO UPDATE SET title=?2, description=?3, color_key=?4, all_day=?5, start_date=?6, start_time=?7, end_date=?8, end_time=?9, recurrence=?10, reminders=?11, category=?12, updated_at=?13, deleted=0",
         params![
             event.id, event.title, event.description, event.color_key, event.all_day as i64,
             event.start_date, event.start_time, event.end_date, event.end_time,
-            json_col(&event.recurrence), json_col(&event.reminders), now_ms()
+            json_col(&event.recurrence), json_col(&event.reminders), event.category, now_ms()
         ],
     )
     .map_err(err)?;
@@ -605,6 +588,51 @@ pub fn save_event(db: tauri::State<Db>, event: Event) -> Result<(), String> {
 #[tauri::command]
 pub fn delete_event(db: tauri::State<Db>, id: String) -> Result<(), String> {
     tombstone(&*db.0.lock().map_err(err)?, "events", &id).map_err(err)
+}
+
+fn upsert_category(conn: &Connection, c: &Category) -> rusqlite::Result<()> {
+    // created_at is stamped only on insert (the `?6` binding); the DO UPDATE
+    // branch deliberately omits it from the SET list, so an edit never
+    // disturbs the row's original creation time.
+    conn.execute(
+        "INSERT INTO categories (id, name, color_key, scopes, sort, created_at, updated_at, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, 0)
+         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, scopes=?4, sort=?5, updated_at=?6, deleted=0",
+        params![c.id, c.name, c.color_key, c.scopes, c.sort, now_ms()],
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_categories(db: tauri::State<Db>) -> Result<Vec<Category>, String> {
+    let conn = db.0.lock().map_err(err)?;
+    let mut stmt = conn
+        .prepare("SELECT id, name, color_key, scopes, sort FROM categories WHERE deleted = 0")
+        .map_err(err)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(Category {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                color_key: r.get(2)?,
+                scopes: r.get(3)?,
+                sort: r.get(4)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(err)?;
+    Ok(rows)
+}
+
+#[tauri::command]
+pub fn save_category(db: tauri::State<Db>, category: Category) -> Result<(), String> {
+    upsert_category(&*db.0.lock().map_err(err)?, &category).map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_category(db: tauri::State<Db>, id: String) -> Result<(), String> {
+    tombstone(&*db.0.lock().map_err(err)?, "categories", &id).map_err(err)
 }
 
 #[tauri::command]

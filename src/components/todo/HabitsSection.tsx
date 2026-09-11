@@ -4,13 +4,18 @@ import { fmt, rotateWeek, weekOf } from '../../dates';
 import { isDoneOn, isDueOn, isRepeating, repeatLabel, statusLabel, valueOn } from '../../todoLogic';
 import { colorHex } from '../../colors';
 import RowActions from './RowActions';
+import { SectionHeading } from '../ui/section-heading';
 import type { Todo } from '../../types';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /** Repeating to-do: name + status, then the week strip. */
-function RepeatingRow({ todo, onEdit, readOnly = false }: {
+function RepeatingRow({
+  todo,
+  onEdit,
+  readOnly = false,
+}: {
   todo: Todo;
   onEdit: (t: Todo) => void;
   readOnly?: boolean;
@@ -35,13 +40,14 @@ function RepeatingRow({ todo, onEdit, readOnly = false }: {
     <div className="group">
       <div className="flex items-center gap-xs mb-xs">
         <span
-          className="text-[10px] font-bold uppercase tracking-wider truncate"
+          className="micro-label truncate"
+          // dynamic: the habit's own colour
           style={{ color: hex }}
           title={repeatLabel(todo.schedule, firstDayOfWeek)}
         >
           {todo.name}
         </span>
-        <span className="text-[9px] text-txt-muted ml-auto flex-shrink-0">
+        <span className="text-xs text-ink-muted ml-auto flex-shrink-0">
           {statusLabel(todo, todayStr, firstDayOfWeek)}
         </span>
         {!readOnly && <RowActions todo={todo} onEdit={onEdit} />}
@@ -56,15 +62,23 @@ function RepeatingRow({ todo, onEdit, readOnly = false }: {
 
           let content: React.ReactNode;
           if (done) {
-            content = <Check size={16} strokeWidth={3} style={{ color: hex }} />;
+            // dynamic: the habit's own colour
+            content = <Check size="1rem" strokeWidth={3} style={{ color: hex }} />;
           } else if (todo.kind === 'measurable' && value > 0) {
-            content = <span className="text-[10px] font-bold" style={{ color: hex }}>{value}</span>;
+            // dynamic: the habit's own colour
+            content = (
+              <span className="text-xs font-bold" style={{ color: hex }}>
+                {value}
+              </span>
+            );
           } else if (!due || isFuture) {
-            content = due
-              ? <Circle size={12} style={{ color: 'var(--t-fill-stronger)' }} />
-              : <Minus size={12} style={{ color: 'var(--t-fill-stronger)' }} />;
+            content = due ? (
+              <Circle size="0.75rem" className="text-line-strong" />
+            ) : (
+              <Minus size="0.75rem" className="text-line-strong" />
+            );
           } else {
-            content = <X size={14} strokeWidth={2.5} style={{ color: 'var(--t-fill-stronger)' }} />;
+            content = <X size="0.875rem" strokeWidth={2.5} className="text-line-strong" />;
           }
 
           return (
@@ -73,8 +87,9 @@ function RepeatingRow({ todo, onEdit, readOnly = false }: {
               title={`${todo.name} – ${dayLabels[i]}${due ? '' : ' (not scheduled)'}`}
               disabled={isFuture || readOnly}
               onClick={readOnly ? undefined : () => handleCellClick(date)}
-              className={`w-7 h-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'ring-1 ring-txt/30' : ''
-                } ${isFuture || readOnly ? 'cursor-default' : 'hover:bg-fill-strong'}`}
+              className={`w-7 h-7 flex items-center justify-center rounded-full transition-all ${
+                isToday ? 'ring-1 ring-ink/30' : ''
+              } ${isFuture || readOnly ? 'cursor-default' : 'hover:bg-subtle-strong'}`}
             >
               {content}
             </button>
@@ -93,7 +108,11 @@ function RepeatingRow({ todo, onEdit, readOnly = false }: {
  * same strips (the glyphs are the point), nothing clickable, no heading — the
  * caller labels the block with the owner's name.
  */
-export default function HabitsSection({ onEdit, todos: override, readOnly = false }: {
+export default function HabitsSection({
+  onEdit,
+  todos: override,
+  readOnly = false,
+}: {
   onEdit: (t: Todo) => void;
   todos?: Todo[];
   readOnly?: boolean;
@@ -105,11 +124,9 @@ export default function HabitsSection({ onEdit, todos: override, readOnly = fals
 
   return (
     <div className="mb-md">
-      {!override && (
-        <h3 className="text-label-md text-txt-muted mb-md uppercase tracking-widest font-bold">Habits</h3>
-      )}
+      {!override && <SectionHeading className="mb-md font-bold">Habits</SectionHeading>}
       <div className="space-y-md">
-        {habits.map(todo => (
+        {habits.map((todo) => (
           <RepeatingRow key={todo.id} todo={todo} onEdit={onEdit} readOnly={readOnly} />
         ))}
       </div>

@@ -4,9 +4,9 @@ import { diffDays } from '../../dates';
 export interface Segment<T> {
   item: T;
   startCol: number; // 1..7
-  span: number;     // 1..7
+  span: number; // 1..7
   startsHere: boolean; // true span start (round the left edge)
-  endsHere: boolean;   // true span end (round the right edge)
+  endsHere: boolean; // true span end (round the right edge)
 }
 
 /** Clamp inclusive date-spans to a week (7 consecutive YYYY-MM-DD strings). */
@@ -32,12 +32,17 @@ export function weekSegments<T extends { startDate: string; endDate: string }>(
   return out;
 }
 
+/** How many lanes an assignment occupies (0 when empty). */
+export function laneCount(lanes: { lane: number }[]): number {
+  return lanes.reduce((n, l) => Math.max(n, l.lane + 1), 0);
+}
+
 /** Greedy lane assignment: first free lane whose segments don't overlap in columns. */
 export function assignLanes<T>(segments: Segment<T>[]): { seg: Segment<T>; lane: number }[] {
   const sorted = [...segments].sort((a, b) => a.startCol - b.startCol || b.span - a.span);
   const laneEnds: number[] = []; // last occupied column per lane
-  return sorted.map(seg => {
-    let lane = laneEnds.findIndex(end => end < seg.startCol);
+  return sorted.map((seg) => {
+    let lane = laneEnds.findIndex((end) => end < seg.startCol);
     if (lane === -1) {
       lane = laneEnds.length;
       laneEnds.push(0);

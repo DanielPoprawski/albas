@@ -1,12 +1,14 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fmt } from '../../dates';
 import { shortTime, timeToMinutes, type Occurrence } from '../../eventLogic';
 import { colorHex } from '../../colors';
 import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import type { CalendarEvent } from '../../types';
 
-export const HOUR_H = 48; // px per hour
-export const GUTTER_W = 56; // px, time-label column
+/** `top`/`height` for a point `min` minutes into the day, in hour-grid units. */
+function atMinutes(min: number): string {
+  return `calc(var(--spacing-hour-h) * ${min / 60})`;
+}
 
 interface Positioned {
   occ: Occurrence;
@@ -19,8 +21,8 @@ interface Positioned {
 /** Greedy overlap layout: cluster overlapping events, assign lanes within each cluster. */
 function layoutDay(occs: Occurrence[]): Positioned[] {
   const items = occs
-    .filter(o => o.event.startTime)
-    .map(o => {
+    .filter((o) => o.event.startTime)
+    .map((o) => {
       const startMin = timeToMinutes(o.event.startTime!);
       const rawEnd = o.event.endTime ? timeToMinutes(o.event.endTime) : startMin + 60;
       return { o, startMin, endMin: Math.min(1440, Math.max(rawEnd, startMin + 30)) };
@@ -42,7 +44,7 @@ function layoutDay(occs: Occurrence[]): Positioned[] {
 
   for (const item of items) {
     if (laneEnds.length > 0 && item.startMin >= Math.max(...laneEnds)) flush();
-    let lane = laneEnds.findIndex(end => end <= item.startMin);
+    let lane = laneEnds.findIndex((end) => end <= item.startMin);
     if (lane === -1) {
       lane = laneEnds.length;
       laneEnds.push(0);
@@ -64,16 +66,25 @@ interface Props {
   occurrences: Occurrence[];
   onEditEvent: (event: CalendarEvent, occurrenceDate: string) => void;
   onSelectDate?: (dateStr: string) => void;
+  /** A click on empty grid: the day and the hour (`HH:00`) under the pointer. */
+  onAddAt?: (dateStr: string, time: string) => void;
 }
 
-export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate }: Props) {
+export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate, onAddAt }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 7 * HOUR_H });
+    // Open on 07:00: the grid is 24 equal hours tall, whatever the font scale.
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: (el.scrollHeight * 7) / 24 });
   }, []);
 
-  const now = new Date();
+  // The current-time line moves on its own, once a minute.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const todayStr = fmt(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
@@ -81,14 +92,15 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
     // min-h-0 is load-bearing: flex items default to min-height:auto, which would let
     // the 1152px body below dictate this element's height and defeat overflow-y-auto.
     <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
-      <div className="flex" style={{ height: 24 * HOUR_H }}>
+      <div className="flex h-[calc(var(--spacing-hour-h)*24)]">
         {/* Time gutter */}
-        <div className="flex-shrink-0 relative" style={{ width: GUTTER_W }}>
-          {Array.from({ length: 23 }, (_, i) => i + 1).map(h => (
+        <div className="flex-shrink-0 relative w-gutter-w">
+          {Array.from({ length: 23 }, (_, i) => i + 1).map((h) => (
             <span
               key={h}
-              className="absolute right-2 text-[10px] text-sheet-txt-faint -translate-y-1/2"
-              style={{ top: h * HOUR_H }}
+              className="absolute right-2 text-xs text-ink-muted -translate-y-1/2"
+              // dynamic: one label per hour, positioned in grid units
+              style={{ top: atMinutes(h * 60) }}
             >
               {hourLabel(h)}
             </span>
@@ -96,21 +108,28 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
         </div>
 
         {/* Day columns */}
-        {days.map(dateStr => {
-          const positioned = layoutDay(occurrences.filter(o => o.startDate === dateStr));
+        {days.map((dateStr) => {
+          const positioned = layoutDay(occurrences.filter((o) => o.startDate === dateStr));
           const isToday = dateStr === todayStr;
           return (
             <div
               key={dateStr}
-              className="flex-1 relative border-l border-sheet-line"
-              onClick={() => onSelectDate?.(dateStr)}
+              className="flex-1 relative border-l border-line"
+              onClick={(e) => {
+                onSelectDate?.(dateStr);
+                if (!onAddAt) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const hour = Math.min(23, Math.max(0, Math.floor(((e.clientY - rect.top) / rect.height) * 24)));
+                onAddAt(dateStr, `${String(hour).padStart(2, '0')}:00`);
+              }}
             >
               {/* hour lines */}
-              {Array.from({ length: 23 }, (_, i) => i + 1).map(h => (
+              {Array.from({ length: 23 }, (_, i) => i + 1).map((h) => (
                 <div
                   key={h}
-                  className="hour-line absolute left-0 right-0"
-                  style={{ top: h * HOUR_H }}
+                  className="absolute left-0 right-0 border-t border-line"
+                  // dynamic: one rule per hour, positioned in grid units
+                  style={{ top: atMinutes(h * 60) }}
                 />
               ))}
 
@@ -118,38 +137,45 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate 
               {isToday && (
                 <div
                   className="absolute left-0 right-0 z-10 pointer-events-none"
-                  style={{ top: (nowMin / 60) * HOUR_H }}
+                  // dynamic: the current wall-clock minute
+                  style={{ top: atMinutes(nowMin) }}
                 >
-                  <div className="h-[2px] bg-tertiary-container" />
-                  <div className="w-2 h-2 rounded-full bg-tertiary-container -mt-[5px] -ml-[4px]" />
+                  <div className="h-[2px] bg-danger" />
+                  <div className="w-2 h-2 bg-danger -mt-[0.3125rem] -ml-[0.25rem]" />
                 </div>
               )}
 
               {/* timed events */}
               {positioned.map(({ occ, startMin, endMin, lane, lanes }) => {
                 const hex = colorHex(occ.event.colorKey);
-                const height = ((endMin - startMin) / 60) * HOUR_H;
+                const minutes = endMin - startMin;
                 return (
                   <div
                     key={occ.key}
-                    onClick={e => { e.stopPropagation(); onEditEvent(occ.event, occ.startDate); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditEvent(occ.event, occ.startDate);
+                    }}
                     title={sharedTitleAttr(occ.event)}
                     className="absolute rounded px-xs py-0.5 cursor-pointer overflow-hidden hover:opacity-90"
+                    // dynamic: the event's own time span, lane, and colour
                     style={{
-                      top: (startMin / 60) * HOUR_H,
-                      height: height - 2,
-                      left: `calc(${(lane / lanes) * 100}% + 2px)`,
-                      width: `calc(${(1 / lanes) * 100}% - 4px)`,
+                      top: atMinutes(startMin),
+                      height: `calc(${atMinutes(minutes)} - 0.125rem)`,
+                      left: `calc(${(lane / lanes) * 100}% + 0.125rem)`,
+                      width: `calc(${(1 / lanes) * 100}% - 0.25rem)`,
                       backgroundColor: `${hex}26`,
-                      borderLeft: `3px solid ${hex}`,
+                      borderLeft: `0.1875rem solid ${hex}`,
                       opacity: sharedOpacity(occ.event),
                     }}
                   >
-                    <div className="text-[10px] font-bold truncate" style={{ color: hex }}>
+                    {/* dynamic: the event's own colour */}
+                    <div className="text-xs font-bold truncate" style={{ color: hex }}>
                       {eventTitle(occ.event)}
                     </div>
-                    {height >= 34 && (
-                      <div className="text-[9px] opacity-70 truncate" style={{ color: hex }}>
+                    {/* dynamic: the event's own colour */}
+                    {minutes >= 45 && (
+                      <div className="text-xs opacity-70 truncate" style={{ color: hex }}>
                         {shortTime(occ.event.startTime!)}
                         {occ.event.endTime ? ` – ${shortTime(occ.event.endTime)}` : ''}
                       </div>

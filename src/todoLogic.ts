@@ -1,4 +1,4 @@
-import { addDays, addMonths, diffDays, fmt, monthsBetween, parse, rotateWeek, shortDate, weekOf } from './dates';
+import { addDays, addMonths, diffDays, fmt, monthsBetween, parse, rotateWeek, shortDate, weekOf, hhmm } from './dates';
 import type { FirstDayOfWeek, Repeat, Todo } from './types';
 
 export function isRepeating(todo: Todo): boolean {
@@ -20,7 +20,7 @@ export function isDoneOn(todo: Todo, dateStr: string): boolean {
 
 /** Once to-dos: completed at all (on any day). */
 export function isDone(todo: Todo): boolean {
-  return Object.values(todo.completions).some(v => v >= todo.target);
+  return Object.values(todo.completions).some((v) => v >= todo.target);
 }
 
 /** Day a once to-do was (last) completed on, or null. */
@@ -54,14 +54,9 @@ function shiftBy(dateStr: string, n: number, unit: 'day' | 'week' | 'month'): st
  * setting re-partitions past completions and can change a "3× per week" to-do's
  * quota state. That's inherent to the feature rather than a bug.
  */
-export function doneCountIn(
-  todo: Todo,
-  dateStr: string,
-  per: 'week' | 'month',
-  firstDay: FirstDayOfWeek = 0,
-): number {
+export function doneCountIn(todo: Todo, dateStr: string, per: 'week' | 'month', firstDay: FirstDayOfWeek = 0): number {
   if (per === 'week') {
-    return weekOf(parse(dateStr), firstDay).filter(d => isDoneOn(todo, d)).length;
+    return weekOf(parse(dateStr), firstDay).filter((d) => isDoneOn(todo, d)).length;
   }
   const prefix = dateStr.slice(0, 7);
   return Object.entries(todo.completions).filter(([d, v]) => d.startsWith(prefix) && v >= todo.target).length;
@@ -93,8 +88,7 @@ export function isDueOn(todo: Todo, dateStr: string, firstDay: FirstDayOfWeek = 
       if (s.unit === 'day') return diffDays(start, dateStr) % n === 0;
       if (s.unit === 'week') return diffDays(start, dateStr) % (7 * n) === 0;
       // month: same day-of-month; months lacking that day are skipped
-      return monthsBetween(start, dateStr) % n === 0 &&
-        parse(dateStr).getDate() === parse(start).getDate();
+      return monthsBetween(start, dateStr) % n === 0 && parse(dateStr).getDate() === parse(start).getDate();
     }
     case 'timesPer': {
       // Flexible quota: due any day until the week/month quota is met.
@@ -127,8 +121,7 @@ export function streakOf(todo: Todo, firstDay: FirstDayOfWeek = 0): number {
   const todayStr = fmt(new Date());
 
   if (s.type === 'timesPer') {
-    const met = (anchor: string) =>
-      doneCountIn(todo, anchor, s.per, firstDay) >= Math.max(1, s.times);
+    const met = (anchor: string) => doneCountIn(todo, anchor, s.per, firstDay) >= Math.max(1, s.times);
     let anchor = todayStr;
     let streak = 0;
     for (let i = 0; i < 60; i++) {
@@ -167,17 +160,24 @@ const UNIT_WORD: Record<'day' | 'week' | 'month', [string, string]> = {
 /** Human-readable repeat summary, e.g. "every 3 days after last done". */
 export function repeatLabel(repeat: Repeat, firstDay: FirstDayOfWeek = 0): string {
   switch (repeat.type) {
-    case 'once': return 'one-time';
-    case 'daily': return 'daily';
-    case 'weekdays': return repeat.days.length === 7 ? 'daily'
-      : rotateWeek([0, 1, 2, 3, 4, 5, 6], firstDay)
-        .filter(d => repeat.days.includes(d)).map(d => DAY_NAMES[d]).join(' ');
+    case 'once':
+      return 'one-time';
+    case 'daily':
+      return 'daily';
+    case 'weekdays':
+      return repeat.days.length === 7
+        ? 'daily'
+        : rotateWeek([0, 1, 2, 3, 4, 5, 6], firstDay)
+            .filter((d) => repeat.days.includes(d))
+            .map((d) => DAY_NAMES[d])
+            .join(' ');
     case 'every': {
       const [adverb, plural] = UNIT_WORD[repeat.unit];
       const base = repeat.n === 1 ? adverb : `every ${repeat.n} ${plural}`;
       return repeat.fromDone ? `${base === adverb ? `every ${repeat.unit}` : base} after last done` : base;
     }
-    case 'timesPer': return `${repeat.times}× per ${repeat.per}`;
+    case 'timesPer':
+      return `${repeat.times}× per ${repeat.per}`;
   }
 }
 
@@ -196,7 +196,7 @@ export function statusLabel(todo: Todo, todayStr: string, firstDay: FirstDayOfWe
   return streak > 0 ? `${streak} day streak` : repeatLabel(s, firstDay);
 }
 
-/** Uncategorised to-dos group under this heading, and it always sorts first. */
+/** Display label for the uncategorised group — its `TaskGroup.category` is `''`. */
 export const UNCATEGORIZED = 'Uncategorized';
 
 /**
@@ -207,11 +207,6 @@ export const UNCATEGORIZED = 'Uncategorized';
 export function dueSortKey(todo: Todo): string {
   if (!todo.dueDate) return '￿';
   return `${todo.dueDate}T${todo.time ?? '99:99'}`;
-}
-
-/** Current wall-clock as 'HH:MM', for comparing against a to-do's `time`. */
-function hhmm(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 /**
@@ -233,31 +228,40 @@ export function byImportanceThenDue(a: Todo, b: Todo): number {
 }
 
 export interface TaskGroup {
+  /** Category id, or '' for uncategorised. Resolve the name via `AppContext#categoryById`. */
   category: string;
   todos: Todo[];
 }
 
 /**
- * One-time to-dos grouped by category for display: uncategorised first (it's
- * where anything typed in a hurry lands, so it shouldn't be buried), then the
- * named categories alphabetically. Each group is sorted by
- * `byImportanceThenDue`. Completed to-dos are excluded — they collect in their
- * own section at the bottom of the list rather than inside their category.
+ * One-time to-dos grouped by category id for display: uncategorised first
+ * (it's where anything typed in a hurry lands, so it shouldn't be buried),
+ * then the named categories in `order`'s sequence (typically the user's
+ * Settings ordering — `AppContext#categoriesFor`'s `sort`). A category with
+ * no todo left is naturally absent, and one that isn't in `order` (e.g. a
+ * category deleted since a todo was assigned, before its reference clears)
+ * sorts after every ordered one. Each group is sorted by
+ * `byImportanceThenDue`. Completed to-dos are excluded — they collect in
+ * their own section at the bottom of the list rather than inside their
+ * category.
  */
-export function groupTasks(tasks: Todo[]): TaskGroup[] {
+export function groupTasks(tasks: Todo[], order: string[] = []): TaskGroup[] {
   const groups = new Map<string, Todo[]>();
   for (const t of tasks) {
-    const key = t.category.trim() || UNCATEGORIZED;
+    const key = t.category.trim();
     const list = groups.get(key);
     if (list) list.push(t);
     else groups.set(key, [t]);
   }
+  const rank = new Map(order.map((id, i) => [id, i]));
   return [...groups.entries()]
     .sort(([a], [b]) => {
       if (a === b) return 0;
-      if (a === UNCATEGORIZED) return -1;
-      if (b === UNCATEGORIZED) return 1;
-      return a.localeCompare(b);
+      if (a === '') return -1;
+      if (b === '') return 1;
+      const ra = rank.get(a) ?? Infinity;
+      const rb = rank.get(b) ?? Infinity;
+      return ra !== rb ? ra - rb : a.localeCompare(b);
     })
     .map(([category, todos]) => ({ category, todos: todos.sort(byImportanceThenDue) }));
 }

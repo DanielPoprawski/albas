@@ -1,4 +1,6 @@
-import type { CalendarEvent, Todo, WeightEntry } from './types';
+import type { CalendarEvent, Category, CategoryScope, Todo } from './types';
+import * as ipc from './ipc';
+import type { CategoryRow } from './ipc';
 
 const STORAGE_KEY = 'albas-data-v1';
 
@@ -27,8 +29,8 @@ export interface LegacyPeriod {
 export interface LoadedState {
   todos: Todo[];
   events: CalendarEvent[];
-  weights: WeightEntry[];
-  /** Free-form user preferences (theme, weightUnit, …). */
+  categories: Category[];
+  /** Free-form user preferences (theme, …). */
   settings: Record<string, string>;
   /** Rows from the pre-unification tables, pending conversion. */
   legacyTasks: LegacyTask[];
@@ -36,6 +38,26 @@ export interface LoadedState {
   /** True when the SQLite DB has never imported the pre-SQLite localStorage blob. */
   needsLegacyImport: boolean;
   empty: boolean;
+}
+
+const SCOPE_VALUES: CategoryScope[] = ['calendar', 'tasks', 'habits'];
+
+/** `scopes` is a CSV in SQLite/sync payloads; the app works with the array. */
+function rowToCategory(row: CategoryRow): Category {
+  return {
+    id: row.id,
+    name: row.name,
+    colorKey: row.colorKey,
+    sort: row.sort,
+    scopes: row.scopes
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s): s is CategoryScope => SCOPE_VALUES.includes(s as CategoryScope)),
+  };
+}
+
+function categoryToRow(c: Category): CategoryRow {
+  return { id: c.id, name: c.name, colorKey: c.colorKey, sort: c.sort, scopes: c.scopes.join(',') };
 }
 
 /**
@@ -49,8 +71,8 @@ export interface Persistence {
   setCompletion(todoId: string, date: string, value: number): void;
   saveEvent(e: CalendarEvent): void;
   deleteEvent(id: string): void;
-  saveWeight(w: WeightEntry): void;
-  deleteWeight(id: string): void;
+  saveCategory(c: Category): void;
+  deleteCategory(id: string): void;
   setSetting(key: string, value: string): void;
   /** Legacy-conversion writes only. */
   deleteTask(id: string): void;
@@ -65,9 +87,12 @@ export function inTauri(): boolean {
 
 /** Read the legacy/browser localStorage blob (raw, unmigrated). */
 export function readLocalBlob(): {
-  tasks: unknown[]; habits: unknown[];
-  events?: unknown[]; periods?: unknown[];
-  weights?: unknown[]; settings?: unknown;
+  tasks: unknown[];
+  habits: unknown[];
+  events?: unknown[];
+  periods?: unknown[];
+  categories?: unknown[];
+  settings?: unknown;
 } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -83,55 +108,40 @@ export function readLocalBlob(): {
 function makeTauriPersistence(): Persistence {
   // Serial queue: rapid writes (todo +/- clicks) must reach SQLite in order.
   let queue: Promise<unknown> = Promise.resolve();
-  function enqueue(cmd: string, args: Record<string, unknown>): void {
-    queue = queue
-      .then(async () => {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke(cmd, args);
-      })
-      .catch(err => console.warn(`persistence: ${cmd} failed:`, err));
+  function enqueue(label: string, run: () => Promise<unknown>): void {
+    queue = queue.then(run).catch((err) => console.warn(`persistence: ${label} failed:`, err));
   }
 
   return {
     async load() {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const data = await invoke<{
-        tasks: LegacyTask[];
-        habits: Todo[];
-        events: CalendarEvent[];
-        periods: LegacyPeriod[];
-        weights: WeightEntry[];
-        settings: Record<string, string>;
-        needsLegacyImport: boolean;
-      }>('load_state');
+      const data = await ipc.loadState();
       return {
         todos: data.habits,
         events: data.events,
-        weights: data.weights,
+        categories: data.categories.map(rowToCategory),
         settings: data.settings,
         legacyTasks: data.tasks,
         legacyPeriods: data.periods,
         needsLegacyImport: data.needsLegacyImport,
-        // weights/settings deliberately excluded: a fresh install with only a
-        // theme picked still wants the starter to-dos seeded.
+        // settings/categories deliberately excluded: a fresh install
+        // with only a theme picked still wants the starter to-dos (and their
+        // categories) seeded.
         empty:
-          data.tasks.length === 0 && data.habits.length === 0 &&
-          data.events.length === 0 && data.periods.length === 0,
+          data.tasks.length === 0 && data.habits.length === 0 && data.events.length === 0 && data.periods.length === 0,
       };
     },
-    saveTodo: t => enqueue('save_habit', { habit: t }),
-    deleteTodo: id => enqueue('delete_habit', { id }),
-    setCompletion: (todoId, date, value) => enqueue('set_completion', { habitId: todoId, date, value }),
-    saveEvent: e => enqueue('save_event', { event: e }),
-    deleteEvent: id => enqueue('delete_event', { id }),
-    saveWeight: w => enqueue('save_weight', { weight: w }),
-    deleteWeight: id => enqueue('delete_weight', { id }),
-    setSetting: (key, value) => enqueue('set_setting', { key, value }),
-    deleteTask: id => enqueue('delete_task', { id }),
-    deletePeriod: id => enqueue('delete_period', { id }),
+    saveTodo: (t) => enqueue('save_habit', () => ipc.saveHabit(t)),
+    deleteTodo: (id) => enqueue('delete_habit', () => ipc.deleteHabit(id)),
+    setCompletion: (todoId, date, value) => enqueue('set_completion', () => ipc.setCompletion(todoId, date, value)),
+    saveEvent: (e) => enqueue('save_event', () => ipc.saveEvent(e)),
+    deleteEvent: (id) => enqueue('delete_event', () => ipc.deleteEvent(id)),
+    saveCategory: (c) => enqueue('save_category', () => ipc.saveCategory(categoryToRow(c))),
+    deleteCategory: (id) => enqueue('delete_category', () => ipc.deleteCategory(id)),
+    setSetting: (key, value) => enqueue('set_setting', () => ipc.setSetting(key, value)),
+    deleteTask: (id) => enqueue('delete_task', () => ipc.deleteTask(id)),
+    deletePeriod: (id) => enqueue('delete_period', () => ipc.deletePeriod(id)),
     async importLegacy(tasks, todos) {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('import_legacy', { tasks, habits: todos });
+      await ipc.importLegacy(tasks, todos);
     },
   };
 }
@@ -141,7 +151,7 @@ function makeLocalPersistence(): Persistence {
   const state = {
     todos: [] as Todo[],
     events: [] as CalendarEvent[],
-    weights: [] as WeightEntry[],
+    categories: [] as Category[],
     settings: {} as Record<string, string>,
     legacyTasks: [] as LegacyTask[],
     legacyPeriods: [] as LegacyPeriod[],
@@ -149,19 +159,25 @@ function makeLocalPersistence(): Persistence {
 
   function flush(): void {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        tasks: state.legacyTasks, habits: state.todos,
-        events: state.events, periods: state.legacyPeriods,
-        weights: state.weights, settings: state.settings,
-      }));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          tasks: state.legacyTasks,
+          habits: state.todos,
+          events: state.events,
+          periods: state.legacyPeriods,
+          categories: state.categories,
+          settings: state.settings,
+        }),
+      );
     } catch {
       // storage full or unavailable — app keeps working in memory
     }
   }
 
   function upsert<T extends { id: string }>(list: T[], item: T): T[] {
-    const i = list.findIndex(x => x.id === item.id);
-    return i === -1 ? [...list, item] : list.map(x => (x.id === item.id ? item : x));
+    const i = list.findIndex((x) => x.id === item.id);
+    return i === -1 ? [...list, item] : list.map((x) => (x.id === item.id ? item : x));
   }
 
   return {
@@ -170,28 +186,38 @@ function makeLocalPersistence(): Persistence {
       if (blob) {
         state.legacyTasks = blob.tasks as LegacyTask[];
         state.todos = blob.habits as Todo[];
-        state.events = (blob.events as CalendarEvent[] | undefined) ?? [];
+        // Old blobs (pre-Phase K) never wrote `category` on events; default it
+        // so every event in state is a well-formed CalendarEvent.
+        state.events = ((blob.events as CalendarEvent[] | undefined) ?? []).map((e) => ({
+          ...e,
+          category: e.category ?? '',
+        }));
         state.legacyPeriods = (blob.periods as LegacyPeriod[] | undefined) ?? [];
-        state.weights = (blob.weights as WeightEntry[] | undefined) ?? [];
+        state.categories = (blob.categories as Category[] | undefined) ?? [];
         state.settings = (blob.settings as Record<string, string> | undefined) ?? {};
       }
       return {
         ...state,
         needsLegacyImport: false,
         empty:
-          state.todos.length === 0 && state.events.length === 0 &&
-          state.legacyTasks.length === 0 && state.legacyPeriods.length === 0,
+          state.todos.length === 0 &&
+          state.events.length === 0 &&
+          state.legacyTasks.length === 0 &&
+          state.legacyPeriods.length === 0,
       };
     },
     saveTodo(t) {
       // preserve completions when the caller sends metadata only
-      const existing = state.todos.find(x => x.id === t.id);
+      const existing = state.todos.find((x) => x.id === t.id);
       state.todos = upsert(state.todos, { ...t, completions: t.completions ?? existing?.completions ?? {} });
       flush();
     },
-    deleteTodo(id) { state.todos = state.todos.filter(t => t.id !== id); flush(); },
+    deleteTodo(id) {
+      state.todos = state.todos.filter((t) => t.id !== id);
+      flush();
+    },
     setCompletion(todoId, date, value) {
-      state.todos = state.todos.map(t => {
+      state.todos = state.todos.map((t) => {
         if (t.id !== todoId) return t;
         const completions = { ...t.completions };
         if (value <= 0) delete completions[date];
@@ -200,13 +226,34 @@ function makeLocalPersistence(): Persistence {
       });
       flush();
     },
-    saveEvent(e) { state.events = upsert(state.events, e); flush(); },
-    deleteEvent(id) { state.events = state.events.filter(e => e.id !== id); flush(); },
-    saveWeight(w) { state.weights = upsert(state.weights, w); flush(); },
-    deleteWeight(id) { state.weights = state.weights.filter(w => w.id !== id); flush(); },
-    setSetting(key, value) { state.settings = { ...state.settings, [key]: value }; flush(); },
-    deleteTask(id) { state.legacyTasks = state.legacyTasks.filter(t => t.id !== id); flush(); },
-    deletePeriod(id) { state.legacyPeriods = state.legacyPeriods.filter(p => p.id !== id); flush(); },
+    saveEvent(e) {
+      state.events = upsert(state.events, e);
+      flush();
+    },
+    deleteEvent(id) {
+      state.events = state.events.filter((e) => e.id !== id);
+      flush();
+    },
+    saveCategory(c) {
+      state.categories = upsert(state.categories, c);
+      flush();
+    },
+    deleteCategory(id) {
+      state.categories = state.categories.filter((c) => c.id !== id);
+      flush();
+    },
+    setSetting(key, value) {
+      state.settings = { ...state.settings, [key]: value };
+      flush();
+    },
+    deleteTask(id) {
+      state.legacyTasks = state.legacyTasks.filter((t) => t.id !== id);
+      flush();
+    },
+    deletePeriod(id) {
+      state.legacyPeriods = state.legacyPeriods.filter((p) => p.id !== id);
+      flush();
+    },
     async importLegacy() {},
   };
 }

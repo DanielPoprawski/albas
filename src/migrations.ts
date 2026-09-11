@@ -2,7 +2,7 @@
 // reuse them without importing the provider (which imports sharedLogic — a
 // cycle otherwise). No React, no persistence: raw saved shapes in, app types out.
 
-import type { CalendarEvent, Repeat, Todo } from './types';
+import type { CalendarEvent, Category, Repeat, Todo } from './types';
 import { fmt } from './dates';
 import { DEFAULT_COLOR } from './colors';
 import type { LegacyPeriod, LegacyTask } from './persistence';
@@ -16,7 +16,9 @@ export function migrateRepeat(s: any): Repeat {
     case 'daily':
       return { type: 'daily' };
     case 'weekdays': {
-      const days = Array.isArray(s.days) ? s.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6) : [];
+      const days = Array.isArray(s.days)
+        ? s.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6)
+        : [];
       return { type: 'weekdays', days: days.length > 0 ? days : [1, 2, 3, 4, 5] };
     }
     // pre-unification shapes: interval = fixed cadence, chore = from last done
@@ -103,6 +105,24 @@ export function taskToTodo(t: LegacyTask): Todo {
   };
 }
 
+/**
+ * Best-effort, cheap-to-keep migration: `Todo.category` used to be free text
+ * (pre-Phase K). Once `AppContext` has a `categories` list (seeded or
+ * user-made), a stored value that already names one of them by id is left
+ * alone; one that still holds an old free-text name gets pointed at the
+ * matching category's id (case-insensitive); anything else — including a
+ * once-typed name that matches nothing — becomes uncategorised. Cheap even
+ * though CLAUDE.md says data can be wiped freely: there was no reason not to
+ * carry it over when the id/name check is this small.
+ */
+export function remapLegacyCategory(category: string, categories: Category[]): string {
+  const trimmed = category.trim();
+  if (!trimmed) return '';
+  if (categories.some((c) => c.id === trimmed)) return trimmed;
+  const match = categories.find((c) => c.name.toLowerCase() === trimmed.toLowerCase());
+  return match ? match.id : '';
+}
+
 /** Old periods are just long all-day events now. */
 export function periodToEvent(p: LegacyPeriod): CalendarEvent {
   return {
@@ -117,5 +137,6 @@ export function periodToEvent(p: LegacyPeriod): CalendarEvent {
     endTime: null,
     recurrence: { type: 'none' },
     reminders: [],
+    category: '',
   };
 }

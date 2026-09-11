@@ -1,38 +1,34 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek, weekdayAt, fmt } from '../../dates';
 import { isDone } from '../../todoLogic';
 import { shortTime } from '../../eventLogic';
-import { colorHex } from '../../colors';
+import { CATEGORY_CLASSES, accentNameOf, colorHex, tintOf } from '../../colors';
 import { eventTitle, sharedTitleAttr } from '../../sharedDisplay';
-import { BarsOverlay, DueDots, PastX, PeriodCorners, PeriodTitles } from './monthParts';
+import { BarsOverlay, DueDots, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
+import SearchBar from '../SearchBar';
 import type { MonthLayoutProps } from './monthModel';
+import { IconButton } from '../ui/button';
+import { Card } from '../ui/card';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** A desktop cell has room for two chips and a bottom-pinned stack. */
 /*
- * A chip's tint/hairline/ink trio, keyed by the event's own colour.
- *
- * One table rather than a copy inside each of the two chip loops — they had
- * drifted apart before, and a category added to only one of them shows up as
- * a chip that is tinted in the grid but not in the to-do row beneath it.
- * Unmatched colours fall back to purple, the app accent.
+ * A chip's tint/hairline/ink trio. A category accent draws from its
+ * `--t-cat-*` classes (so it follows dark mode); any other stored colour — the
+ * desktop picker offers dozens — gets a translucent wash of itself rather than
+ * silently turning purple, which is what the old hex-keyed lookup did.
  */
-const CHIP_TINTS: Record<string, string> = {
-  '#a855f7': 'bg-cat-purple-tint border-cat-purple-line text-cat-purple-ink',
-  '#f59e0b': 'bg-cat-amber-tint border-cat-amber-line text-cat-amber-ink',
-  '#3b82f6': 'bg-cat-blue-tint border-cat-blue-line text-cat-blue-ink',
-  '#10b981': 'bg-cat-green-tint border-cat-green-line text-cat-green-ink',
-  '#ec4899': 'bg-cat-pink-tint border-cat-pink-line text-cat-pink-ink',
-  '#06b6d4': 'bg-cat-teal-tint border-cat-teal-line text-cat-teal-ink',
-  '#ef4444': 'bg-cat-red-tint border-cat-red-line text-cat-red-ink',
-};
-
-function chipTint(hex: string): string {
-  return CHIP_TINTS[hex] ?? CHIP_TINTS['#a855f7'];
+function chipPaint(hex: string): { className: string; style?: CSSProperties } {
+  const name = accentNameOf(hex);
+  if (name) {
+    const c = CATEGORY_CLASSES[name];
+    return { className: `${c.tint} ${c.line} ${c.ink}` };
+  }
+  return { className: '', style: { background: tintOf(hex), borderColor: tintOf(hex, 0.35), color: hex } };
 }
 
 export const PILL_CAP = 2;
@@ -40,8 +36,7 @@ export const PILL_CAP = 2;
 /*
  * Event chip styling: square corners, category-tinted backgrounds
  */
-const CHIP_CLASS =
-  'text-[10px] font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap';
+const CHIP_CLASS = 'text-xs font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap';
 
 /**
  * A day cell wants to be 3 wide by 2 tall. Height is dictated by the window,
@@ -53,20 +48,16 @@ const CELL_ASPECT = 3 / 2;
 
 /**
  * The grid sits in a `flex-none` column, so nothing downstream can shrink it —
- * it has to refuse to starve the panel itself. The rail is `w-16`, which is
- * rem-based and scales with the browser's root font size, so it has to be
- * subtracted as 4rem and not a px guess; the column's padding (p-md) and the
- * panel's floor are genuine pixels.
+ * it has to refuse to starve the panel itself. Every term is a CSS var so
+ * this tracks a live sidebar/right-panel drag (Phase L): the sidebar
+ * (`--layout-sidebar-w`), a 1rem gap, the two 0.5rem `ResizeHandle`s either
+ * side of the content column, and the right panel (`--layout-right-w`). Each
+ * var falls back to its own default, so this is correct even before
+ * `applyLayout()` has run.
  */
-const RESERVED = '200px + 16px + 320px';
+const RESERVED = 'var(--layout-sidebar-w, 12.5rem) + 1rem + 0.5rem + 0.5rem + var(--layout-right-w, 20rem)';
 
-export default function MonthViewDesktop({
-  weeks,
-  onEditEvent,
-  onEditTodo,
-  onDayClick,
-  onAdd,
-}: MonthLayoutProps) {
+export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDayClick }: MonthLayoutProps) {
   const { firstDayOfWeek, currentMonth, setCurrentMonth } = useApp();
 
   // Measure the rows area, not the whole sheet: the weekday header's height
@@ -89,25 +80,26 @@ export default function MonthViewDesktop({
   const monthStr = fmt(currentMonth).substring(0, 7);
 
   const handlePrevMonth = () => {
-    setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
   };
 
   const handleNextMonth = () => {
-    setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
   };
 
   return (
-    <div
+    <Card
+      // dynamic: width follows the ResizeObserver, see above
       style={{ width, maxWidth: `calc(100vw - (${RESERVED}))` }}
-      className="flex-1 min-h-0 overflow-hidden flex flex-col bg-surface border border-line">
-      {/* Calendar header with navigation and add button */}
-      <div className="flex items-center gap-xs px-[var(--space-16)] py-[var(--space-16)] border-b border-line flex-shrink-0 bg-surface">
-        <button
-          onClick={handlePrevMonth}
-          className="w-7 h-7 flex items-center justify-center border border-line hover:border-accent text-ink-secondary hover:text-ink transition-colors"
-        >
-          <ChevronLeft size={14} />
-        </button>
+      className="flex-1 min-h-0 overflow-hidden flex flex-col"
+    >
+      {/* Calendar header: navigation, and search on the right (adding is a
+          click on a day — the "+ Add" button that used to sit here duplicated
+          that). */}
+      <div className="flex items-center gap-xs px-4 py-4 border-b border-line flex-shrink-0 bg-surface">
+        <IconButton onClick={handlePrevMonth}>
+          <ChevronLeft size="0.875rem" />
+        </IconButton>
 
         <select
           value={monthStr}
@@ -115,29 +107,25 @@ export default function MonthViewDesktop({
             const [year, month] = e.target.value.split('-').map(Number);
             setCurrentMonth(new Date(year, month - 1, 1));
           }}
-          className="px-xs py-[6px] border border-line bg-surface text-[13px] font-medium font-body cursor-pointer"
+          className="px-xs py-[0.375rem] border border-line bg-surface text-sm font-medium font-body cursor-pointer"
         >
           {Array.from({ length: 12 }).map((_, i) => {
             const d = new Date(currentMonth.getFullYear(), i, 1);
             const key = fmt(d).substring(0, 7);
             const label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
-            return <option key={key} value={key}>{label}</option>;
+            return (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            );
           })}
         </select>
 
-        <button
-          onClick={handleNextMonth}
-          className="w-7 h-7 flex items-center justify-center border border-line hover:border-accent text-ink-secondary hover:text-ink transition-colors"
-        >
-          <ChevronRight size={14} />
-        </button>
+        <IconButton onClick={handleNextMonth}>
+          <ChevronRight size="0.875rem" />
+        </IconButton>
 
-        <button
-          onClick={onAdd}
-          className="ml-auto px-xs py-[6px] border border-accent text-accent text-[12px] font-semibold hover:bg-accent-tint transition-colors"
-        >
-          + Add
-        </button>
+        <SearchBar scope="calendar" className="ml-auto" />
       </div>
 
       {/* Weekday headers */}
@@ -150,7 +138,7 @@ export default function MonthViewDesktop({
           return (
             <div
               key={i}
-              className={`py-xs px-[var(--space-6)] text-center text-[9px] font-bold uppercase tracking-wider ${
+              className={`py-xs px-1.5 text-center text-xs font-bold uppercase tracking-wider ${
                 isWeekendCol ? 'text-ink' : 'text-ink-muted'
               }`}
             >
@@ -162,37 +150,38 @@ export default function MonthViewDesktop({
 
       {/* Week rows */}
       <div ref={rowsRef} className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
-        {weeks.map(week => (
-          <div key={week.key} className="flex-1 relative min-h-[92px]">
+        {weeks.map((week) => (
+          <div key={week.key} className="flex-1 relative min-h-[5.75rem]">
             {/* Day cells */}
             <div className="grid grid-cols-7 h-full">
               {week.days.map((cell, colIdx) => {
                 const isLastCol = colIdx === 6;
+                const dim = dimCell(cell);
                 return (
                   <div
                     key={cell.dateStr}
-                    className={`relative cursor-pointer px-[var(--space-6)] py-[5px] ${
-                      !cell.isCurrentMonth ? 'bg-[var(--t-past-cell)]' : 'bg-surface'
-                    } ${
-                      !isLastCol ? 'border-r border-line' : ''
-                    } ${
+                    className={`relative cursor-pointer px-1.5 py-[0.3125rem] ${
+                      !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : 'bg-surface'
+                    } ${!isLastCol ? 'border-r border-line' : ''} ${
                       cell.isCurrentMonth ? 'border-b border-line' : 'border-b border-line'
                     }`}
+                    // dynamic: a long span washes its cells in its own colour
                     style={{ background: cell.background }}
                     onClick={() => onDayClick(cell.dateStr)}
                   >
-                    <PastX cell={cell} />
                     <PeriodCorners cell={cell} />
 
                     <div className="flex items-start justify-between mb-xs">
                       {/* Day number */}
                       <span
-                        className={`text-[11px] font-semibold ${
+                        className={`text-xs font-semibold ${
                           !cell.isCurrentMonth
-                            ? 'text-[var(--t-past-ink)]'
-                            : cell.isWeekend
-                            ? 'text-ink font-bold'
-                            : 'text-ink-secondary'
+                            ? 'text-outside-ink'
+                            : cell.isPast
+                              ? 'text-past-ink'
+                              : cell.isWeekend
+                                ? 'text-ink font-bold'
+                                : 'text-ink-secondary'
                         }`}
                       >
                         {cell.date.getDate()}
@@ -203,20 +192,34 @@ export default function MonthViewDesktop({
                     <PeriodTitles cell={cell} onEditEvent={onEditEvent} />
 
                     {/* space reserved for the spanning bars overlay */}
-                    {week.barsHeight > 0 && <div style={{ height: week.barsHeight }} />}
+                    {week.barLaneCount > 0 && (
+                      // dynamic: one lane-row per bar lane this week carries
+                      <div style={{ height: `calc(var(--spacing-lane-row) * ${week.barLaneCount})` }} />
+                    )}
 
-                    {/* Event + one-time to-do chips, pinned to the bottom of the cell */}
-                    <div className="flex flex-col gap-[2px] overflow-hidden mt-auto text-[10px]">
-                      {cell.shownOccs.map(o => {
-                        const hex = colorHex(o.event.colorKey);
+                    {/* Event + one-time to-do chips, pinned to the bottom of the cell.
+                        Past/outside days dull their chips as one group rather than
+                        each chip computing its own dim — the wrapper isn't absolutely
+                        positioned, so opacity here doesn't disturb the overlay layers
+                        (BarsOverlay/PeriodCorners) painted outside it. */}
+                    <div
+                      className={`flex flex-col gap-[2px] overflow-hidden mt-auto text-xs ${dim ? 'opacity-50' : ''}`}
+                    >
+                      {cell.shownOccs.map((o) => {
+                        const paint = chipPaint(colorHex(o.event.colorKey));
                         return (
                           <div
                             key={o.key}
-                            onClick={e => { e.stopPropagation(); onEditEvent(o); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditEvent(o);
+                            }}
                             title={sharedTitleAttr(o.event)}
-                            className={`${CHIP_CLASS} border ${chipTint(hex)} ${
+                            className={`${CHIP_CLASS} border ${paint.className} ${
                               o.event.sharedBy ? 'opacity-45' : ''
                             }`}
+                            // dynamic: the chip's own colour
+                            style={paint.style}
                           >
                             {o.event.startTime && !o.event.allDay && (
                               <span className="font-normal opacity-70">{shortTime(o.event.startTime)} </span>
@@ -225,22 +228,25 @@ export default function MonthViewDesktop({
                           </div>
                         );
                       })}
-                      {cell.shownOnce.map(todo => {
-                        const hex = colorHex(todo.colorKey);
+                      {cell.shownOnce.map((todo) => {
+                        const paint = chipPaint(colorHex(todo.colorKey));
                         return (
                           <div
                             key={todo.id}
-                            onClick={e => { e.stopPropagation(); onEditTodo(todo); }}
-                            className={`${CHIP_CLASS} border ${chipTint(hex)} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditTodo(todo);
+                            }}
+                            className={`${CHIP_CLASS} border ${paint.className} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                            // dynamic: the chip's own colour
+                            style={paint.style}
                           >
                             {todo.name}
                           </div>
                         );
                       })}
                       {cell.hiddenCount > 0 && (
-                        <div className="text-[9px] text-ink-muted pl-xs">
-                          +{cell.hiddenCount} more
-                        </div>
+                        <div className="text-xs text-ink-muted pl-xs">+{cell.hiddenCount} more</div>
                       )}
                     </div>
                   </div>
@@ -248,10 +254,10 @@ export default function MonthViewDesktop({
               })}
             </div>
 
-            <BarsOverlay week={week} top={34} onEditEvent={onEditEvent} />
+            <BarsOverlay week={week} topClass="top-[2.125rem]" onEditEvent={onEditEvent} />
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

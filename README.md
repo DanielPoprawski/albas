@@ -21,7 +21,6 @@ it, and no data leaves the machine unless you set sync up yourself.
 - **To-dos, habits and chores** — one unified model, distinguished only by their schedule.
   A one-off is a task, a fixed cadence is a habit, and "every N days from when I last did it"
   is a chore. Free-text categories, an importance flag, streaks and quotas.
-- **Weight tracking** — manual entries or automatic sync from a Wyze smart scale.
 - **Read-only sharing** — expose your calendar and/or to-dos to another account, one-way.
 - **Two themes** — light and dark, with everything driven by design tokens.
 - **Reminders**, first-day-of-week, ICS import, and an offline-capable Android build.
@@ -57,10 +56,10 @@ app**:
 | `bun run dev` | Vite only, on `localhost:1420`. No Rust, no SQLite, no sync — persistence falls back to a `localStorage` blob. Fine for pure UI work, misleading for anything else. |
 | `bun run tauri dev` | The real desktop app, Rust included. |
 | `bun run build` | `tsc && vite build`. The **frontend bundle only**. Does not touch the desktop binary. |
-| `bun run tauri build` | Builds `src-tauri/target/release/albas` plus the deb/rpm/AppImage. |
-| `bun run app:desktop` | `tauri build`, then installs the binary to `~/.local/bin/albas`. **This** is what updates an installed desktop app. |
-| `bun run tauri android dev` | Installs `dev.daniel_p.albas.dev`, whose webview loads the UI from the Vite dev server over the LAN. Useless away from the desk. |
-| `bun run app:android` | A standalone signed release APK, **and installs it** to the connected device. `android:install` re-installs the last build without recompiling; `android:launch` starts it. |
+| `bun run tauri build` | Builds `src-tauri/target/release/albas` plus the deb/rpm bundles. |
+| `bun run app:desktop` | `tauri build --no-bundle`, then installs the binary to `~/.local/bin/albas`. **This** is what updates an installed desktop app. The bundles are skipped: this is an Arch machine and the install copies the raw binary anyway. |
+| `bun run app:android` | A standalone signed release APK, **and installs it** on the connected device, **and launches it**. The only Android command; there is no debug/`.dev` variant on the menu. |
+| `scripts/dev.sh` | A `gum` menu over all of the above (plus the sync-server commands). |
 | `bun run clean` | Deletes the rebuildable build caches (debug and unused-Android cargo targets, Gradle output, `sync-server/target`) — tens of GB. Keeps `release/` and the aarch64 Android target so the next real build stays fast. |
 | `sync-server/scripts/publish.sh` | Builds the sync-server Docker image (amd64), pushes it to GHCR, rebuilds the web console, then SSHes into the server to upload `web/dist/` and pull + restart the stack (expect one passkey prompt). `--build-only` skips the deploy. |
 
@@ -75,13 +74,17 @@ bun run app:android
 ```
 
 `tauri android build` on its own only *compiles* — unlike `android dev`, it has no
-install step — so `app:android` chains `adb install -r` after it. Same signing key and
-applicationId means that's an in-place upgrade: the app's database survives.
+install step — so `app:android` chains `adb install -r` and then `adb shell am start` after
+it. Same signing key and applicationId means that's an in-place upgrade: the app's database
+survives.
 
-Debug Android builds install as a **separate app** (`dev.daniel_p.albas.dev`, launcher name
-"albas dev") with their own database, so switching between a dev build and the real app
-never costs a wipe. `CLAUDE.md` has the full story on Android identities, signing and a
-Tauri quirk where `android dev` installs the suffixed app but launches the unsuffixed one.
+Android development is release builds only: a debug build would install as a **separate app**
+(`dev.daniel_p.albas.dev`, its own database) that starts signed out, which made it more
+friction than it was worth. The build type still exists in `build.gradle.kts` — run
+`bun run tauri android build --debug --apk --target aarch64` by hand on the rare occasion you
+want WebView devtools, which are on for debug builds only. `CLAUDE.md` has the full story on
+Android identities, signing and a Tauri quirk where `android dev` installs the suffixed app
+but launches the unsuffixed one.
 
 ### Versioning
 
@@ -116,8 +119,8 @@ albas-sync: opaque row store               sync-server/
 - **The device owns the data.** SQLite is authoritative; the app is fully functional with the
   server switched off or unreachable.
 - **The server is a dumb row store.** It holds opaque `(account, table, primary key) → payload`
-  rows with a timestamp and a tombstone flag, and never parses a to-do, an event or a weight
-  reading — which is why adding a column to the app almost never requires redeploying it.
+  rows with a timestamp and a tombstone flag, and never parses a to-do or an event — which is
+  why adding a column to the app almost never requires redeploying it.
 - **Two clocks, deliberately.** `updated_at` comes from the writing device and decides *who
   wins* (last-write-wins, per row). `seq` is server-assigned and monotonic and decides *what a
   device hasn't seen*. A skewed device clock therefore can never make another device skip a row.
@@ -172,9 +175,13 @@ source of truth that silently drifts from what is actually deployed.
 
 ## Security and privacy, honestly
 
-- There are **no passwords**. You sign in with a **passkey** — a security key, fingerprint or
-  face unlock. The private key never leaves your authenticator; the server stores only the
-  public half.
+- An account starts with a **username and password** (Argon2id on the server). From there you
+  can add a **passkey** — a security key, fingerprint or face unlock, whose private key never
+  leaves your authenticator — and an **authenticator app** as a second factor for the
+  password. Passkeys are added from the web sign-in page; the app itself holds no WebAuthn
+  code.
+- A signed-in phone can approve a sign-in on your desktop (and the reverse) by scanning a
+  **QR code** — Settings → Session on either side. Codes last five minutes and work once.
 - Each signed-in device gets its own **bearer token**. The token *is* the identity, so it must
   never travel over plain HTTP — hence the TLS reverse proxy being mandatory rather than
   optional.
@@ -182,16 +189,14 @@ source of truth that silently drifts from what is actually deployed.
   *layering* claim, not a confidentiality one: whoever has root on the host can read every
   event title and task. That is a deliberate, current trade-off — it is what makes an admin
   view possible — and it is worth knowing before putting anything confidential in.
-- **Weight data is structurally unshareable.** It appears in no share group, and the sync
-  client drops a weights row defensively even if a server sent one.
 
 ## Roadmap
 
-- [x] Local-first calendar, to-dos, habits, weights
+- [x] Local-first calendar, to-dos, habits
 - [x] Multi-account sync server with passkeys and read-only sharing
 - [x] One unified version number across every artifact
 - [x] Consolidate onto a single origin serving both the API and the web UI *(client + configs done; DNS pending)*
-- [ ] Web admin console — accounts, invites, device tokens, shares
+- [x] Server administration — accounts, invites, device tokens, shares *(the planned web admin console was replaced by the `albas-sync admin` CLI, 2026-09; see `sync-server/README.md`, "Admin CLI")*
 - [ ] Rate limiting and automated backups on the server
 - [ ] Encryption at rest, and eventually end-to-end encryption
 

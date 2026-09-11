@@ -21,17 +21,26 @@
  * to the system sans, where this way it just renders the 400 instance.
  */
 @font-face {
-  font-family: 'Outfit';
-  src: url('/Outfit/Outfit-VariableFont_wght.ttf') format('truetype');
+  font-family: "Outfit";
+  src: url("/Outfit/Outfit-VariableFont_wght.ttf") format("truetype");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'Sora';
-  src: url('/Sora/Sora-VariableFont_wght.ttf') format('truetype');
+  font-family: "Sora";
+  src: url("/Sora/Sora-VariableFont_wght.ttf") format("truetype");
   font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* The serif option in Settings › Appearance. One weight only. */
+@font-face {
+  font-family: "Slabo 27px";
+  src: url("/Slabo27px-Regular.ttf") format("truetype");
+  font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
@@ -57,12 +66,12 @@
 
   /* Type stacks. Raw properties, like the colours: the @theme block below
      references them, and a `var()` on :root is never pruned. */
-  --t-font-body: 'Outfit', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --t-font-heading: 'Sora', 'Outfit', system-ui, -apple-system, sans-serif;
+  --t-font-body: "Outfit", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --t-font-heading: "Sora", "Outfit", system-ui, -apple-system, sans-serif;
   /* Not bundled: no file supplied, and only the admin console's ids and SQL
      console ask for it. Named first so dropping one into public/ is all it
      takes; the system mono renders until then. */
-  --t-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --t-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Surfaces */
   --t-page: #f8fafb;
@@ -77,6 +86,11 @@
      --t-ink-muted: at rest it should read as available, not as content. */
   --t-icon-idle: #c3c8d0;
   --t-subtle: #f3f4f6;
+  /* A step up from --t-subtle — the hover/active surface for an already-subtle
+     row (e.g. a segmented control's selected pane, a search hit on hover).
+     Was the app's third literal "fill" shade before the legacy vocabulary
+     migration; kept as its own token since it isn't equal to any other. */
+  --t-subtle-strong: #e9ebee;
 
   /* Accent */
   --t-accent: #a855f7;
@@ -133,7 +147,7 @@
   --t-danger: #ef4444;
   --t-success: #10b981;
   /* The amber a warning callout writes its body text in — a shade darker
-     than the category ink, which is tuned for a 10px pill rather than a
+     than the category ink, which is tuned for a 0.625rem pill rather than a
      paragraph. Splash/Auth's offline warning is the only user. */
   --t-warn-ink: #b45309;
 
@@ -145,61 +159,49 @@
      shadcn `Dialog` and `AddModal` dim the page identically. */
   --t-scrim: rgb(26 32 44 / 0.38);
 
-  /*
-   * Spacing scale — 4 6 8 10 12 14 16 18 20 24. Exposed as properties rather
-   * than as Tailwind's numeric `--spacing-*` namespace on purpose: hijacking
-   * that namespace would silently redefine `p-4` from 16px to 4px across
-   * every file in the app. Use these in arbitrary values — `p-[var(--space-14)]`
-   * — or just write the px, which is what the designs do.
-   */
-  --space-4: 4px;
-  --space-6: 6px;
-  --space-8: 8px;
-  --space-10: 10px;
-  --space-12: 12px;
-  --space-14: 14px;
-  --space-16: 16px;
-  --space-18: 18px;
-  --space-20: 20px;
-  --space-24: 24px;
+  /* An elapsed day cell in the month grid (this month, before today), and the
+     day number inside it. The design's `.day-cell.past` pair. */
+  --t-past-cell: #f3f4f6;
+  --t-past-ink: #9aa0a8;
+  /* A day cell from the adjacent month, and its day number — one shade
+     further out than --t-past-cell so "not this month" reads as more remote
+     than "already happened". */
+  --t-outside-cell: #dfe2e7;
+  --t-outside-ink: #8a9098;
 
-  /*
-   * Legacy `--t-*` aliases.
-   *
-   * The pre-redesign components address the app through this older
-   * vocabulary (bg-chrome, text-txt, bg-sheet, …). They are pointed at the
-   * new palette so every screen still renders while waves 2–3 migrate,
-   * rather than going unstyled the moment this package lands. Delete an
-   * alias once nothing references its utility.
-   */
-  --t-app-bg: var(--t-page);
-  --t-chrome: var(--t-surface);
-  --t-elevated: var(--t-surface);
-  --t-line: var(--t-border);
-  --t-grid-line: var(--t-border);
-  --t-fill: var(--t-subtle);
-  --t-fill-strong: #e9ebee;
-  --t-fill-stronger: var(--t-border-strong);
-  --t-txt: var(--t-ink);
-  --t-txt-muted: var(--t-ink-secondary);
-  --t-txt-faint: var(--t-ink-muted);
-  --t-accent-hi: var(--t-accent-hover);
-  --t-accent-text: var(--t-accent);
-  --t-accent-fg: #ffffff;
-  --t-sheet: var(--t-surface);
-  --t-sheet-header: var(--t-subtle);
-  --t-sheet-line: var(--t-border);
-  --t-sheet-border: var(--t-border);
-  --t-sheet-hour-line: var(--t-border);
-  --t-sheet-hover: var(--t-accent-tint);
-  --t-sheet-txt: var(--t-ink);
-  --t-sheet-txt-muted: var(--t-ink-secondary);
-  --t-sheet-txt-faint: var(--t-ink-muted);
-  --t-past-x: rgb(26 32 44 / 0.35);
-  /* An elapsed / out-of-month day cell in the month grid, and the day number
-     inside it. The design's `.day-cell.past` pair. */
-  --t-past-cell: #eef0f2;
-  --t-past-ink: #b0b5bd;
+  /* Text drawn on top of the accent (buttons, solid tags, checked boxes).
+     Stays white in both themes because the accent stays a mid-purple; a
+     future theme can move it without touching a single call site. */
+  --t-on-accent: #ffffff;
+
+  /* Status roles beyond danger/success. These alias the category ramp on
+     purpose — the ramp already has light and dark values tuned for both
+     small marks and callout surfaces — so a `var()` here needs no dark
+     restatement. `info` had no token at all before; `warn` had ink only. */
+  --t-info: var(--t-cat-blue);
+  --t-info-tint: var(--t-cat-blue-tint);
+  --t-info-line: var(--t-cat-blue-line);
+  --t-info-ink: var(--t-cat-blue-ink);
+  --t-warn: var(--t-cat-amber);
+  --t-warn-tint: var(--t-cat-amber-tint);
+  --t-warn-line: var(--t-cat-amber-line);
+  --t-danger-tint: var(--t-cat-red-tint);
+  --t-danger-line: var(--t-cat-red-line);
+  --t-success-tint: var(--t-cat-green-tint);
+  --t-success-line: var(--t-cat-green-line);
+
+  /* Text selection and the search-match `mark`. One name so a theme can
+     decouple them from the accent tint later. */
+  --t-selection: var(--t-accent-tint);
+  --t-selection-ink: var(--t-accent-deep);
+
+  /* Elevation. Restated in dark: a slate shadow at 6% is invisible on
+     #0e1013, so dark leans on black at a higher alpha. */
+  --t-shadow-card: 0 1px 0.1875rem rgb(15 23 42 / 0.06);
+  --t-shadow-modal: 0 1.875rem 4.375rem rgb(15 23 42 / 0.22);
+  --t-shadow-pop: 0 2px 0.5rem rgb(15 23 42 / 0.08);
+  /* The glow under the splash's primary button — follows a custom accent. */
+  --t-shadow-accent: 0 0.25rem 1rem color-mix(in srgb, var(--t-accent) 30%, transparent);
 
   /* shadcn's components read --radius directly, not through @theme. */
   --radius: 0;
@@ -214,19 +216,17 @@
  * redesign never drew them, `ThemeName` names two, and `AppContext`'s THEMES
  * validates against those two.
  *
- * This block redefines only the `--t-*` properties whose *value* changes.
- * Every legacy alias that is already a `var()` of one of them (`--t-app-bg`,
- * `--t-chrome`, `--t-line`, `--t-txt`, …) follows for free and is deliberately
- * not repeated; the ones carrying a literal in `:root` (`--t-fill-strong`,
- * `--t-past-*`) are restated here because nothing else would move them. The
- * three font stacks don't change at all.
+ * This block redefines only the `--t-*` properties whose *value* changes; the
+ * ones carrying a literal in `:root` (`--t-subtle-strong`, `--t-past-*`) are
+ * restated here because nothing else would move them. The three font stacks
+ * don't change at all.
  *
  * Everything the app paints reaches these through `@theme inline`, which emits
  * `var(--t-…)` into the utilities rather than copying the light value, so this
  * override repaints the whole app — including Radix portals, which render at
  * the end of <body> and are still inside <html data-theme>.
  */
-[data-theme='dark'] {
+[data-theme="dark"] {
   /* The counterpart of `color-scheme: light` on :root. This is what keeps a
      native date/time picker from rendering black-on-black in the wrong theme
      — the redesign's date and time inputs make it load-bearing again. */
@@ -262,7 +262,7 @@
   --t-accent-tint: #241a33;
 
   /* Text. Slightly off-white rather than #fff — full white on a near-black
-     surface haloes at 11–13px, which is most of this app's type. */
+     surface haloes at 11–0.8125rem, which is most of this app's type. */
   --t-ink: #e8eaed;
   --t-ink-secondary: #a0a6b0;
   --t-ink-muted: #6f757f;
@@ -332,27 +332,28 @@
      between a lit dialog and a dark page is smaller to begin with. */
   --t-scrim: rgb(0 0 0 / 0.6);
 
-  /*
-   * Legacy aliases that carry a literal in :root, and so would otherwise stay
-   * light. Everything else in that block is a var() and follows on its own.
-   */
-  --t-fill-strong: #23262d;
+  --t-subtle-strong: #23262d;
 
   /*
    * The calendar sheet.
    *
    * Per CLAUDE.md § Theming the sheet *follows* the theme rather than
-   * inverting it, so in dark it is a dark surface just above `--t-app-bg`
-   * — which is exactly what `--t-surface` already is. They are restated
-   * explicitly all the same: `--t-grid-line` and `--t-past-x` are the sheet's
-   * own cell border and the strike through an elapsed day, and if they don't
-   * flip with the surface the grid loses its lines and the past loses its
-   * crosses. Light's `rgb(26 32 44 / .35)` X is invisible on #17191e.
+   * inverting it, so in dark it is a dark surface just above the page —
+   * which is exactly what `--t-surface` already is. Past/outside cells are
+   * restated all the same: the light-theme greys (#f3f4f6, #dfe2e7) both read
+   * as *lighter* than #17191e, which would make an elapsed day glow instead
+   * of dim. Dark past/outside sit between `--t-page` (#0e1013) and
+   * `--t-surface`, darker than the surface rather than lighter — past closer
+   * to the surface, outside closer to the page.
    */
-  --t-grid-line: #2a2d34;
-  --t-past-x: rgb(232 234 237 / 0.28);
   --t-past-cell: #131519;
   --t-past-ink: #5a6069;
+  --t-outside-cell: #0f1114;
+  --t-outside-ink: #4a5058;
+
+  --t-shadow-card: 0 1px 0.1875rem rgb(0 0 0 / 0.35);
+  --t-shadow-modal: 0 1.875rem 4.375rem rgb(0 0 0 / 0.7);
+  --t-shadow-pop: 0 2px 0.5rem rgb(0 0 0 / 0.5);
 }
 
 @theme inline {
@@ -372,6 +373,7 @@
   --color-line: var(--t-border);
   --color-line-strong: var(--t-border-strong);
   --color-subtle: var(--t-subtle);
+  --color-subtle-strong: var(--t-subtle-strong);
 
   --color-accent: var(--t-accent);
   --color-accent-hover: var(--t-accent-hover);
@@ -412,8 +414,27 @@
   --color-cat-teal-ink: var(--t-cat-teal-ink);
 
   --color-danger: var(--t-danger);
+  --color-danger-tint: var(--t-danger-tint);
+  --color-danger-line: var(--t-danger-line);
   --color-success: var(--t-success);
+  --color-success-tint: var(--t-success-tint);
+  --color-success-line: var(--t-success-line);
+  --color-warn: var(--t-warn);
+  --color-warn-tint: var(--t-warn-tint);
+  --color-warn-line: var(--t-warn-line);
+  --color-warn-ink: var(--t-warn-ink);
+  --color-info: var(--t-info);
+  --color-info-tint: var(--t-info-tint);
+  --color-info-line: var(--t-info-line);
+  --color-info-ink: var(--t-info-ink);
+  --color-on-accent: var(--t-on-accent);
+  --color-selection: var(--t-selection);
+  --color-selection-ink: var(--t-selection-ink);
   --color-scrim: var(--t-scrim);
+  /* Previously reachable only through a raw `var()` in an inline style. */
+  --color-line-subtle: var(--t-border-subtle);
+  --color-icon-idle: var(--t-icon-idle);
+  --color-page-shade: var(--t-page-shade);
 
   /* ── Radius ───────────────────────────────────────────────────────────
      Every key in Tailwind's radius namespace is zeroed, so `rounded-lg` in a
@@ -430,26 +451,24 @@
   --radius-4xl: 0;
 
   /* ── Shadows ──────────────────────────────────────────────────────────*/
-  --shadow-card: 0 1px 3px rgb(15 23 42 / 0.06);
-  --shadow-modal: 0 30px 70px rgb(15 23 42 / 0.22);
-  --shadow-pop: 0 2px 8px rgb(15 23 42 / 0.08);
+  --shadow-card: var(--t-shadow-card);
+  --shadow-modal: var(--t-shadow-modal);
+  --shadow-pop: var(--t-shadow-pop);
+  --shadow-accent: var(--t-shadow-accent);
 
   /* ── Type scale ───────────────────────────────────────────────────────
-     The redesign's five real sizes. `micro` is the uppercase 10px label that
+     The redesign's four real sizes. `micro` is the uppercase 0.625rem label that
      sits above inputs and heads every section. */
-  --text-h1: 18px;
-  --text-h1--line-height: 24px;
+  --text-h1: 1.25rem;
+  --text-h1--line-height: 1.75rem;
   --text-h1--font-weight: 700;
-  --text-h2: 14px;
-  --text-h2--line-height: 20px;
-  --text-h2--font-weight: 600;
-  --text-ui: 13px;
-  --text-ui--line-height: 18px;
-  --text-meta: 11px;
-  --text-meta--line-height: 15px;
-  --text-micro: 10px;
-  --text-micro--line-height: 14px;
-  --text-micro--letter-spacing: 0.5px;
+  --text-ui: 0.875rem;
+  --text-ui--line-height: 1.25rem;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1rem;
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1rem;
+  --text-micro--letter-spacing: 0.04em;
   --text-micro--font-weight: 700;
 
   /*
@@ -471,70 +490,163 @@
   --color-popover: var(--t-surface);
   --color-popover-foreground: var(--t-ink);
   --color-primary: var(--t-accent);
-  --color-primary-foreground: #ffffff;
+  --color-primary-foreground: var(--t-on-accent);
   --color-secondary: var(--t-subtle);
   --color-secondary-foreground: var(--t-ink);
   --color-muted: var(--t-subtle);
   --color-muted-foreground: var(--t-ink-secondary);
   --color-destructive: var(--t-danger);
-  --color-destructive-foreground: #ffffff;
+  --color-destructive-foreground: var(--t-on-accent);
   --color-border: var(--t-border);
   --color-input: var(--t-border);
   --color-ring: var(--t-accent);
 
-  /* Legacy utility names, kept alive for the not-yet-migrated screens. */
-  --color-app-bg: var(--t-app-bg);
-  --color-chrome: var(--t-chrome);
-  --color-elevated: var(--t-elevated);
-  --color-fill: var(--t-fill);
-  --color-fill-strong: var(--t-fill-strong);
-  --color-fill-stronger: var(--t-fill-stronger);
-  --color-txt: var(--t-txt);
-  --color-txt-muted: var(--t-txt-muted);
-  --color-txt-faint: var(--t-txt-faint);
-  --color-sheet: var(--t-sheet);
-  --color-sheet-header: var(--t-sheet-header);
-  --color-sheet-line: var(--t-sheet-line);
-  --color-sheet-border: var(--t-sheet-border);
-  --color-sheet-txt: var(--t-sheet-txt);
-  --color-sheet-txt-muted: var(--t-sheet-txt-muted);
-  --color-sheet-txt-faint: var(--t-sheet-txt-faint);
-  --color-past-x: var(--t-past-x);
-  --color-primary-container: var(--t-accent-hover);
+  --color-past-cell: var(--t-past-cell);
+  --color-past-ink: var(--t-past-ink);
+  --color-outside-cell: var(--t-outside-cell);
+  --color-outside-ink: var(--t-outside-ink);
   --color-primary-fixed-dim: var(--t-accent);
-  --color-on-primary: #ffffff;
+  --color-on-primary: var(--t-on-accent);
 }
 
 @theme {
-  /* Spacing aliases the pre-redesign components address by name. The
-     redesign's own scale is the `--space-*` properties on :root. */
-  --spacing-xs: 4px;
-  --spacing-base: 8px;
-  --spacing-sm: 12px;
-  --spacing-md: 24px;
-  --spacing-gutter: 24px;
-  --spacing-margin: 32px;
-  --spacing-lg: 40px;
-  --spacing-xl: 64px;
+  /* Named spacing aliases (`px-sm`, `gap-xs`, `mb-md`) used alongside
+     Tailwind's numeric scale. */
+  --spacing-xs: 0.25rem;
+  --spacing-base: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1.5rem;
+  --spacing-gutter: 1.5rem;
+  --spacing-margin: 2rem;
+  --spacing-lg: 2.5rem;
+  --spacing-xl: 4rem;
+
+  /* Calendar geometry, in rem so Settings › Text size scales the grids too:
+     one hour of the day/week grid, its time-label gutter, and a month/week
+     all-day bar (`lane-h`) plus the 0.125rem gap under it (`lane-row`). */
+  --spacing-hour-h: 3rem;
+  --spacing-gutter-w: 3.5rem;
+  --spacing-lane-h: 1.125rem;
+  --spacing-lane-row: 1.25rem;
 
   /* Legacy type scale — superseded by --text-h1/h2/ui/meta/micro above. */
-  --text-headline-xl: 36px;
-  --text-headline-xl--line-height: 44px;
-  --text-headline-xl--font-weight: 700;
-  --text-headline-lg: 24px;
-  --text-headline-lg--line-height: 32px;
+  --text-headline-lg: 1.5rem;
+  --text-headline-lg--line-height: 2rem;
   --text-headline-lg--font-weight: 700;
-  --text-headline-lg-mobile: 20px;
-  --text-headline-lg-mobile--line-height: 28px;
+  --text-headline-lg-mobile: 1.25rem;
+  --text-headline-lg-mobile--line-height: 1.75rem;
   --text-headline-lg-mobile--font-weight: 600;
-  --text-body-md: 16px;
-  --text-body-md--line-height: 24px;
-  --text-body-sm: 14px;
-  --text-body-sm--line-height: 20px;
-  --text-label-md: 12px;
-  --text-label-md--line-height: 16px;
-  --text-label-md--letter-spacing: 0.5px;
+  --text-body-md: 1rem;
+  --text-body-md--line-height: 1.5rem;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.25rem;
+  --text-label-md: 0.75rem;
+  --text-label-md--line-height: 1rem;
+  --text-label-md--letter-spacing: 0.04em;
   --text-label-md--font-weight: 600;
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ * Custom utilities
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * The handful of class-combinations that were being re-typed at every call
+ * site instead of named once. Each wraps existing Tailwind utilities via
+ * `@apply` so it stays byte-identical to what call sites already wrote —
+ * consolidation, not a new visual language.
+ */
+
+/* The uppercase 0.625rem label above an input, a card's title row, or a
+   sidebar section ("MENU", "CATEGORIES"). `tracking-wider` (0.05em) and the
+   hand-written `tracking-[0.5px]` variants it replaces resolve to the same
+   0.5px at this font size, so this is a pure consolidation, no visual delta. */
+@utility micro-label {
+  @apply text-xs font-bold uppercase tracking-wider text-ink-muted;
+}
+
+/* The Card surface: white ground, hairline border. */
+@utility panel {
+  @apply bg-surface border border-line;
+}
+
+/* A small square icon-only button — calendar nav arrows, the habit-row
+   caret, the today-jump control. */
+@utility icon-btn {
+  @apply w-7 h-7 flex items-center justify-center border border-line hover:border-accent text-ink-secondary hover:text-ink transition-colors;
+}
+
+/* The one text-input recipe (matches `forms/shared.tsx`'s former
+   `inputClass`, the app's most common input). Bakes in its own `:focus`
+   border so a bare `field-input` is a complete, self-sufficient input skin
+   now that the global focus outline (App.css `@layer base`) is gone — a
+   call site doesn't also need `focus:border-accent`. */
+@utility field-input {
+  @apply w-full bg-surface border border-line px-sm py-xs text-body-sm text-ink placeholder:text-ink-muted transition-colors;
+
+  &:focus {
+    outline: none;
+    border-color: var(--t-accent);
+  }
+}
+
+/* A bordered, hoverable row — dashboard list rows, task rows, habit cards. */
+@utility row-hover {
+  @apply border border-line bg-surface hover:border-accent hover:bg-subtle transition-all;
+}
+
+/* The uppercase title inside a card (Settings) — a tighter, ink-coloured
+   micro-label with the card's own bottom gap. */
+@utility card-title {
+  @apply micro-label text-xs text-ink mb-4;
+}
+
+/* ── Buttons (Settings, auth methods, Add modal) ─────────────────────────
+   Utilities rather than component classes so `w-full` / `mt-*` compose. The
+   disabled look is the global 45% opacity from `@layer base`. */
+@utility button-small {
+  @apply bg-surface border border-line text-ink px-[0.875rem] py-[0.375rem] text-xs font-medium cursor-pointer transition-all duration-200 hover:border-accent hover:text-accent;
+}
+
+@utility button-primary {
+  @apply bg-accent text-on-accent border border-accent px-3 py-2 text-sm font-semibold uppercase tracking-wider cursor-pointer transition-all duration-200 hover:bg-accent-hover hover:border-accent-hover;
+}
+
+/* Layered on `button-small` or `button-primary`; later in the file, so it
+   wins the border/colour without `!important`. */
+@utility button-danger {
+  @apply border-danger text-danger hover:border-danger hover:text-danger hover:bg-danger-tint;
+}
+
+/* The one-line status under a form: pair with `text-danger` / `text-success`
+   / `text-ink-muted` for the kind. */
+@utility form-message {
+  @apply text-sm mt-3;
+}
+
+/* The brand gradient — the logo mark and the splash's primary buttons. */
+@utility gradient-accent {
+  background: linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%);
+}
+
+/* Hide a scrollbar without losing scrolling (calendar grids, chip rails). */
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* A selectable pill: category picker, "add a field" rail. Dashed at rest;
+   `data-selected` (or hover) turns it solid in the accent. */
+@utility chip {
+  @apply inline-flex items-center gap-[0.3125rem] px-[0.625rem] py-[0.3125rem] text-sm font-medium text-ink-secondary bg-transparent border border-dashed border-line-strong cursor-pointer transition-colors hover:border-accent hover:text-ink;
+
+  &[data-selected] {
+    @apply border-solid border-accent bg-accent-tint text-accent;
+  }
 }
 
 /*
@@ -556,6 +668,68 @@
   * {
     font-family: var(--t-font-body);
   }
+
+  /*
+   * No default focus outlines.
+   *
+   * Accessibility trade-off, made deliberately: this app draws its own focus
+   * state per control (the `field-input` accent border via `:focus`/
+   * `focus-within`, hover borders, `.input-text:focus`) rather than a generic
+   * ring, so the browser's default outline is switched off everywhere instead
+   * of fighting each of those custom states for the last word. Every
+   * `field-input`-wrapped text field keeps *some* visible response to
+   * keyboard focus through `focus-within:border-accent`; controls without a
+   * hand-drawn state (e.g. the checkbox) lose focus indication entirely.
+   */
+  *:focus,
+  *:focus-visible {
+    outline: none;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input[type="search"]::-webkit-search-decoration,
+  input[type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
+
+  /* Search-match highlight (`Highlighted.tsx`) — the accent tint, not a
+     literal yellow, so it reads as "this app's" rather than a browser default. */
+  mark {
+    background: var(--t-selection);
+    color: inherit;
+  }
+
+  body {
+    background-color: var(--t-page);
+    color: var(--t-ink);
+    font-family: var(--t-font-body);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Global interactive states. In `base` so a call site's `disabled:opacity-*`
+     can still say otherwise. */
+  :disabled,
+  [aria-disabled="true"],
+  [data-disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    background: var(--t-selection);
+    color: var(--t-selection-ink);
+  }
+
+  /* lucide draws stroked SVGs at whatever size the call site passes; these two
+     defaults spare every one of them a `flex-shrink-0` and a stray text cursor. */
+  svg.lucide {
+    flex-shrink: 0;
+    user-select: none;
+  }
 }
 
 /*
@@ -570,1032 +744,160 @@
   border-radius: 0;
 }
 
-body {
-  background-color: var(--t-page);
-  color: var(--t-ink);
-  font-family: var(--t-font-body);
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
+/*
+ * QR scanner (Android) root state. The barcode plugin draws the camera behind
+ * a transparent WebView, so everything but the overlay itself must stop
+ * painting — including the page background. Unlayered: it has to beat the
+ * `body` rule in `base` and any utility on `#root`.
+ */
+html.qr-scanning,
+html.qr-scanning body {
+  background: transparent !important;
+}
+html.qr-scanning #root {
+  visibility: hidden;
 }
 
 /*
- * Global interactive states.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Component classes
+ * ─────────────────────────────────────────────────────────────────────────
  *
- * One focus ring for the whole app rather than a per-component `ring-*`:
- * :focus-visible already excludes mouse clicks, so this is only ever seen by
- * keyboard users, and an outline (unlike a box-shadow ring) can't be clipped
- * by an ancestor's overflow.
+ * Only the handful of page-layout classes that several files share
+ * (`.sidebar*`, `.setting-*`). Everything used by a single component is
+ * written as Tailwind utilities on that component, and phone-only layout is
+ * `max-md:` (Tailwind's `md` = 48rem = 768px = `MOBILE_QUERY` in
+ * `src/useMedia.ts`). In `@layer components` so a utility on the same
+ * element wins — `setting-desc mt-0` means what it says.
  */
-:focus-visible {
-  outline: 2px solid var(--t-accent);
-  outline-offset: 2px;
+@layer components {
+  .sidebar {
+    /* Adjustable via a drag handle, persisted as `__layout_sidebar_w` and
+       applied by `applyLayout()` in AppContext.tsx; the fallback is this same
+       12.5rem for a device with nothing stored yet. */
+    width: var(--layout-sidebar-w, 12.5rem);
+    flex-shrink: 0;
+    background: var(--t-surface);
+    border-right: 1px solid var(--t-border);
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    overflow-y: auto;
+  }
+
+  .sidebar-title {
+    @apply micro-label mb-1;
+  }
+
+  /* Also the category rows (TodoCategories), as a <button>. */
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.375rem 0.5rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--t-ink-secondary);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .sidebar-item svg {
+    flex-shrink: 0;
+    color: inherit;
+  }
+
+  .sidebar-item:hover {
+    background: var(--t-subtle);
+    color: var(--t-ink);
+  }
+
+  .sidebar-item.active {
+    color: var(--t-accent);
+    font-weight: 500;
+  }
+
+  /* The hairline between Settings rows belongs *between* them, so the last
+     row in a card drops it along with its trailing space. */
+  .setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--t-subtle);
+  }
+
+  .setting-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .setting-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--t-ink);
+  }
+
+  .setting-desc {
+    font-size: 0.8125rem;
+    color: var(--t-ink-muted);
+    margin-top: 0.125rem;
+  }
 }
 
-:disabled,
-[aria-disabled='true'],
-[data-disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-::selection {
-  background: var(--t-accent-tint);
-  color: var(--t-accent-deep);
-}
-
-/* lucide draws stroked SVGs at whatever size the call site passes; these two
-   defaults spare every one of them a `flex-shrink-0` and a stray text cursor. */
-svg.lucide {
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.calendar-cell {
-  border-right: 1px solid var(--t-border);
-  border-bottom: 1px solid var(--t-border);
-  transition: background-color 0.15s;
-  display: flex;
-  flex-direction: column;
-}
-
-.calendar-cell:hover {
-  background: var(--t-accent-tint);
-}
-
-/* Hour rules inside the day/week grid — same idea as .calendar-cell borders,
-   exposed as a class so HourGrid doesn't need an inline rgba(). */
-.hour-line {
-  border-top: 1px solid var(--t-border);
-}
-
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* Month swipe (phone). The new month enters from the side it came from — swipe
-   left and the next month follows your thumb in from the right — so the grid
-   reads as one continuous strip rather than a static grid whose numbers
-   changed. The travel is deliberately short (18%): a full-width slide at a
-   duration that still feels responsive looks like a jump-cut.
-
-   The duration comes from `SLIDE_MS` in MonthViewMobile as an inline style, so
-   these keyframes only own the shape. */
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ * Keyframes
+ * ─────────────────────────────────────────────────────────────────────────
+ * Referenced by name from `animate-[…]` utilities in `MonthViewMobile`,
+ * `ui/modal-chrome` and `AddModal`, each paired with `motion-reduce:animate-none`.
+ */
 @keyframes month-slide-next {
-  from { transform: translateX(18%); opacity: 0.4; }
-  to { transform: none; opacity: 1; }
+  from {
+    transform: translateX(18%);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 
 @keyframes month-slide-prev {
-  from { transform: translateX(-18%); opacity: 0.4; }
-  to { transform: none; opacity: 1; }
-}
-
-.month-slide-next {
-  animation: month-slide-next 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.month-slide-prev {
-  animation: month-slide-prev 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .month-slide-next,
-  .month-slide-prev {
-    animation: none;
+  from {
+    transform: translateX(-18%);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
   }
 }
 
-/*
- * ─────────────────────────────────────────────────────────────────────────
- * App shell — sidebar + content + bottom taskbar
- * ─────────────────────────────────────────────────────────────────────────
- *
- * The class names are the design file's own (`.sidebar`, `.sidebar-item`,
- * `.bottom-bar`, …) so a screen package can paste its markup out of the
- * design and land on the right rules. Values come from the `--t-*` tokens,
- * which carry exactly the hexes the design hardcodes.
- */
-.desktop-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-/* The [sidebar][content] row. `overflow: hidden` here is what makes the
-   taskbar a fixed 32px strip rather than something a long page pushes off
-   the bottom of the window. */
-.shell-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* The content slot. A flex *row* by default, matching the design's
-   `.content`, so a screen that is two columns (calendar + right panel) is
-   just two children. `min-width: 0` stops a wide child from pushing the
-   sidebar off-screen. */
-.shell-content {
-  flex: 1;
-  display: flex;
-  min-width: 0;
-  background: var(--t-surface);
-  overflow: hidden;
-}
-
-/* ── Sidebar ──────────────────────────────────────────────────────────── */
-.sidebar {
-  width: 200px;
-  flex-shrink: 0;
-  background: var(--t-surface);
-  border-right: 1px solid var(--t-border);
-  padding: 24px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  overflow-y: auto;
-}
-
-.sidebar-logo {
-  font-family: var(--t-font-heading);
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--t-ink);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.logo-mark {
-  width: 20px;
-  height: 20px;
-  background: linear-gradient(135deg, var(--t-accent) 0%, var(--t-accent-deep) 100%);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--t-font-heading);
-  font-size: 12px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.sidebar-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sidebar-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--t-ink-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--t-ink-secondary);
-  text-decoration: none;
-  transition: all 0.2s;
-}
-
-.sidebar-item svg {
-  flex-shrink: 0;
-  color: inherit;
-}
-
-.sidebar-item:hover {
-  background: var(--t-subtle);
-  color: var(--t-ink);
-}
-
-.sidebar-item.active {
-  color: var(--t-accent);
-  font-weight: 500;
-}
-
-/* The page-specific second section (Categories, filters, …). Collapsed when
-   the current screen supplies nothing, or the sidebar's 24px gap would leave
-   a hole under Menu. */
-.sidebar-slot:empty {
-  display: none;
-}
-
-/* ── Category items ───────────────────────────────────────────────────── */
-/* Written to work as a <button> as well as a <div>: a category row toggles
-   something, so it should be reachable by keyboard and carry aria-pressed. */
-.category-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  cursor: pointer;
-  font-size: 12px;
-  text-align: left;
-  background: none;
-  border: none;
-  color: inherit;
-  font-family: inherit;
-  transition: all 0.2s;
-}
-
-.category-item:hover {
-  background: var(--t-subtle);
-}
-
-.category-check {
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--t-border-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  color: var(--t-accent);
-  flex-shrink: 0;
-}
-
-.category-check.checked {
-  background: var(--t-accent);
-  border-color: var(--t-accent);
-  color: white;
-}
-
-.category-color {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-}
-
-.category-name {
-  flex: 1;
-  min-width: 0;
-  color: var(--t-ink);
-}
-
-.category-count {
-  font-size: 11px;
-  color: var(--t-ink-muted);
-}
-
-/* ── Bottom taskbar ───────────────────────────────────────────────────── */
-.bottom-bar {
-  height: 32px;
-  flex-shrink: 0;
-  background: var(--t-surface);
-  border-top: 1px solid var(--t-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  font-size: 11px;
-  color: var(--t-ink-secondary);
-}
-
-.bar-version {
-  font-weight: 600;
-  color: var(--t-ink);
-}
-
-.bar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.bar-sync {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-}
-
-.bar-sync:hover {
-  color: var(--t-accent);
-}
-
-.bar-divider {
-  width: 1px;
-  height: 14px;
-  background: var(--t-border);
-}
-
-.bar-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.user-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  background: var(--t-accent);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 600;
-}
-
-/* Below the breakpoint the shell and its content both stack: the sidebar
-   becomes a full-width band above the page instead of a column beside it. */
-@media (max-width: 768px) {
-  .shell-body {
-    flex-direction: column;
-  }
-
-  .shell-content {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--t-border);
-    padding: 16px;
-  }
-}
-
-/* ── To-Do View Redesign ──────────────────────────────────────────────── */
-
-/* Text size utilities for the redesign */
-.text-h1 {
-  font-size: var(--text-h1);
-  line-height: var(--text-h1--line-height);
-  font-weight: var(--text-h1--font-weight);
-}
-
-.text-h2 {
-  font-size: var(--text-h2);
-  line-height: var(--text-h2--line-height);
-  font-weight: var(--text-h2--font-weight);
-}
-
-.text-ui {
-  font-size: var(--text-ui);
-  line-height: var(--text-ui--line-height);
-}
-
-.text-meta {
-  font-size: var(--text-meta);
-  line-height: var(--text-meta--line-height);
-}
-
-.text-micro {
-  font-size: var(--text-micro);
-  line-height: var(--text-micro--line-height);
-  letter-spacing: var(--text-micro--letter-spacing);
-  font-weight: var(--text-micro--font-weight);
-}
-
-/* Shadow utilities for cards */
-.shadow-card {
-  box-shadow: var(--shadow-card);
-}
-
-.shadow-pop {
-  box-shadow: var(--shadow-pop);
-}
-
-.shadow-modal {
-  box-shadow: var(--shadow-modal);
-}
-
-/* Color utilities for text */
-.text-ink {
-  color: var(--t-ink);
-}
-
-.text-ink-secondary {
-  color: var(--t-ink-secondary);
-}
-
-.text-ink-muted {
-  color: var(--t-ink-muted);
-}
-
-/* Background utilities */
-.bg-page {
-  background-color: var(--t-page);
-}
-
-.bg-surface {
-  background-color: var(--t-surface);
-}
-
-.bg-subtle {
-  background-color: var(--t-subtle);
-}
-
-.bg-accent-tint {
-  background-color: var(--t-accent-tint);
-}
-
-/* Border utilities */
-.border-border {
-  border-color: var(--t-border);
-}
-
-.border-border-strong {
-  border-color: var(--t-border-strong);
-}
-
-/* Accent color utilities */
-.text-accent {
-  color: var(--t-accent);
-}
-
-.bg-accent {
-  background-color: var(--t-accent);
-}
-
-.bg-accent-hover {
-  background-color: var(--t-accent-hover);
-}
-
-/* ── Mobile Dashboard (Package 09) ───────────────────────────────────────── */
-
-@media (max-width: 768px) {
-  /* Hide desktop sidebar on mobile */
-  .sidebar {
-    display: none;
-  }
-
-  /* Hide desktop bottom bar on mobile */
-  .bottom-bar {
-    display: none;
-  }
-
-  /* Shell content fills available space on mobile */
-  .shell-content {
-    flex-direction: column;
-  }
-
-  /* The way back from a non-dashboard route on a phone. HomeView brings its
-     own header and tabs; every other screen would otherwise sit here with no
-     navigation at all, because .sidebar and .bottom-bar are hidden above. */
-  .mobile-route-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-8);
-    height: 40px;
-    flex-shrink: 0;
-    padding: 0 var(--space-8);
-    background: var(--t-surface);
-    border-bottom: 1px solid var(--t-border);
-  }
-
-  .mobile-route-back {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--t-accent);
-    cursor: pointer;
-  }
-
-  .mobile-route-title {
-    font-size: 14px;
-    font-weight: 700;
-    font-family: var(--t-font-heading);
-    color: var(--t-ink);
-    flex: 1;
-    text-align: center;
-    /* Balances the back button so the title sits centred in the bar. */
-    margin-right: 72px;
-  }
-
-  /* Mobile shell uses full height */
-  .mobile-shell {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    width: 100%;
-    background: var(--t-page);
-  }
-
-  /* Mobile Header (40px) */
-  .mobile-header {
-    height: 40px;
-    background: var(--t-surface);
-    border-bottom: 1px solid var(--t-border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 var(--space-8);
-    z-index: 10;
-    flex-shrink: 0;
-  }
-
-  .mobile-header-title {
-    font-size: 14px;
-    font-weight: 700;
-    font-family: var(--t-font-heading);
-    color: var(--t-ink);
-    flex: 1;
-    text-align: center;
-  }
-
-  .mobile-header-buttons {
-    display: flex;
-    gap: var(--space-8);
-  }
-
-  .mobile-header-button {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--t-subtle);
-    color: var(--t-ink);
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .mobile-header-button:active {
-    background: var(--t-border);
-  }
-
-  /* Screen Container (scrollable content area) */
-  .mobile-screen-container {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    position: relative;
-    background: var(--t-page);
-  }
-
-  /* Individual Screens */
-  .mobile-screen {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* Calendar section (bounded height in dashboard) */
-  .mobile-calendar-section {
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--t-border);
-    padding: var(--space-8);
-  }
-
-  /* Content sections with padding */
-  .mobile-content-section {
-    padding: var(--space-8) var(--space-8) 80px var(--space-8);
-  }
-
-  /* Bottom Tabs (60px) */
-  .mobile-tabs {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: 60px;
-    background: var(--t-surface);
-    border-top: 1px solid var(--t-border);
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    z-index: 20;
-    gap: var(--space-8);
-  }
-
-  /* Tab Buttons */
-  .mobile-tab {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-4);
-    cursor: pointer;
-    color: var(--t-ink-muted);
-    font-size: 10px;
-    font-weight: 600;
-    transition: all 0.2s;
-    padding: var(--space-8);
-    background: none;
-    border: none;
-    min-height: 44px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .mobile-tab:active {
-    background: var(--t-subtle);
-  }
-
-  .mobile-tab.active {
-    color: var(--t-accent);
-  }
-
-  .mobile-tab-icon {
-    font-size: 18px;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-
-  .mobile-tab-icon svg {
-    width: 18px;
-    height: 18px;
-    stroke-width: 1.5;
-  }
-
-  .mobile-tab-label {
-    font-size: 10px;
-    font-weight: 600;
-  }
-}
-
-/* ── To-Do / Habits shared pieces ────────────────────────────────────────── */
-
-/* The section band above a group of tasks. Colour is per-section and comes
-   from the call site; everything else is fixed by the design. */
-.task-section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 10px;
-  padding: 4px 8px;
-  border: none;
-  font-family: inherit;
-}
-
-.task-section-count {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: none;
-}
-
-.task-section-toggle {
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid currentColor;
-  font-size: 11px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-/* The one floating add button, shared by To-Do and Habits so the two screens
-   cannot drift apart on the corner of the window they share. */
-.add-fab {
-  position: fixed;
-  bottom: 40px;
-  right: 32px;
-  width: 56px;
-  height: 56px;
-  background: var(--t-accent);
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  font-size: 28px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgb(168 85 247 / 0.3);
-  transition: all 0.2s;
-}
-
-.add-fab:hover {
-  background: var(--t-accent-hover);
-}
-
-.add-fab:active {
-  transform: scale(0.95);
-}
-
-/* ── Settings Page (Package 06) ──────────────────────────────────────────── */
-
-/*
- * The settings card grid. A class rather than an inline `gridTemplateColumns`,
- * because an inline style cannot respond to a media query and the design
- * collapses this to one column at 768px.
- */
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  align-items: start;
-}
-
-@media (max-width: 768px) {
-  .cards-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* A card that spans both columns (Account & Sign-in's table). */
-.span-2 {
-  grid-column: 1 / -1;
-}
-
-/* The full-width content column: a padded, independently scrolling flex child
-   of `.shell-content`. `.panel-main` additionally pins its height, because the
-   screen inside it (WeightPanel) sizes itself with `h-full` and would collapse
-   to nothing against an `auto` height. */
-.settings-main,
-.panel-main {
-  flex: 1;
-  min-width: 0;
-  padding: 32px;
-  overflow-y: auto;
-}
-
-.panel-main {
-  min-height: 0;
-  height: 100%;
-}
-
-@media (max-width: 768px) {
-  .settings-main,
-  .panel-main {
-    padding: 20px;
-  }
-}
-
-.settings-card {
-  background: var(--t-surface);
-  border: 1px solid var(--t-border);
-  padding: 24px;
-}
-
-/* The page's own title block — the design's `.settings-header`. */
-.settings-header {
-  margin-bottom: 24px;
-}
-
-.settings-header h1 {
-  font-size: 22px;
-  font-weight: 700;
-  font-family: var(--t-font-heading);
-  color: var(--t-ink);
-  margin: 0 0 6px 0;
-}
-
-.settings-header p {
-  font-size: 13px;
-  color: var(--t-ink-secondary);
-  margin: 0;
-}
-
-/* Profile avatar. Initials, not an image — there is nowhere to store one. */
-.avatar-box {
-  width: 64px;
-  height: 64px;
-  background: var(--t-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 24px;
-  font-weight: 600;
-  font-family: var(--t-font-heading);
-  flex-shrink: 0;
-}
-
-/* A row of `.seg-opt` buttons (Theme, Week starts on, Weight unit). */
-.seg-group {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* The Account & Sign-in credential table. */
-.sw-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.sw-table th {
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--t-border);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--t-ink-muted);
-  font-weight: 700;
-}
-
-.sw-table td {
-  padding: 10px;
-  border-bottom: 1px solid var(--t-subtle);
-  color: var(--t-ink);
-}
-
-.sw-table tr:last-child td {
-  border-bottom: none;
-}
-
-.type-pill {
-  display: inline-block;
-  padding: 3px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.card-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--t-ink);
-  margin: 0 0 16px 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* The hairline between rows belongs *between* them, so the last row in a card
-   drops it along with its trailing space. An inline style could not express
-   the :last-child half of that. */
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--t-subtle);
-}
-
-.setting-item:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-.setting-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--t-ink);
-}
-
-.setting-desc {
-  font-size: 11px;
-  color: var(--t-ink-muted);
-  margin-top: 2px;
-}
-
-.button-small {
-  /* The token, not the design's literal white — same value today, but it
-     survives a palette change instead of stranding one white chip. */
-  background: var(--t-surface);
-  border: 1px solid var(--t-border);
-  color: var(--t-ink);
-  padding: 6px 14px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.button-small:hover {
-  border-color: var(--t-accent);
-  color: var(--t-accent);
-}
-
-.button-small:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.button-primary {
-  background: var(--t-accent);
-  color: white;
-  border: 1px solid var(--t-accent);
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.button-primary:hover {
-  background: var(--t-accent-hover);
-  border-color: var(--t-accent-hover);
-}
-
-.button-primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.button-danger {
-  border-color: var(--t-danger) !important;
-  color: var(--t-danger) !important;
-}
-
-.button-danger:hover {
-  background: rgb(239 68 68 / 0.1);
-}
-
-.input-text {
-  background: var(--t-surface);
-  /* 1px, matching Settings' `.input-text`. The 2px border belongs to the
-     auth card's inputs, which are a different, larger control. */
-  border: 1px solid var(--t-border);
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--t-ink);
-  font-family: inherit;
-  width: 200px;
-  transition: all 0.2s;
-}
-
-/* Pointer focus gets the design's purple border and nothing else; a keyboard
-   focus additionally keeps the app-wide outline, which `outline: none` on the
-   broader `:focus` would otherwise have taken away from it. */
-.input-text:focus {
-  outline: none;
-  border-color: var(--t-accent);
-}
-
-.input-text:focus-visible {
-  outline: 2px solid var(--t-accent);
-  outline-offset: 2px;
-}
-
-.seg-opt {
-  padding: 7px 14px;
-  border: 1px solid var(--t-border);
-  background: var(--t-surface);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--t-ink-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.seg-opt:hover {
-  border-color: var(--t-accent);
-  color: var(--t-accent);
-}
-
-.seg-opt.active {
-  border-color: var(--t-accent);
-  color: var(--t-accent);
-  background: var(--t-accent-tint);
-}
-
-/* ── Add Modal ───────────────────────────────────────────────────────────── */
-
-/* The modal's entrance and the reveal of an optional field row. Here rather
-   than in a <style> tag inside AddModal, which re-inserted both rules into
-   the head on every mount. */
 @keyframes modalIn {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(0.625rem) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes rowIn {
-  from { opacity: 0; transform: translateY(-4px); max-height: 0; }
-  to { opacity: 1; transform: none; max-height: 240px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  @keyframes modalIn {
-    from { opacity: 1; transform: none; }
-    to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    max-height: 15rem;
   }
 }

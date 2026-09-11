@@ -1,12 +1,34 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
-import type { AddType, CalendarEvent, Recurrence, Repeat, Todo } from '../types';
+import { useRef, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from './ui/button';
+import { ModalChrome } from './ui/modal-chrome';
+import { Segmented } from './ui/segmented';
+import { Dot } from './ui/tag';
+import { Switch } from './ui/switch';
+import type { AddType, CalendarEvent, CategoryScope, Todo } from '../types';
 import { useApp } from '../context/AppContext';
-import { DEFAULT_COLOR, TODO_CATEGORIES } from '../colors';
-import { fmt } from '../dates';
+import { colorHex, DEFAULT_COLOR, PALETTE_COMPACT } from '../colors';
+import { buildCreate, type EventRepeat, type HabitFreq, type Priority } from '../createItem';
+import { addDays, addMinutes, diffDays, fmt, nowFloor15 } from '../dates';
+import { describeWhen, stripMatch, useNlDate, type NlDateMatch } from '../nlDate';
 import TodoForm from './forms/TodoForm';
 import EventForm from './forms/EventForm';
+import DateField from './forms/DateField';
+import type { CommitResult } from './forms/shared';
+import { useModalDismiss } from './ui/useModalDismiss';
 
-type FieldKey = 'allday' | 'repeat' | 'reminder' | 'location' | 'color' | 'desc' | 'due' | 'priority' | 'category' | 'target';
+type FieldKey =
+  | 'allday'
+  | 'repeat'
+  | 'reminder'
+  | 'location'
+  | 'color'
+  | 'desc'
+  | 'due'
+  | 'priority'
+  | 'category'
+  | 'target';
 
 const CATALOG: Record<AddType, Array<{ key: FieldKey; label: string }>> = {
   event: [
@@ -14,36 +36,39 @@ const CATALOG: Record<AddType, Array<{ key: FieldKey; label: string }>> = {
     { key: 'repeat', label: 'Repeat' },
     { key: 'reminder', label: 'Reminder' },
     { key: 'location', label: 'Location' },
+    { key: 'category', label: 'Category' },
     { key: 'color', label: 'Color' },
-    { key: 'desc', label: 'Description' }
+    { key: 'desc', label: 'Description' },
   ],
   task: [
     { key: 'due', label: 'Due date' },
     { key: 'priority', label: 'Priority' },
     { key: 'category', label: 'List' },
     { key: 'reminder', label: 'Reminder' },
-    { key: 'desc', label: 'Description' }
+    { key: 'desc', label: 'Description' },
   ],
   habit: [
     { key: 'target', label: 'Daily target' },
+    { key: 'category', label: 'Category' },
     { key: 'reminder', label: 'Reminder' },
     { key: 'color', label: 'Color' },
-    { key: 'desc', label: 'Description' }
-  ]
+    { key: 'desc', label: 'Description' },
+  ],
 };
 
 const PLACEHOLDERS: Record<AddType, string> = {
   event: 'Team sync, dentist, flight…',
   task: 'What needs doing?',
-  habit: 'Read, run, meditate…'
+  habit: 'Read, run, meditate…',
 };
 
-// Suggestions, not an enumeration — `Todo.category` is free text. The list and
-// its colours live in `src/colors.ts` so the Add modal and the To-Do sidebar
-// cannot disagree about what colour "Work" is; they used to.
-const CATEGORIES = TODO_CATEGORIES.map(c => ({ label: c.label, color: c.hex }));
+/** Which `categoriesFor()` scope each Add-modal type's category chip offers. */
+const SCOPE_FOR: Record<AddType, CategoryScope> = { event: 'calendar', task: 'tasks', habit: 'habits' };
 
-const PALETTE = ['#a855f7', '#3b82f6', '#14b8a6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#6b7280'];
+const PALETTE = PALETTE_COMPACT;
+
+/** One optional field's row, revealed with the `rowIn` keyframes (App.css). */
+const FIELD_ROW = 'flex items-center gap-2.5 animate-[rowIn_0.2s_ease_both] motion-reduce:animate-none';
 
 interface Props {
   onClose: () => void;
@@ -55,7 +80,13 @@ interface Props {
   editEventDate?: string | null;
   /** Pre-fill the date fields, e.g. when adding from a calendar day. */
   defaultDate?: string | null;
+  /** Pre-fill the start time (`HH:MM`), e.g. when adding from an hour slot. */
+  defaultStartTime?: string;
+  /** Pre-fill the title, e.g. what a quick-add line already holds. */
+  defaultTitle?: string;
   defaultType?: AddType;
+  /** Pre-fill (and switch on) the task's List by category id, e.g. from a category header. */
+  defaultCategory?: string;
   /** Optional observer. The modal persists by itself either way. */
   onSubmit?: (data: SubmitData) => void;
   snappiness?: number;
@@ -72,24 +103,12 @@ const REMINDER_MINUTES: Record<string, number> = {
   'At time': 0,
   '10 min': 10,
   '1 hour': 60,
-  '1 day': 1440
+  '1 day': 1440,
 };
 
-const REPEAT_OPTIONS = ['Never', 'Daily', 'Weekly', 'Monthly'] as const;
-
-/** Now, rounded down to a quarter hour. */
-function nowFloor15(): string {
-  const d = new Date();
-  d.setMinutes(Math.floor(d.getMinutes() / 15), 0, 0);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** `hh:mm` plus N minutes, clamped to 23:59. */
-function addMinutes(time: string, mins: number): string {
-  const [h, m] = time.split(':').map(Number);
-  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
+const REPEAT_OPTIONS: EventRepeat[] = ['Never', 'Daily', 'Weekly', 'Monthly'];
+const FREQ_OPTIONS: HabitFreq[] = ['Daily', 'Weekdays', 'Weekly'];
+const PRIORITY_OPTIONS: Priority[] = ['Low', 'Normal', 'High'];
 
 /**
  * Two modes behind one prop surface:
@@ -103,63 +122,121 @@ export default function AddModal(props: Props) {
   return <CreateModal {...props} />;
 }
 
-function EditModal({ onClose, editTodo, editEvent, editEventDate, defaultDate }: Props) {
+/** One optional field: caps label, control, and the "×" that removes it. */
+function FieldRow({
+  label,
+  onRemove,
+  align = 'center',
+  children,
+}: {
+  label: string;
+  onRemove: () => void;
+  /** `start` for a control taller than one line (chips, textarea). */
+  align?: 'center' | 'start';
+  children: ReactNode;
+}) {
+  const top = align === 'start';
   return (
-    <div
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-      style={{
-        position: 'fixed', inset: 0, display: 'flex', alignItems: 'flex-start',
-        justifyContent: 'center', padding: '6vh 32px 32px 32px',
-        background: 'var(--t-scrim)', backdropFilter: 'blur(3px)', zIndex: 50
-      }}
-    >
-      <div
-        style={{
-          width: '470px', maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto',
-          background: 'var(--t-surface)', border: '1px solid var(--t-border)',
-          boxShadow: 'var(--shadow-modal)',
-          animation: 'modalIn .22s cubic-bezier(.2,.8,.3,1) both'
-        }}
+    <div className={cn(FIELD_ROW, top && 'items-start')}>
+      <span className={cn('micro-label w-[4.625rem] shrink-0', top && 'pt-[0.3125rem]')}>{label}</span>
+      {children}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${label}`}
+        className={cn(
+          'flex size-[1.375rem] shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-icon-idle transition-colors hover:text-ink',
+          top && 'mt-1',
+        )}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '18px 20px 0 20px' }}>
-          <div style={{ fontFamily: 'var(--t-font-heading)', fontSize: '16px', fontWeight: 600, letterSpacing: '-.01em' }}>
-            {editEvent ? 'Edit event' : 'Edit to-do'}
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              width: '26px', height: '26px', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', background: 'transparent', border: 'none',
-              color: 'var(--t-ink-muted)', cursor: 'pointer'
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M5 5l14 14M19 5L5 19" />
-            </svg>
-          </button>
-        </div>
-        <div style={{ padding: '18px 20px 20px 20px' }}>
-          {editTodo
-            ? <TodoForm edit={editTodo} defaultDate={defaultDate} onDone={onClose} />
-            : <EventForm edit={editEvent} occurrenceDate={editEventDate} defaultDate={defaultDate} onDone={onClose} />}
-        </div>
-      </div>
+        <X size="0.6875rem" strokeWidth={2.4} />
+      </button>
     </div>
   );
 }
 
-function CreateModal({ onClose, defaultDate, defaultType, onSubmit, snappiness = 1 }: Props) {
-  const { addEvent, addTodo, selectedDate } = useApp();
+/** A square colour swatch; the selected one carries an ink outline. */
+function Swatch({
+  hex,
+  selected,
+  onClick,
+  className,
+}: {
+  hex: string;
+  selected: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={hex}
+      aria-pressed={selected}
+      onClick={onClick}
+      className={cn(
+        'shrink-0 border-0 cursor-pointer outline-2 outline-offset-2 transition-[outline-color]',
+        selected ? 'outline-ink' : 'outline-transparent',
+        className,
+      )}
+      // dynamic: the swatch is the colour it offers
+      style={{ background: hex }}
+    />
+  );
+}
+
+/**
+ * Leaving an edit saves it. Every dismissal — scrim, ×, Escape, Android
+ * back — runs the form's `commit()` first and only stays open when the
+ * form has something it cannot save (an end before its start). An untouched
+ * form is a no-op, so idly opening and closing never writes a row.
+ */
+function EditModal({ onClose, editTodo, editEvent, editEventDate, defaultDate }: Props) {
+  const commitRef = useRef<(() => CommitResult) | null>(null);
+  const dismiss = () => {
+    const result = commitRef.current?.() ?? 'empty';
+    if (result !== 'invalid') onClose();
+  };
+  useModalDismiss(dismiss);
+
+  return (
+    <ModalChrome title={editEvent ? 'Edit event' : 'Edit to-do'} onClose={dismiss}>
+      <div className="px-5 pt-[1.125rem] pb-5">
+        {editTodo ? (
+          <TodoForm edit={editTodo} defaultDate={defaultDate} onDone={onClose} commitRef={commitRef} />
+        ) : (
+          <EventForm
+            edit={editEvent}
+            occurrenceDate={editEventDate}
+            defaultDate={defaultDate}
+            onDone={onClose}
+            commitRef={commitRef}
+          />
+        )}
+      </div>
+    </ModalChrome>
+  );
+}
+
+function CreateModal({
+  onClose,
+  defaultDate,
+  defaultStartTime,
+  defaultTitle,
+  defaultType,
+  defaultCategory,
+  onSubmit,
+  snappiness = 1,
+}: Props) {
+  const { addEvent, addTodo, selectedDate, categoriesFor, addCategory } = useApp();
   const initialDate = defaultDate ?? selectedDate ?? fmt(new Date());
-  const initialStart = nowFloor15();
+  const initialStart = defaultStartTime ?? nowFloor15();
 
   const [type, setType] = useState<AddType>(defaultType ?? 'event');
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(defaultTitle ?? '');
   const [on, setOn] = useState<Record<AddType, Set<FieldKey>>>({
     event: new Set(),
-    task: new Set(),
-    habit: new Set()
+    task: new Set<FieldKey>(defaultCategory ? ['category'] : []),
+    habit: new Set(),
   });
   const [allDay, setAllDay] = useState(false);
   const [startDate, setStartDate] = useState(initialDate);
@@ -169,13 +246,81 @@ function CreateModal({ onClose, defaultDate, defaultType, onSubmit, snappiness =
   const [dueDate, setDueDate] = useState(initialDate);
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
-  const [freq, setFreq] = useState('Daily');
-  const [repeat, setRepeat] = useState<string>('Never');
-  const [priority, setPriority] = useState('Normal');
-  const [category, setCategory] = useState('Personal');
+  const [freq, setFreq] = useState<HabitFreq>('Daily');
+  const [repeat, setRepeat] = useState<EventRepeat>('Never');
+  const [priority, setPriority] = useState<Priority>('Normal');
+  const [category, setCategory] = useState(defaultCategory ?? '');
   const [target, setTarget] = useState(1);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
+  // Whether the user has actually clicked a swatch in the Color field — an
+  // event's color follows its category (below) only until this happens.
+  const [colorTouched, setColorTouched] = useState(false);
   const [reminders, setReminders] = useState<Record<string, boolean>>({ '10 min': true });
+  const [newCatOpen, setNewCatOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatColor, setNewCatColor] = useState<string>(PALETTE[0]);
+
+  const catOptions = categoriesFor(SCOPE_FOR[type]);
+  const categoryFieldLabel = CATALOG[type].find((c) => c.key === 'category')?.label ?? 'Category';
+
+  function createCategory() {
+    const name = newCatName.trim();
+    if (!name) return;
+    const created = addCategory({ name, colorKey: newCatColor, scopes: [SCOPE_FOR[type]], sort: catOptions.length });
+    setCategory(created.id);
+    setNewCatOpen(false);
+    setNewCatName('');
+  }
+
+  // Natural-language date suggestion (Phase H). `dateTouched` tracks whether
+  // the user has hand-edited any date/time field or already used Apply — a
+  // suggestion only auto-applies on submit when nothing has, so it never
+  // silently overrides a date the user actually chose.
+  const suggestion = useNlDate(title);
+  const suggestionKey = suggestion ? `${suggestion.matched.index}:${suggestion.matched.text}` : null;
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const dismissed = suggestionKey !== null && suggestionKey === dismissedKey;
+  const showSuggestion = suggestion != null && !dismissed;
+  const [dateTouched, setDateTouched] = useState(false);
+
+  /** Pure: what Apply (or an auto-apply on submit) would change, without touching state. */
+  function computeApplied(match: NlDateMatch) {
+    const newTitle = stripMatch(title, match.matched);
+    if (type === 'event') {
+      const newStart = match.start.date;
+      return {
+        title: newTitle,
+        startDate: newStart,
+        endDate: match.end?.date ?? newStart,
+        startTime: match.start.time ?? startTime,
+        endTime: match.end?.time ?? (match.start.time ? addMinutes(match.start.time, 60) : endTime),
+        dueDate,
+        setsDue: false,
+      };
+    }
+    // task and habit both drive the (otherwise event-only-visible) due date.
+    return {
+      title: newTitle,
+      startDate,
+      endDate,
+      startTime,
+      endTime,
+      dueDate: match.start.date,
+      setsDue: type === 'task',
+    };
+  }
+
+  function applySuggestion(match: NlDateMatch) {
+    const next = computeApplied(match);
+    setTitle(next.title);
+    setStartDate(next.startDate);
+    setEndDate(next.endDate);
+    setStartTime(next.startTime);
+    setEndTime(next.endTime);
+    setDueDate(next.dueDate);
+    if (next.setsDue) addOn('due');
+    setDateTouched(true);
+  }
 
   const cardRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -278,28 +423,30 @@ function CreateModal({ onClose, defaultDate, defaultType, onSubmit, snappiness =
   // Re-measure on content changes
   useEffect(() => {
     measure();
-  }, [type, on, allDay, measure]);
+  }, [type, on, allDay, showSuggestion, measure]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Leaving with a title saves it — same as the edit modal. Only the Cancel
+  // button is an explicit "throw this away".
+  const dismiss = () => {
+    if (canSubmit) handleSubmit();
+    else onClose();
+  };
+  useModalDismiss(dismiss);
 
   const addOn = (key: FieldKey) => {
-    setOn(prev => ({
+    setOn((prev) => ({
       ...prev,
-      [type]: new Set([...prev[type], key])
+      [type]: new Set([...prev[type], key]),
     }));
   };
 
   const removeOn = (key: FieldKey) => {
-    setOn(prev => {
+    setOn((prev) => {
       const newSet = new Set(prev[type]);
       newSet.delete(key);
       return {
         ...prev,
-        [type]: newSet
+        [type]: newSet,
       };
     });
   };
@@ -312,1009 +459,457 @@ function CreateModal({ onClose, defaultDate, defaultType, onSubmit, snappiness =
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    const active = on[type];
-    const name = title.trim();
+
+    // An undismissed suggestion the user never hand-edited a date field for
+    // (nor already applied) gets folded in here — computed rather than read
+    // back from state, since `setState` inside this same call wouldn't be
+    // visible until the next render.
+    const applied = !dateTouched && suggestion && !dismissed ? computeApplied(suggestion) : null;
+    const sTitle = applied?.title ?? title;
+    const sStartDate = applied?.startDate ?? startDate;
+    const sEndDate = applied?.endDate ?? endDate;
+    const sStartTime = applied?.startTime ?? startTime;
+    const sEndTime = applied?.endTime ?? endTime;
+    const sDueDate = applied?.dueDate ?? dueDate;
+
+    const active = applied?.setsDue ? new Set([...on[type], 'due' as FieldKey]) : on[type];
+    const name = sTitle.trim();
 
     // A field only reaches the payload if its row is actually showing — an
     // unrevealed chip's state is a default, not a choice the user made.
     const has = (k: FieldKey) => active.has(k);
-    const notes = has('desc') ? description.trim() : '';
     const reminderMins = has('reminder')
-      ? Object.keys(reminders).filter(r => reminders[r]).map(r => REMINDER_MINUTES[r]).sort((a, b) => a - b)
+      ? Object.keys(reminders)
+          .filter((r) => reminders[r])
+          .map((r) => REMINDER_MINUTES[r])
+          .sort((a, b) => a - b)
       : [];
 
-    if (type === 'event') {
-      const where = has('location') ? location.trim() : '';
-      // CalendarEvent has no `location` column; the design's Where field folds
-      // into the description rather than inventing a schema change.
-      const desc = [where && `Location: ${where}`, notes].filter(Boolean).join('\n\n');
-      const effAllDay = has('allday') ? allDay : false;
-      const effEnd = endDate < startDate ? startDate : endDate;
-      let recurrence: Recurrence = { type: 'none' };
-      if (has('repeat')) {
-        if (repeat === 'Daily') recurrence = { type: 'daily', interval: 1 };
-        else if (repeat === 'Weekly') recurrence = { type: 'weekly', interval: 1 };
-        else if (repeat === 'Monthly') recurrence = { type: 'monthly', interval: 1 };
-      }
-      addEvent({
-        title: name,
-        description: desc,
-        colorKey: has('color') ? color : DEFAULT_COLOR,
-        allDay: effAllDay,
-        startDate,
-        startTime: effAllDay ? null : startTime || null,
-        endDate: effEnd,
-        endTime: effAllDay ? null : endTime || null,
-        recurrence,
-        reminders: reminderMins
-      });
-    } else {
-      const schedule: Repeat = type === 'task'
-        ? { type: 'once' }
-        : freq === 'Weekdays'
-          ? { type: 'weekdays', days: [1, 2, 3, 4, 5] }
-          : freq === 'Weekly'
-            ? { type: 'every', n: 1, unit: 'week', fromDone: false }
-            : { type: 'daily' };
-      const effTarget = type === 'habit' && has('target') ? target : 1;
-      addTodo({
-        name,
-        colorKey: has('color') ? color : DEFAULT_COLOR,
-        kind: effTarget > 1 ? 'measurable' : 'yesno',
-        unit: '',
-        target: effTarget,
-        schedule,
-        // A task's due date is optional; a habit anchors on the day it starts.
-        dueDate: type === 'task' ? (has('due') ? dueDate || null : null) : (defaultDate ?? initialDate),
-        time: null,
-        reminder: reminderMins.length > 0,
+    const payload = buildCreate(
+      type,
+      name,
+      {
+        startDate: sStartDate,
+        startTime: type === 'event' ? sStartTime : null,
+        endDate: sEndDate,
+        endTime: sEndTime,
+        allDay: has('allday') ? allDay : false,
+        dueDate: type === 'task' ? (has('due') ? sDueDate || null : null) : sDueDate,
+        location: has('location') ? location : '',
+        description: has('desc') ? description : '',
+        repeat: has('repeat') ? repeat : 'Never',
+        freq,
+        priority: has('priority') ? priority : 'Normal',
         category: has('category') ? category : '',
-        important: type === 'task' && has('priority') && priority === 'High'
-      });
-    }
+        target: has('target') ? target : 1,
+        // A category's colour wins over the default, but never over a colour
+        // the user actually picked in the Color field.
+        color: has('color') && (type !== 'event' || colorTouched) ? color : undefined,
+        reminderMins,
+      },
+      catOptions,
+    );
+    if (payload.kind === 'event') addEvent(payload.event);
+    else addTodo(payload.todo);
 
     onSubmit?.({
       type,
       title: name,
-      fields: { allDay, startDate, startTime, endDate, endTime, dueDate, location, description, freq, repeat, priority, category, target, color, reminders }
+      fields: {
+        allDay,
+        startDate: sStartDate,
+        startTime: sStartTime,
+        endDate: sEndDate,
+        endTime: sEndTime,
+        dueDate: sDueDate,
+        location,
+        description,
+        freq,
+        repeat,
+        priority,
+        category,
+        target,
+        color,
+        reminders,
+      },
     });
     onClose();
   };
 
   const currentOn = on[type];
-  const availableChips = CATALOG[type].filter(c => !currentOn.has(c.key));
+  const availableChips = CATALOG[type].filter((c) => !currentOn.has(c.key));
+
+  const typeOptions = [
+    { value: 'event', label: 'Event' },
+    { value: 'task', label: 'Task' },
+    { value: 'habit', label: 'Habit' },
+  ] as const;
 
   return (
-    <div
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '6vh 32px 32px 32px',
-        background: 'var(--t-scrim)',
-        backdropFilter: 'blur(3px)',
-        zIndex: 50
-      }}
+    <ModalChrome
+      title={type === 'event' ? 'New event' : type === 'task' ? 'New task' : 'New habit'}
+      onClose={dismiss}
+      cardRef={cardRef}
+      innerRef={innerRef}
+      footer={
+        <>
+          <span className="text-xs text-icon-idle">{canSubmit ? 'Enter to save' : ''}</span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={!canSubmit}>
+              Add {type === 'event' ? 'event' : type === 'task' ? 'task' : 'habit'}
+            </Button>
+          </div>
+        </>
+      }
     >
-      <div
-        ref={cardRef}
-        style={{
-          width: '470px',
-          background: 'var(--t-surface)',
-          border: '1px solid var(--t-border)',
-          boxShadow: 'var(--shadow-modal)',
-          animation: 'modalIn .22s cubic-bezier(.2,.8,.3,1) both',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div
-          ref={innerRef}
-          style={{
-            maxHeight: '88vh',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column'
+      {/* Type segmented control */}
+      <div className="px-5 pt-[0.875rem]">
+        <Segmented fill aria-label="Type" options={[...typeOptions]} value={type} onChange={handleTypeChange} />
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-col gap-[0.875rem] px-5 pt-[1.125rem] pb-1">
+        {/* Title input */}
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              handleSubmit();
+            }
           }}
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '18px 20px 0 20px' }}>
-            <div style={{ fontFamily: 'var(--t-font-heading)', fontSize: '16px', fontWeight: 600, letterSpacing: '-.01em' }}>
-              {type === 'event' ? 'New event' : type === 'task' ? 'New task' : 'New habit'}
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                width: '26px',
-                height: '26px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--t-ink-muted)',
-                cursor: 'pointer',
-                transition: 'all .15s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--t-fill)';
-                e.currentTarget.style.color = 'var(--t-ink)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--t-ink-muted)';
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M5 5l14 14M19 5L5 19" />
-              </svg>
-            </button>
-          </div>
+          autoFocus
+          placeholder={PLACEHOLDERS[type]}
+          className="w-full border-0 border-b-2 border-line bg-transparent pt-1 pb-2 text-lg font-medium text-ink transition-colors duration-150 placeholder:text-ink-muted focus:border-accent"
+        />
 
-          {/* Type segmented control */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', margin: '14px 20px 0 20px', border: '1px solid var(--t-border)', background: 'var(--t-page)' }}>
-            {(['event', 'task', 'habit'] as const).map(t => (
+        {/* Natural-language date suggestion (Phase H) — appears the moment
+            a date/time phrase is recognised in the title, disappears the
+            moment it's applied (the phrase is stripped) or dismissed. */}
+        {suggestion && !dismissed && (
+          <div className={cn(FIELD_ROW, 'justify-between -mt-2')}>
+            <span className="text-sm text-ink-muted truncate">
+              {'→ '}
+              <span className="text-accent font-semibold">{describeWhen(suggestion)}</span>
+              {' — from “'}
+              {suggestion.matched.text}
+              {'”'}
+            </span>
+            <span className="flex items-center gap-2 shrink-0">
               <button
-                key={t}
-                onClick={() => handleTypeChange(t)}
-                style={{
-                  padding: '9px 4px',
-                  fontSize: '13px',
-                  fontWeight: type === t ? 600 : 500,
-                  fontFamily: 'Outfit, sans-serif',
-                  color: type === t ? 'var(--t-surface)' : 'var(--t-ink-secondary)',
-                  background: type === t ? 'var(--t-accent)' : 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'all .15s'
-                }}
+                type="button"
+                onClick={() => applySuggestion(suggestion)}
+                className="text-sm font-semibold text-accent hover:underline"
               >
-                {t === 'event' ? 'Event' : t === 'task' ? 'Task' : 'Habit'}
+                Apply
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => setDismissedKey(suggestionKey)}
+                aria-label="Dismiss date suggestion"
+                className="flex items-center text-ink-muted hover:text-ink"
+              >
+                <X size="0.6875rem" strokeWidth={2.4} />
+              </button>
+            </span>
           </div>
+        )}
 
-          {/* Body */}
-          <div style={{ padding: '18px 20px 4px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* Title input */}
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); } }}
-              autoFocus
-              placeholder={PLACEHOLDERS[type]}
-              style={{
-                width: '100%',
-                fontSize: '18px',
-                fontWeight: 500,
-                color: 'var(--t-ink)',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: '2px solid var(--t-border)',
-                padding: '4px 0 8px 0',
-                outline: 'none',
-                transition: 'border-color .15s'
-              }}
-              onFocus={(e) => e.currentTarget.style.borderBottomColor = 'var(--t-accent)'}
-              onBlur={(e) => e.currentTarget.style.borderBottomColor = 'var(--t-border)'}
+        {/* Event date/time block */}
+        {type === 'event' && (
+          <div className={cn(FIELD_ROW, 'flex-col items-stretch gap-2 p-3 bg-page border border-line')}>
+            <div className="flex flex-wrap items-center gap-[0.625rem]">
+              <span className="micro-label w-[2.875rem] shrink-0">Starts</span>
+              <DateField
+                className="flex-1 min-w-[8rem]"
+                aria-label="Start date"
+                value={startDate}
+                onChange={(next) => {
+                  // Moving the start drags the end with it, keeping the gap.
+                  if (next && startDate && endDate) {
+                    const shift = diffDays(startDate, next);
+                    if (shift !== 0) setEndDate(addDays(endDate, shift));
+                  }
+                  setStartDate(next);
+                  setDateTouched(true);
+                }}
+              />
+              {!allDay && (
+                <input
+                  type="time"
+                  className="field-input w-auto"
+                  value={startTime}
+                  onChange={(e) => {
+                    setStartTime(e.target.value);
+                    setDateTouched(true);
+                  }}
+                />
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-[0.625rem]">
+              <span className="micro-label w-[2.875rem] shrink-0">Ends</span>
+              <DateField
+                className="flex-1 min-w-[8rem]"
+                aria-label="End date"
+                value={endDate}
+                onChange={(next) => {
+                  setEndDate(next);
+                  setDateTouched(true);
+                }}
+              />
+              {!allDay && (
+                <input
+                  type="time"
+                  className="field-input w-auto"
+                  value={endTime}
+                  onChange={(e) => {
+                    setEndTime(e.target.value);
+                    setDateTouched(true);
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Habit repeats */}
+        {type === 'habit' && (
+          <div className="flex flex-col gap-[0.4375rem]">
+            <span className="micro-label">Repeats</span>
+            <Segmented
+              fill
+              aria-label="Repeats"
+              options={FREQ_OPTIONS.map((f) => ({ value: f, label: f }))}
+              value={freq}
+              onChange={setFreq}
             />
+          </div>
+        )}
 
-            {/* Event date/time block */}
-            {type === 'event' && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  padding: '12px',
-                  background: 'var(--t-page)',
-                  border: '1px solid var(--t-border)',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <div style={{ display: 'grid', gridTemplateColumns: '46px 1fr auto', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Starts</span>
+        {/* Optional fields - All-day */}
+        {currentOn.has('allday') && type === 'event' && (
+          <FieldRow label="All-day" onRemove={() => removeOn('allday')}>
+            <Switch checked={allDay} onCheckedChange={setAllDay} aria-label="All-day" />
+            <div className="flex-1" />
+          </FieldRow>
+        )}
+
+        {/* Optional fields - Repeat (events) */}
+        {currentOn.has('repeat') && type === 'event' && (
+          <FieldRow label="Repeat" onRemove={() => removeOn('repeat')}>
+            <Segmented
+              fill
+              aria-label="Repeat"
+              className="flex-1"
+              options={REPEAT_OPTIONS.map((r) => ({ value: r, label: r }))}
+              value={repeat}
+              onChange={setRepeat}
+            />
+          </FieldRow>
+        )}
+
+        {/* Optional fields - Due date */}
+        {currentOn.has('due') && type === 'task' && (
+          <FieldRow label="Due" onRemove={() => removeOn('due')}>
+            <DateField
+              className="flex-1"
+              aria-label="Due date"
+              value={dueDate}
+              onChange={(next) => {
+                setDueDate(next);
+                setDateTouched(true);
+              }}
+            />
+          </FieldRow>
+        )}
+
+        {/* Optional fields - Priority */}
+        {currentOn.has('priority') && type === 'task' && (
+          <FieldRow label="Priority" onRemove={() => removeOn('priority')}>
+            <Segmented
+              fill
+              aria-label="Priority"
+              className="flex-1"
+              options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+              value={priority}
+              onChange={setPriority}
+            />
+          </FieldRow>
+        )}
+
+        {/* Optional fields - Category/List */}
+        {currentOn.has('category') && (
+          <FieldRow label={categoryFieldLabel} align="start" onRemove={() => removeOn('category')}>
+            <div className="flex-1 flex flex-col gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                {catOptions.map((cat) => {
+                  const hex = colorHex(cat.colorKey);
+                  const selected = category === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setCategory(cat.id)}
+                      className="chip border-solid"
+                      data-selected={selected || undefined}
+                      // dynamic: a selected chip is outlined in its own category colour
+                      style={selected ? { borderColor: hex } : undefined}
+                    >
+                      <Dot accent={hex} size={7} />
+                      {cat.name}
+                    </button>
+                  );
+                })}
+                <button type="button" onClick={() => setNewCatOpen((v) => !v)} className="chip">
+                  New…
+                </button>
+              </div>
+              {newCatOpen && (
+                <div className={cn(FIELD_ROW, 'gap-1.5')}>
                   <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => {
-                      // Moving the start drags the end with it, keeping the gap.
-                      const next = e.target.value;
-                      if (next && startDate && endDate) {
-                        const shift = Math.round((new Date(next).getTime() - new Date(startDate).getTime()) / 86400000);
-                        if (shift !== 0) {
-                          const d = new Date(endDate);
-                          d.setDate(d.getDate() + shift);
-                          setEndDate(fmt(d));
-                        }
+                    autoFocus
+                    placeholder="Category name"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        createCategory();
                       }
-                      setStartDate(next);
                     }}
-                    style={{
-                      width: '100%',
-                      fontSize: '13px',
-                      color: 'var(--t-ink)',
-                      background: 'var(--t-surface)',
-                      border: '1px solid var(--t-border)',
-                      padding: '7px 9px',
-                      outline: 'none',
-                      transition: 'border-color .15s'
-                    }}
-                    onFocus={(e) => e.currentTarget.style.borderColor = 'var(--t-accent)'}
-                    onBlur={(e) => e.currentTarget.style.borderColor = 'var(--t-border)'}
+                    className="field-input flex-1"
                   />
-                  {!allDay && (
-                    <input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      style={{
-                        fontSize: '13px',
-                        color: 'var(--t-ink)',
-                        background: 'var(--t-surface)',
-                        border: '1px solid var(--t-border)',
-                        padding: '7px 9px',
-                        outline: 'none',
-                        transition: 'border-color .15s'
-                      }}
-                      onFocus={(e) => e.currentTarget.style.borderColor = 'var(--t-accent)'}
-                      onBlur={(e) => e.currentTarget.style.borderColor = 'var(--t-border)'}
-                    />
-                  )}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '46px 1fr auto', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Ends</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    style={{
-                      width: '100%',
-                      fontSize: '13px',
-                      color: 'var(--t-ink)',
-                      background: 'var(--t-surface)',
-                      border: '1px solid var(--t-border)',
-                      padding: '7px 9px',
-                      outline: 'none',
-                      transition: 'border-color .15s'
-                    }}
-                    onFocus={(e) => e.currentTarget.style.borderColor = 'var(--t-accent)'}
-                    onBlur={(e) => e.currentTarget.style.borderColor = 'var(--t-border)'}
-                  />
-                  {!allDay && (
-                    <input
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      style={{
-                        fontSize: '13px',
-                        color: 'var(--t-ink)',
-                        background: 'var(--t-surface)',
-                        border: '1px solid var(--t-border)',
-                        padding: '7px 9px',
-                        outline: 'none',
-                        transition: 'border-color .15s'
-                      }}
-                      onFocus={(e) => e.currentTarget.style.borderColor = 'var(--t-accent)'}
-                      onBlur={(e) => e.currentTarget.style.borderColor = 'var(--t-border)'}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Habit repeats */}
-            {type === 'habit' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Repeats</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', border: '1px solid var(--t-border)', background: 'var(--t-page)' }}>
-                  {['Daily', 'Weekdays', 'Weekly'].map(f => (
-                    <button
-                      key={f}
-                      onClick={() => setFreq(f)}
-                      style={{
-                        padding: '9px 4px',
-                        fontSize: '13px',
-                        fontWeight: freq === f ? 600 : 500,
-                        fontFamily: 'Outfit, sans-serif',
-                        color: freq === f ? 'var(--t-surface)' : 'var(--t-ink-secondary)',
-                        background: freq === f ? 'var(--t-accent)' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'all .15s'
-                      }}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Optional fields - All-day */}
-            {currentOn.has('allday') && type === 'event' && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>All-day</span>
-                <button
-                  onClick={() => setAllDay(!allDay)}
-                  style={{
-                    position: 'relative',
-                    width: '36px',
-                    height: '20px',
-                    padding: 0,
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'background .18s',
-                    background: allDay ? 'var(--t-accent)' : 'var(--t-border)'
-                  }}
-                >
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: '3px',
-                      left: allDay ? '19px' : '3px',
-                      width: '14px',
-                      height: '14px',
-                      background: 'var(--t-surface)',
-                      transition: 'left .18s cubic-bezier(.2,.8,.3,1)'
-                    }}
-                  />
-                </button>
-                <div style={{ flex: 1 }} />
-                <button
-                  onClick={() => removeOn('allday')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Repeat (events) */}
-            {currentOn.has('repeat') && type === 'event' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'rowIn .2s ease both' }}>
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Repeat</span>
-                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', border: '1px solid var(--t-border)', background: 'var(--t-page)' }}>
-                  {REPEAT_OPTIONS.map(r => (
-                    <button
-                      key={r}
-                      onClick={() => setRepeat(r)}
-                      style={{
-                        padding: '9px 4px',
-                        fontSize: '13px',
-                        fontWeight: repeat === r ? 600 : 500,
-                        fontFamily: 'Outfit, sans-serif',
-                        color: repeat === r ? 'var(--t-surface)' : 'var(--t-ink-secondary)',
-                        background: repeat === r ? 'var(--t-accent)' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'all .15s'
-                      }}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => removeOn('repeat')}
-                  style={{
-                    width: '22px', height: '22px', flexShrink: 0, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', background: 'transparent',
-                    border: 'none', color: 'var(--t-icon-idle)', cursor: 'pointer', transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Due date */}
-            {currentOn.has('due') && type === 'task' && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Due</span>
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  style={{
-                    flex: 1,
-                    fontSize: '13px',
-                    color: 'var(--t-ink)',
-                    background: 'var(--t-surface)',
-                    border: '1px solid var(--t-border)',
-                    padding: '7px 9px',
-                    outline: 'none',
-                    transition: 'border-color .15s'
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = 'var(--t-accent)'}
-                  onBlur={(e) => e.currentTarget.style.borderColor = 'var(--t-border)'}
-                />
-                <button
-                  onClick={() => removeOn('due')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Priority */}
-            {currentOn.has('priority') && type === 'task' && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Priority</span>
-                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', border: '1px solid var(--t-border)', background: 'var(--t-page)' }}>
-                  {['Low', 'Normal', 'High'].map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setPriority(p)}
-                      style={{
-                        padding: '9px 4px',
-                        fontSize: '13px',
-                        fontWeight: priority === p ? 600 : 500,
-                        fontFamily: 'Outfit, sans-serif',
-                        color: priority === p ? 'var(--t-surface)' : 'var(--t-ink-secondary)',
-                        background: priority === p ? 'var(--t-accent)' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'all .15s'
-                      }}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => removeOn('priority')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Category/List */}
-            {currentOn.has('category') && (type === 'task' || type === 'habit') && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>List</span>
-                <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {CATEGORIES.map(cat => (
-                    <button
-                      key={cat.label}
-                      onClick={() => setCategory(cat.label)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '5px 10px',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        fontFamily: 'Outfit, sans-serif',
-                        cursor: 'pointer',
-                        transition: 'all .15s',
-                        color: category === cat.label ? 'var(--t-ink)' : 'var(--t-ink-secondary)',
-                        background: category === cat.label ? 'var(--t-accent-tint)' : 'var(--t-surface)',
-                        border: `1px solid ${category === cat.label ? cat.color : 'var(--t-border)'}`
-                      }}
-                    >
-                      <span style={{ width: '7px', height: '7px', flexShrink: 0, background: cat.color }} />
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => removeOn('category')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Daily target */}
-            {currentOn.has('target') && type === 'habit' && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Target</span>
-                <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-border)' }}>
-                  <button
-                    onClick={() => setTarget(Math.max(1, target - 1))}
-                    style={{
-                      width: '30px',
-                      height: '30px',
-                      background: 'var(--t-surface)',
-                      border: 'none',
-                      borderRight: '1px solid var(--t-border)',
-                      color: 'var(--t-ink-secondary)',
-                      fontSize: '15px',
-                      cursor: 'pointer',
-                      transition: 'all .15s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--t-fill)';
-                      e.currentTarget.style.color = 'var(--t-accent)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'var(--t-surface)';
-                      e.currentTarget.style.color = 'var(--t-ink-secondary)';
-                    }}
-                  >
-                    −
-                  </button>
-                  <span style={{ minWidth: '74px', textAlign: 'center', fontSize: '13px', fontWeight: 500 }}>
-                    {target} {target === 1 ? 'time / day' : 'times / day'}
-                  </span>
-                  <button
-                    onClick={() => setTarget(Math.min(12, target + 1))}
-                    style={{
-                      width: '30px',
-                      height: '30px',
-                      background: 'var(--t-surface)',
-                      border: 'none',
-                      borderLeft: '1px solid var(--t-border)',
-                      color: 'var(--t-ink-secondary)',
-                      fontSize: '15px',
-                      cursor: 'pointer',
-                      transition: 'all .15s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--t-fill)';
-                      e.currentTarget.style.color = 'var(--t-accent)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'var(--t-surface)';
-                      e.currentTarget.style.color = 'var(--t-ink-secondary)';
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
-                <div style={{ flex: 1 }} />
-                <button
-                  onClick={() => removeOn('target')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Reminder */}
-            {currentOn.has('reminder') && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <span style={{ width: '74px', flexShrink: 0, paddingTop: '6px', fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Remind</span>
-                <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {['At time', '10 min', '1 hour', '1 day'].map(r => (
-                    <button
-                      key={r}
-                      onClick={() => {
-                        setReminders(prev => {
-                          const next = { ...prev };
-                          if (next[r]) delete next[r];
-                          else next[r] = true;
-                          return next;
-                        });
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '5px 10px',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        fontFamily: 'Outfit, sans-serif',
-                        cursor: 'pointer',
-                        transition: 'all .15s',
-                        color: reminders[r] ? 'var(--t-ink)' : 'var(--t-ink-secondary)',
-                        background: reminders[r] ? 'var(--t-accent-tint)' : 'var(--t-surface)',
-                        border: `1px solid ${reminders[r] ? 'var(--t-accent)' : 'var(--t-border)'}`
-                      }}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => removeOn('reminder')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    marginTop: '4px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Color */}
-            {currentOn.has('color') && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
-              >
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Color</span>
-                <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '7px' }}>
-                  {PALETTE.map(c => (
-                    <button
+                  {PALETTE.map((c) => (
+                    <Swatch
                       key={c}
-                      onClick={() => setColor(c)}
-                      style={{
-                        width: '20px',
-                        height: '20px',
-                        background: c,
-                        border: 'none',
-                        cursor: 'pointer',
-                        outline: color === c ? '2px solid var(--t-ink)' : '2px solid transparent',
-                        outlineOffset: '2px',
-                        transition: 'outline-color .15s'
-                      }}
+                      hex={c}
+                      selected={newCatColor === c}
+                      onClick={() => setNewCatColor(c)}
+                      className="size-[1.125rem] outline-offset-1"
                     />
                   ))}
+                  <Button size="sm" onClick={createCategory} disabled={!newCatName.trim()} className="shrink-0">
+                    Add
+                  </Button>
                 </div>
-                <button
-                  onClick={() => removeOn('color')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
+              )}
+            </div>
+          </FieldRow>
+        )}
 
-            {/* Optional fields - Location */}
-            {currentOn.has('location') && type === 'event' && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
+        {/* Optional fields - Daily target */}
+        {currentOn.has('target') && type === 'habit' && (
+          <FieldRow label="Target" onRemove={() => removeOn('target')}>
+            <div className="flex items-center border border-line">
+              <button
+                type="button"
+                aria-label="Decrease target"
+                onClick={() => setTarget(Math.max(1, target - 1))}
+                className="size-[1.875rem] bg-surface border-0 border-r border-line text-ink-secondary text-base cursor-pointer transition-colors hover:bg-subtle hover:text-accent"
               >
-                <span style={{ width: '74px', flexShrink: 0, fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Where</span>
-                <input
-                  placeholder="Room, address or link"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  style={{
-                    flex: 1,
-                    fontSize: '13px',
-                    color: 'var(--t-ink)',
-                    background: 'var(--t-surface)',
-                    border: '1px solid var(--t-border)',
-                    padding: '8px 9px',
-                    outline: 'none',
-                    transition: 'border-color .15s'
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = 'var(--t-accent)'}
-                  onBlur={(e) => e.currentTarget.style.borderColor = 'var(--t-border)'}
-                />
-                <button
-                  onClick={() => removeOn('location')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
-
-            {/* Optional fields - Description */}
-            {currentOn.has('desc') && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '10px',
-                  animation: 'rowIn .2s ease both'
-                }}
+                −
+              </button>
+              <span className="min-w-[4.625rem] text-center text-sm font-medium">
+                {target} {target === 1 ? 'time / day' : 'times / day'}
+              </span>
+              <button
+                type="button"
+                aria-label="Increase target"
+                onClick={() => setTarget(Math.min(12, target + 1))}
+                className="size-[1.875rem] bg-surface border-0 border-l border-line text-ink-secondary text-base cursor-pointer transition-colors hover:bg-subtle hover:text-accent"
               >
-                <span style={{ width: '74px', flexShrink: 0, paddingTop: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--t-ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Notes</span>
-                <textarea
-                  placeholder="Details, links…"
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  style={{
-                    flex: 1,
-                    fontSize: '13px',
-                    lineHeight: '1.5',
-                    color: 'var(--t-ink)',
-                    background: 'var(--t-surface)',
-                    border: '1px solid var(--t-border)',
-                    padding: '8px 9px',
-                    outline: 'none',
-                    resize: 'vertical',
-                    transition: 'border-color .15s'
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = 'var(--t-accent)'}
-                  onBlur={(e) => e.currentTarget.style.borderColor = 'var(--t-border)'}
-                />
-                <button
-                  onClick={() => removeOn('desc')}
-                  style={{
-                    width: '22px',
-                    height: '22px',
-                    marginTop: '6px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--t-icon-idle)',
-                    cursor: 'pointer',
-                    transition: 'color .15s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-icon-idle)'}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                    <path d="M5 5l14 14M19 5L5 19" />
-                  </svg>
-                </button>
-              </div>
-            )}
+                +
+              </button>
+            </div>
+            <div className="flex-1" />
+          </FieldRow>
+        )}
 
-            {/* Add field chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', padding: '2px 0 16px 0' }}>
-              {availableChips.map(chip => (
+        {/* Optional fields - Reminder */}
+        {currentOn.has('reminder') && (
+          <FieldRow label="Remind" align="start" onRemove={() => removeOn('reminder')}>
+            <div className="flex-1 flex flex-wrap gap-1.5">
+              {['At time', '10 min', '1 hour', '1 day'].map((r) => (
                 <button
-                  key={chip.key}
-                  onClick={() => addOn(chip.key)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '5px 10px',
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    color: 'var(--t-ink-secondary)',
-                    background: 'transparent',
-                    border: '1px dashed var(--t-border-strong)',
-                    cursor: 'pointer',
-                    transition: 'all .15s'
+                  key={r}
+                  type="button"
+                  onClick={() => {
+                    setReminders((prev) => {
+                      const next = { ...prev };
+                      if (next[r]) delete next[r];
+                      else next[r] = true;
+                      return next;
+                    });
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = 'var(--t-accent)';
-                    e.currentTarget.style.borderColor = 'var(--t-accent)';
-                    e.currentTarget.style.background = 'var(--t-accent-tint)';
-                    e.currentTarget.style.borderStyle = 'solid';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = 'var(--t-ink-secondary)';
-                    e.currentTarget.style.borderColor = 'var(--t-border-strong)';
-                    e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.borderStyle = 'dashed';
-                  }}
+                  className="chip border-solid"
+                  data-selected={reminders[r] || undefined}
                 >
-                  <span style={{ fontSize: '13px', lineHeight: '1' }}>+</span>{chip.label}
+                  {r}
                 </button>
               ))}
             </div>
-          </div>
+          </FieldRow>
+        )}
 
-          {/* Footer */}
-          <div style={{ position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '13px 20px', borderTop: '1px solid var(--t-border-subtle)', background: 'var(--t-surface)' }}>
-            <span style={{ fontSize: '11px', color: 'var(--t-icon-idle)' }}>{canSubmit ? 'Enter to save' : ''}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                onClick={onClose}
-                style={{
-                  padding: '9px 14px',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  color: 'var(--t-ink-secondary)',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'color .15s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--t-ink)'}
-                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--t-ink-secondary)'}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!canSubmit}
-                style={{
-                  padding: '9px 18px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  fontFamily: 'Outfit, sans-serif',
-                  color: canSubmit ? 'var(--t-surface)' : 'var(--t-ink-muted)',
-                  background: canSubmit ? 'var(--t-accent)' : 'var(--t-border)',
-                  border: 'none',
-                  transition: 'all .15s',
-                  cursor: canSubmit ? 'pointer' : 'not-allowed'
-                }}
-              >
-                Add {type === 'event' ? 'event' : type === 'task' ? 'task' : 'habit'}
-              </button>
+        {/* Optional fields - Color */}
+        {currentOn.has('color') && (
+          <FieldRow label="Color" onRemove={() => removeOn('color')}>
+            <div className="flex-1 flex flex-wrap gap-[0.4375rem]">
+              {PALETTE.map((c) => (
+                <Swatch
+                  key={c}
+                  hex={c}
+                  selected={color === c}
+                  onClick={() => {
+                    setColor(c);
+                    setColorTouched(true);
+                  }}
+                  className="size-5"
+                />
+              ))}
             </div>
-          </div>
+          </FieldRow>
+        )}
+
+        {/* Optional fields - Location */}
+        {currentOn.has('location') && type === 'event' && (
+          <FieldRow label="Where" onRemove={() => removeOn('location')}>
+            <input
+              placeholder="Room, address or link"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="field-input flex-1"
+            />
+          </FieldRow>
+        )}
+
+        {/* Optional fields - Description */}
+        {currentOn.has('desc') && (
+          <FieldRow label="Notes" align="start" onRemove={() => removeOn('desc')}>
+            <textarea
+              placeholder="Details, links…"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="field-input flex-1 resize-y leading-normal"
+            />
+          </FieldRow>
+        )}
+
+        {/* Add field chips */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-[2px] pb-4">
+          {availableChips.map((chip) => (
+            <button key={chip.key} type="button" onClick={() => addOn(chip.key)} className="chip">
+              <span className="text-sm leading-none">+</span>
+              {chip.label}
+            </button>
+          ))}
         </div>
       </div>
-
-      {/* `modalIn` / `rowIn` live in App.css — a <style> tag here re-inserts
-          the same two keyframes into the head on every mount. */}
-    </div>
+    </ModalChrome>
   );
 }

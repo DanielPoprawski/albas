@@ -23,6 +23,26 @@
       try {
         var t = localStorage.getItem('albas-theme');
         if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+        // Settings › Appearance, pre-derived by applyAppearance() in
+        // src/context/AppContext.tsx: custom properties for the accent and
+        // font, plus the root font size. Same first-paint reasoning as above.
+        var a = JSON.parse(localStorage.getItem('albas-appearance') || 'null');
+        if (a && a.vars) {
+          for (var k in a.vars) {
+            if (/^--t-(accent|font)/.test(k)) document.documentElement.style.setProperty(k, a.vars[k]);
+          }
+          if (typeof a.fontSize === 'string') document.documentElement.style.fontSize = a.fontSize;
+        }
+        // Sidebar / right-panel widths (Phase L), pre-derived and clamped by
+        // applyLayout() in src/context/AppContext.tsx — same first-paint
+        // reasoning as the appearance mirror above, so a drag survives a
+        // restart without the layout jumping once React mounts.
+        var l = JSON.parse(localStorage.getItem('albas-layout') || 'null');
+        if (l) {
+          for (var lk in l) {
+            if (/^--layout-(sidebar|right)-w$/.test(lk)) document.documentElement.style.setProperty(lk, l[lk]);
+          }
+        }
       } catch (e) {}
     </script>
   </head>

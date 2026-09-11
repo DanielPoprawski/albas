@@ -13,15 +13,15 @@ export type ButtonSize = 'sm' | 'md';
  * variant.
  */
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-white border border-accent hover:bg-accent-hover hover:border-accent-hover',
+  primary: 'bg-accent text-on-accent border border-accent hover:bg-accent-hover hover:border-accent-hover',
   secondary: 'bg-surface text-accent border border-accent hover:bg-accent-tint',
   ghost: 'bg-transparent text-ink-secondary border border-transparent hover:bg-subtle hover:text-ink',
 };
 
-/** The design's button padding is 8px 12px; `sm` is the 6px×10px icon-row size. */
+/** The design's button padding is 0.5rem 0.75rem; `sm` is the 0.375rem×0.625rem icon-row size. */
 const SIZES: Record<ButtonSize, string> = {
-  sm: 'px-[10px] py-[6px]',
-  md: 'px-[12px] py-[8px]',
+  sm: 'px-[0.625rem] py-[0.375rem]',
+  md: 'px-[0.75rem] py-[0.5rem]',
 };
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -36,7 +36,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       type={type}
       data-slot="button"
       className={cn(
-        'inline-flex items-center justify-center gap-[6px] text-[12px] font-semibold leading-none',
+        'inline-flex items-center justify-center gap-[0.375rem] text-sm font-semibold leading-none',
         'cursor-pointer transition-colors duration-150 select-none',
         'disabled:pointer-events-none',
         VARIANTS[variant],
@@ -50,7 +50,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = 'Button';
 
 /**
- * A square button holding one icon — the calendar's ‹ › steppers. Sized 28px
+ * A square button holding one icon — the calendar's ‹ › steppers. Sized 1.75rem
  * to match the design's `.calendar-header button`, which is the only place a
  * bare icon sits on its own border.
  */
@@ -61,11 +61,11 @@ export const IconButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
       type={type}
       data-slot="icon-button"
       className={cn(
-        'inline-flex size-[28px] shrink-0 items-center justify-center',
-        'cursor-pointer transition-colors duration-150 disabled:pointer-events-none',
+        'inline-flex shrink-0 cursor-pointer disabled:pointer-events-none',
         variant === 'primary'
-          ? 'border border-accent bg-accent text-white hover:bg-accent-hover'
-          : 'border border-line bg-surface text-ink-secondary hover:border-accent hover:text-accent',
+          ? 'size-[1.75rem] items-center justify-center border border-accent bg-accent text-on-accent transition-colors duration-150 hover:bg-accent-hover'
+          : // The design's one bordered icon square (the calendar's ‹ › steppers).
+            'icon-btn',
         className,
       )}
       {...props}

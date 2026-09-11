@@ -6,8 +6,8 @@ import { isDone, isDueOn, isRepeating } from '../../todoLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
 import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import AddModal from '../AddModal';
-import HourGrid, { GUTTER_W } from './HourGrid';
-import { assignLanes, weekSegments } from './spans';
+import HourGrid from './HourGrid';
+import { assignLanes, laneCount, weekSegments } from './spans';
 import type { CalendarEvent, Todo } from '../../types';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
@@ -17,6 +17,7 @@ export default function WeekView() {
   const { selectedDate, setSelectedDate, todos, events, sharedEvents, firstDayOfWeek } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [editTodo, setEditTodo] = useState<Todo | null>(null);
+  const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);
   // Shared events are read-only — every edit path funnels through here.
   const openEvent = (event: CalendarEvent, date: string) => {
     if (event.sharedBy) return;
@@ -32,33 +33,35 @@ export default function WeekView() {
 
   const occurrences = useMemo(
     () => expandEvents([...events, ...sharedEvents], weekStart, weekEnd),
-    [events, sharedEvents, weekStart, weekEnd]
+    [events, sharedEvents, weekStart, weekEnd],
   );
   const longOccs = occurrences.filter(isLongOccurrence);
-  const barOccs = occurrences.filter(o => isBarOccurrence(o) && !isLongOccurrence(o));
-  const timedOccs = occurrences.filter(o => !isBarOccurrence(o));
+  const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
+  const timedOccs = occurrences.filter((o) => !isBarOccurrence(o));
 
   const longLanes = assignLanes(weekSegments(longOccs, weekDays));
-  const nLongLanes = longLanes.length === 0 ? 0 : Math.max(...longLanes.map(l => l.lane)) + 1;
+  const nLongLanes = laneCount(longLanes);
   const eventLanes = assignLanes(weekSegments(barOccs, weekDays));
-  const nEventLanes = eventLanes.length === 0 ? 0 : Math.max(...eventLanes.map(l => l.lane)) + 1;
+  const nEventLanes = laneCount(eventLanes);
   // to-do chips sit in the single grid row below every bar lane
   const todoRow = nLongLanes + nEventLanes + 1;
 
-  const onceTodos = todos.filter(t => !isRepeating(t));
-  const dayOnce = (dateStr: string) => onceTodos.filter(t => isDueOn(t, dateStr, firstDayOfWeek));
+  const onceTodos = todos.filter((t) => !isRepeating(t));
+  const dayOnce = (dateStr: string) => onceTodos.filter((t) => isDueOn(t, dateStr, firstDayOfWeek));
   const hasAllDayContent =
-    longLanes.length > 0 || eventLanes.length > 0 ||
-    onceTodos.some(t => t.dueDate && t.dueDate >= weekStart && t.dueDate <= weekEnd);
+    longLanes.length > 0 ||
+    eventLanes.length > 0 ||
+    onceTodos.some((t) => t.dueDate && t.dueDate >= weekStart && t.dueDate <= weekEnd);
 
   return (
-    <div className="flex-1 min-h-0 rounded-xl border overflow-hidden shadow-2xl flex flex-col border-sheet-border bg-sheet">
+    <div className="flex-1 min-h-0 rounded-xl border overflow-hidden shadow-2xl flex flex-col border-line bg-surface">
       {/* Weekday header */}
-      <div className="flex border-b flex-shrink-0 border-sheet-line bg-sheet-header">
-        <div style={{ width: GUTTER_W }} className="flex-shrink-0" />
+      <div className="flex border-b flex-shrink-0 border-line bg-subtle">
+        <div className="flex-shrink-0 w-gutter-w" />
         {weekDays.map((dateStr, i) => {
           const isToday = dateStr === todayStr;
           const isSelected = dateStr === selectedDate;
+          const isPast = dateStr < todayStr;
           // weekend from the real weekday, not the column index
           const dayNum = parse(dateStr).getDay();
           const isWeekend = dayNum === 0 || dayNum === 6;
@@ -66,9 +69,9 @@ export default function WeekView() {
             <button
               key={dateStr}
               onClick={() => setSelectedDate(dateStr)}
-              className="flex-1 py-sm flex flex-col items-center gap-0.5 cursor-pointer"
+              className={`flex-1 py-sm flex flex-col items-center gap-0.5 cursor-pointer ${isPast ? 'bg-past-cell' : ''}`}
             >
-              <span className={`text-[10px] font-bold tracking-wider ${isWeekend ? 'text-sheet-txt' : 'text-sheet-txt-faint'}`}>
+              <span className={`text-xs font-bold tracking-wider ${isWeekend ? 'text-ink' : 'text-ink-muted'}`}>
                 {dayLabels[i]}
               </span>
               <span
@@ -77,7 +80,7 @@ export default function WeekView() {
                     ? 'bg-primary text-on-primary shadow-lg'
                     : isSelected
                       ? 'bg-primary/15 text-primary'
-                      : 'text-sheet-txt-muted'
+                      : 'text-ink-secondary'
                 }`}
               >
                 {parse(dateStr).getDate()}
@@ -89,11 +92,11 @@ export default function WeekView() {
 
       {/* All-day section: thin week-plus lanes, all-day/multi-day event bars, to-do chips */}
       {hasAllDayContent && (
-        <div className="flex border-b flex-shrink-0 border-sheet-line">
-          <div style={{ width: GUTTER_W }} className="flex-shrink-0 flex items-start justify-end pr-2 pt-1">
-            <span className="text-[9px] text-sheet-txt-faint uppercase">all day</span>
+        <div className="flex border-b flex-shrink-0 border-line">
+          <div className="flex-shrink-0 w-gutter-w flex items-start justify-end pr-2 pt-1">
+            <span className="text-xs text-ink-muted uppercase">all day</span>
           </div>
-          <div className="flex-1 grid grid-cols-7 py-1" style={{ gridAutoRows: 'min-content' }}>
+          <div className="flex-1 grid grid-cols-7 auto-rows-min py-1">
             {longLanes.map(({ seg, lane }) => {
               const hex = colorHex(seg.item.event.colorKey);
               return (
@@ -101,16 +104,12 @@ export default function WeekView() {
                   key={`l-${seg.item.key}`}
                   title={sharedTitleAttr(seg.item.event) ?? seg.item.event.title}
                   onClick={() => openEvent(seg.item.event, seg.item.startDate)}
-                  className="cursor-pointer"
+                  className={`cursor-pointer h-[0.3125rem] mb-0.5 opacity-65 ${seg.startsHere ? 'ml-1.5' : ''} ${seg.endsHere ? 'mr-1.5' : ''}`}
+                  // dynamic: grid placement and the event's own colour
                   style={{
                     gridColumn: `${seg.startCol} / span ${seg.span}`,
                     gridRow: lane + 1,
-                    height: 5,
-                    marginBottom: 2,
-                    marginLeft: seg.startsHere ? 6 : 0,
-                    marginRight: seg.endsHere ? 6 : 0,
                     backgroundColor: hex,
-                    opacity: 0.65,
                   }}
                 />
               );
@@ -122,17 +121,13 @@ export default function WeekView() {
                   key={seg.item.key}
                   onClick={() => openEvent(seg.item.event, seg.item.startDate)}
                   title={sharedTitleAttr(seg.item.event)}
-                  className="cursor-pointer text-[10px] font-bold px-xs truncate hover:opacity-90"
+                  className={`cursor-pointer text-xs font-bold px-xs truncate hover:opacity-90 h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
+                  // dynamic: grid placement and the event's own colour
                   style={{
                     gridColumn: `${seg.startCol} / span ${seg.span}`,
                     gridRow: nLongLanes + lane + 1,
-                    height: 18,
-                    lineHeight: '18px',
-                    marginBottom: 2,
-                    marginLeft: seg.startsHere ? 4 : 0,
-                    marginRight: seg.endsHere ? 4 : 0,
                     backgroundColor: `${hex}cc`,
-                    color: '#fff',
+                    color: 'var(--t-on-accent)',
                     opacity: sharedOpacity(seg.item.event),
                   }}
                 >
@@ -148,18 +143,20 @@ export default function WeekView() {
                 <div
                   key={dateStr}
                   className="flex flex-col gap-0.5 px-0.5"
+                  // dynamic: grid placement of the day column
                   style={{ gridColumn: `${i + 1} / span 1`, gridRow: todoRow }}
                 >
-                  {dts.slice(0, 3).map(todo => {
+                  {dts.slice(0, 3).map((todo) => {
                     const hex = colorHex(todo.colorKey);
                     return (
                       <div
                         key={todo.id}
                         onClick={() => setEditTodo(todo)}
-                        className={`cursor-pointer text-[10px] font-bold px-xs py-0.5 rounded truncate hover:opacity-80 ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                        className={`cursor-pointer text-xs font-bold px-xs py-0.5 rounded truncate hover:opacity-80 ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                        // dynamic: the to-do's own colour
                         style={{
                           backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                          borderLeft: `3px solid ${hex}`,
+                          borderLeft: `0.1875rem solid ${hex}`,
                           color: hex,
                         }}
                       >
@@ -167,9 +164,7 @@ export default function WeekView() {
                       </div>
                     );
                   })}
-                  {dts.length > 3 && (
-                    <div className="text-[9px] text-sheet-txt-faint pl-xs">+{dts.length - 3} more</div>
-                  )}
+                  {dts.length > 3 && <div className="text-xs text-ink-muted pl-xs">+{dts.length - 3} more</div>}
                 </div>
               );
             })}
@@ -182,10 +177,21 @@ export default function WeekView() {
         occurrences={timedOccs}
         onEditEvent={openEvent}
         onSelectDate={setSelectedDate}
+        onAddAt={(date, time) => setAddAt({ date, time })}
       />
 
-      {editEvent && <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />}
+      {editEvent && (
+        <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />
+      )}
       {editTodo && <AddModal editTodo={editTodo} onClose={() => setEditTodo(null)} />}
+      {addAt && (
+        <AddModal
+          defaultType="event"
+          defaultDate={addAt.date}
+          defaultStartTime={addAt.time}
+          onClose={() => setAddAt(null)}
+        />
+      )}
     </div>
   );
 }

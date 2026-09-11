@@ -10,8 +10,8 @@
 // decode pass going in and one encode pass coming out.
 
 function base64urlToBuffer(b64url: string): ArrayBuffer {
-  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/");
-  const pad = padded.length % 4 === 0 ? "" : "=".repeat(4 - (padded.length % 4));
+  const padded = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
   const binary = atob(padded + pad);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -19,11 +19,11 @@ function base64urlToBuffer(b64url: string): ArrayBuffer {
 }
 
 function bufferToBase64url(buf: ArrayBuffer | Uint8Array | null | undefined): string {
-  if (!buf) return "";
+  if (!buf) return '';
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  let binary = "";
+  let binary = '';
   for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /** The `{regId, options}` body of `POST /register/start` or `/passkeys/start`. */
@@ -57,7 +57,7 @@ export function prepareCreationOptions(publicKey: Record<string, unknown>): Cred
   // as src/auth.ts does for the Tauri app's passkey ceremonies.
   pk.authenticatorSelection = {
     ...((pk.authenticatorSelection as object) ?? {}),
-    residentKey: "required",
+    residentKey: 'required',
     requireResidentKey: true,
   };
 
@@ -108,5 +108,5 @@ export function serializeAssertedCredential(cred: PublicKeyCredential): Record<s
 }
 
 export function webauthnSupported(): boolean {
-  return typeof window !== "undefined" && !!window.PublicKeyCredential && !!navigator.credentials;
+  return typeof window !== 'undefined' && !!window.PublicKeyCredential && !!navigator.credentials;
 }

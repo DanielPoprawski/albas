@@ -14,6 +14,8 @@
  * sweeps. Pointing a build at another server means editing these two
  * constants, not shipping the field again.
  */
+import type { ApiResponse } from './ipc';
+
 export const DEFAULT_SYNC_URL = 'https://albas.danni-dev.com/api';
 
 /**
@@ -43,3 +45,63 @@ export function apiBase(url: string | null | undefined): string {
   if (trimmed === '') return DEFAULT_SYNC_URL;
   return trimmed.endsWith('/sync') ? trimmed.slice(0, -'/sync'.length) : trimmed;
 }
+
+/**
+ * What every credential-management call resolves to, error statuses included:
+ * a 404 from an older server is an answer ("no such feature"), not a failure,
+ * and each caller decides that for itself the way the old fetch code did.
+ * Defined in `ipc.ts` (it's `sync_api`'s return type); re-exported here so
+ * existing imports keep working.
+ */
+export type { ApiResponse };
+
+/**
+ * One authenticated request against the signed-in sync server.
+ *
+ * Inside the app this hops through Rust (`sync_api` in `account.rs`): the
+ * WebView's origin is `tauri://localhost`, the server has no CORS layer, and
+ * WebKit reports the blocked preflight as a bare "TypeError: Load failed" —
+ * which is exactly what Settings used to show for every method. Under
+ * `bun run dev` there is no Rust, so it falls back to a plain `fetch` with
+ * the token, which works there because Vite proxies nothing and the browser
+ * is the origin the server was written for.
+ */
+export async function apiRequest(
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+  fallback?: { server: string; token: string | null },
+): Promise<ApiResponse> {
+  const { inTauri } = await import('./persistence');
+  if (inTauri()) {
+    const { syncApi } = await import('./ipc');
+    return syncApi(method, path, body);
+  }
+  if (!fallback) throw new Error('Not signed in.');
+  const res = await fetch(`${fallback.server}${path}`, {
+    method,
+    headers: {
+      ...(fallback.token ? { Authorization: `Bearer ${fallback.token}` } : {}),
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text().catch(() => '');
+  let parsed: any;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = { message: text.trim() };
+  }
+  return { status: res.status, body: parsed };
+}
+
+/** The server's plain-text error for a non-2xx `ApiResponse`, or a fallback. */
+export function apiError(res: ApiResponse, fallback: string): string {
+  const msg = typeof res.body?.message === 'string' ? res.body.message.trim() : '';
+  return msg || `${fallback} (HTTP ${res.status}).`;
+}
+
+// Re-exported for existing imports — the rules themselves live in
+// `shared/authRules.ts` (repo root) so the web portal can share them too.
+export { NAME_PATTERN, MIN_PASSWORD_LENGTH } from '../shared/authRules';

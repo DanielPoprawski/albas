@@ -4,11 +4,11 @@ import { rotateWeek } from '../../dates';
 import { isDone } from '../../todoLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
 import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
-import { BarsOverlay, PastX, PeriodCorners, PeriodTitles } from './monthParts';
+import { BarsOverlay, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
 import { useMonthSwipe } from './useMonthSwipe';
 import type { MonthLayoutProps } from './monthModel';
 
-/** A phone column is ~50px — three letters plus padding is wider than that. */
+/** A phone column is ~3.125rem — three letters plus padding is wider than that. */
 const WEEKDAYS_NARROW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /** A phone cell fits one legible chip; two only truncate each other away. */
@@ -30,11 +30,17 @@ export const MIN_WEEKS = 6;
 export const DUE_DOTS = false;
 
 /** How long the month slide runs; matches the keyframes in App.css. */
-const SLIDE_MS = 220;
+/** The slide is 220ms — written literally, since Tailwind only emits class strings it can see. */
+const SLIDE_CLASS = {
+  1: 'animate-[month-slide-next_220ms_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none',
+  '-1': 'animate-[month-slide-prev_220ms_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none',
+} as const;
 
 /* See the note in MonthViewDesktop: no ellipsis, no left colour tab. */
-const PILL_CLASS =
-  'text-[9px] font-bold px-0.5 rounded-sm overflow-hidden whitespace-nowrap hover:opacity-80';
+// No horizontal padding and no bold: a phone cell is ~3.5rem wide, and every
+// pixel of chrome here is a letter of the title that doesn't fit. `truncate`
+// ends a clipped title with an ellipsis instead of a hard cut.
+const PILL_CLASS = 'text-xs font-semibold px-px rounded-sm truncate hover:opacity-80';
 
 /**
  * Slides the grid in from the side the new month came from.
@@ -61,28 +67,23 @@ function useMonthSlide(): { key: number; className: string } {
     // remounting restarts the animation; without a changing key the second
     // swipe in a direction would not replay it
     key: index,
-    className: dir === 0 ? '' : dir === 1 ? 'month-slide-next' : 'month-slide-prev',
+    className: dir === 0 ? '' : SLIDE_CLASS[dir],
   };
 }
 
-export default function MonthViewMobile({
-  weeks,
-  onEditEvent,
-  onEditTodo,
-  onDayClick,
-}: MonthLayoutProps) {
+export default function MonthViewMobile({ weeks, onEditEvent, onEditTodo, onDayClick }: MonthLayoutProps) {
   const { firstDayOfWeek } = useApp();
   const swipe = useMonthSwipe();
   const slide = useMonthSlide();
 
   return (
     // full bleed — the grid meets both screen edges, so no rounding or border
-    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-sheet" {...swipe}>
+    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-surface" {...swipe}>
       {/* Weekday headers. Outside the sliding element: they're identical every
           month, and animating them would just flicker. */}
-      <div className="grid grid-cols-7 border-b flex-shrink-0 border-sheet-line bg-sheet-header">
+      <div className="grid grid-cols-7 border-b flex-shrink-0 border-line bg-subtle">
         {rotateWeek(WEEKDAYS_NARROW, firstDayOfWeek).map((day, i) => (
-          <div key={i} className="py-1 text-center text-[9px] font-bold text-sheet-txt-faint">
+          <div key={i} className="py-1 text-center text-xs font-bold text-ink-muted">
             {day}
           </div>
         ))}
@@ -92,37 +93,41 @@ export default function MonthViewMobile({
           scroll container underneath it never has to own a transform — a
           translate inside an `overflow-y: auto` box makes the browser offer a
           horizontal scrollbar for the duration of the slide. */}
-      <div
-        key={slide.key}
-        className={`flex-1 min-h-0 flex flex-col ${slide.className}`}
-        style={{ animationDuration: `${SLIDE_MS}ms` }}
-      >
-        <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
-          {weeks.map(week => (
-            // floor is a date row plus one chip — six of these still fit a short
-            // viewport without the grid starting to scroll
-            <div key={week.key} className="flex-1 relative min-h-[54px]">
-              {/* Day cells */}
-              <div className="grid grid-cols-7 h-full">
-                {week.days.map(cell => (
+      <div key={slide.key} className={`flex-1 min-h-0 flex flex-col ${slide.className}`}>
+        <div className="flex-1 min-h-0 flex flex-col">
+          {weeks.map((week) => (
+            // A fixed, equal height per week rather than `flex-1`: on the phone
+            // this grid sits in an unbounded scroll column, so flex rows sized
+            // to their content and the inner `h-full` resolved to auto — rows
+            // with events came out tall, empty rows short, and the cells never
+            // filled their row. 4rem is a date line plus one chip plus a bar
+            // lane, and six of them are what the dashboard reserves.
+            <div key={week.key} className="relative h-16 grid grid-cols-7">
+              {week.days.map((cell) => {
+                const dim = dimCell(cell);
+                return (
                   <div
                     key={cell.dateStr}
-                    className={`calendar-cell relative cursor-pointer p-0.5 ${
-                      !cell.isCurrentMonth ? 'opacity-30' : ''
-                    } ${
-                      cell.isSelected && !cell.isToday && !cell.background ? 'bg-primary/10' : ''
-                    }`}
+                    className={`relative flex flex-col cursor-pointer border-r border-b border-line transition-colors hover:bg-accent-tint px-px py-0.5 overflow-hidden ${
+                      !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : ''
+                    } ${cell.isSelected && !cell.isToday && !cell.background ? 'bg-primary/10' : ''}`}
+                    // dynamic: a long span washes its cells in its own colour
                     style={{ background: cell.background }}
                     onClick={() => onDayClick(cell.dateStr)}
                   >
-                    <PastX cell={cell} />
                     <PeriodCorners cell={cell} />
 
                     {/* Today gets no marker of its own — it reads as the first
                         day that isn't struck through. */}
                     <span
-                      className={`text-[11px] px-0.5 ${
-                        cell.isWeekend ? 'font-bold text-sheet-txt' : 'text-sheet-txt-muted'
+                      className={`text-xs px-0.5 ${
+                        !cell.isCurrentMonth
+                          ? 'text-outside-ink'
+                          : cell.isPast
+                            ? 'text-past-ink'
+                            : cell.isWeekend
+                              ? 'font-bold text-ink'
+                              : 'text-ink-secondary'
                       }`}
                     >
                       {cell.date.getDate()}
@@ -131,20 +136,29 @@ export default function MonthViewMobile({
                     <PeriodTitles cell={cell} onEditEvent={onEditEvent} />
 
                     {/* space reserved for the spanning bars overlay */}
-                    {week.barsHeight > 0 && <div style={{ height: week.barsHeight }} />}
+                    {week.barLaneCount > 0 && (
+                      // dynamic: one lane-row per bar lane this week carries
+                      <div style={{ height: `calc(var(--spacing-lane-row) * ${week.barLaneCount})` }} />
+                    )}
 
                     {/* Event + one-time to-do pills. Phone cells are tall enough
                         that bottom-pinned chips float away from their date, so
-                        these group under it instead of using mt-auto. */}
-                    <div className="flex flex-col gap-0.5 overflow-hidden mt-0.5">
-                      {cell.shownOccs.map(o => {
+                        these group under it instead of using mt-auto. Not
+                        absolutely positioned, so dimming the group doesn't
+                        disturb BarsOverlay/PeriodCorners painted outside it. */}
+                    <div className={`flex flex-col gap-px overflow-hidden mt-px ${dim ? 'opacity-50' : ''}`}>
+                      {cell.shownOccs.map((o) => {
                         const hex = colorHex(o.event.colorKey);
                         return (
                           <div
                             key={o.key}
-                            onClick={e => { e.stopPropagation(); onEditEvent(o); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditEvent(o);
+                            }}
                             title={sharedTitleAttr(o.event)}
                             className={PILL_CLASS}
+                            // dynamic: the event's own colour
                             style={{
                               backgroundColor: `${hex}${PILL_BG_ALPHA}`,
                               color: hex,
@@ -156,13 +170,17 @@ export default function MonthViewMobile({
                           </div>
                         );
                       })}
-                      {cell.shownOnce.map(todo => {
+                      {cell.shownOnce.map((todo) => {
                         const hex = colorHex(todo.colorKey);
                         return (
                           <div
                             key={todo.id}
-                            onClick={e => { e.stopPropagation(); onEditTodo(todo); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditTodo(todo);
+                            }}
                             className={`${PILL_CLASS} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                            // dynamic: the to-do's own colour
                             style={{
                               backgroundColor: `${hex}${PILL_BG_ALPHA}`,
                               color: hex,
@@ -172,17 +190,13 @@ export default function MonthViewMobile({
                           </div>
                         );
                       })}
-                      {cell.hiddenCount > 0 && (
-                        <div className="text-[9px] text-sheet-txt-faint pl-0.5">
-                          +{cell.hiddenCount}
-                        </div>
-                      )}
+                      {cell.hiddenCount > 0 && <div className="text-xs text-ink-muted pl-0.5">+{cell.hiddenCount}</div>}
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
 
-              <BarsOverlay week={week} top={20} onEditEvent={onEditEvent} />
+              <BarsOverlay week={week} topClass="top-5" onEditEvent={onEditEvent} />
             </div>
           ))}
         </div>

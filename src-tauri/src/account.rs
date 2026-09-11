@@ -6,11 +6,7 @@
 //! WebView never contacts the server, so it needs no CORS.
 
 use crate::db::{self, Db};
-use crate::sync::{
-    check_url, ACCOUNT_SETTING, DEFAULT_URL, META_GRANT_REV, META_SHARED_SEQ, TOKEN_SETTING,
-    URL_SETTING,
-};
-use rusqlite::Connection;
+use crate::sync::{check_url, ACCOUNT_SETTING, DEFAULT_URL, META_GRANT_REV, META_SHARED_SEQ, URL_SETTING};
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -80,16 +76,20 @@ fn friendly(e: ureq::Error) -> String {
     }
 }
 
-/// The stored server base for signed-in calls (shares). `__sync_url` holds the
-/// full `/sync` endpoint, so this is just the normalised form of it.
-fn stored_base_and_token(conn: &Connection) -> Result<(String, String), String> {
-    let url = db::read_setting(conn, URL_SETTING)
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_URL.to_string());
-    let token = db::read_setting(conn, TOKEN_SETTING)
-        .filter(|s| !s.trim().is_empty())
-        .ok_or("Not signed in.")?;
-    Ok((normalize_base(&url), token.trim().to_string()))
+/// The stored server base and bearer token for signed-in calls (shares,
+/// `sync_api`, cross-device handoff). `__sync_url` holds the full `/sync`
+/// endpoint, so the base is just the normalised form of it; the token itself
+/// comes from `token_store` (OS keyring on desktop), not from settings —
+/// see `token_store.rs`.
+fn stored_base_and_token(db: &Db) -> Result<(String, String), String> {
+    let url = {
+        let conn = db.0.lock().map_err(err)?;
+        db::read_setting(&conn, URL_SETTING)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_URL.to_string())
+    };
+    let token = crate::token_store::get(db).ok_or("Not signed in.")?;
+    Ok((normalize_base(&url), token))
 }
 
 /// Swaps this device onto an account in one transaction. Local data is
@@ -103,16 +103,22 @@ fn adopt_session(
     name: &str,
 ) -> Result<(), String> {
     let db = app.state::<Db>();
-    let mut guard = db.0.lock().map_err(err)?;
-    let tx = guard.transaction().map_err(err)?;
-    tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
-    for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
-        db::write_meta(&tx, key, "0").map_err(err)?;
+    {
+        let mut guard = db.0.lock().map_err(err)?;
+        let tx = guard.transaction().map_err(err)?;
+        tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
+        for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
+            db::write_meta(&tx, key, "0").map_err(err)?;
+        }
+        db::write_setting(&tx, URL_SETTING, &format!("{base}/sync")).map_err(err)?;
+        db::write_setting(&tx, ACCOUNT_SETTING, name).map_err(err)?;
+        tx.commit().map_err(err)?;
     }
-    db::write_setting(&tx, URL_SETTING, &format!("{base}/sync")).map_err(err)?;
-    db::write_setting(&tx, TOKEN_SETTING, token).map_err(err)?;
-    db::write_setting(&tx, ACCOUNT_SETTING, name).map_err(err)?;
-    tx.commit().map_err(err)
+    // Outside the transaction/lock above: `token_store::set` takes its own
+    // lock on `db.0` (for the marker write on mobile, or just the marker on
+    // desktop) and, on desktop, talks to the OS keyring — neither belongs
+    // inside a SQLite transaction.
+    crate::token_store::set(&db, token)
 }
 
 #[tauri::command]
@@ -120,8 +126,7 @@ pub async fn shares_list(app: tauri::AppHandle) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (base, token) = {
             let db = app.state::<Db>();
-            let conn = db.0.lock().map_err(err)?;
-            stored_base_and_token(&conn)?
+            stored_base_and_token(&db)?
         };
         get_json(&format!("{base}/shares"), &token)
     })
@@ -139,40 +144,124 @@ pub async fn shares_set(
     tauri::async_runtime::spawn_blocking(move || {
         let (base, token) = {
             let db = app.state::<Db>();
-            let conn = db.0.lock().map_err(err)?;
-            stored_base_and_token(&conn)?
+            stored_base_and_token(&db)?
         };
         let url = format!("{base}/shares/{name}");
         let res = ureq::request("PUT", &url)
             .set("Authorization", &format!("Bearer {token}"))
             .timeout(Duration::from_secs(30))
             .send_json(json!({ "calendar": calendar, "todos": todos }));
-        match res {
-            Ok(_) => Ok(()),
-            Err(ureq::Error::Status(404, _)) => {
-                Err(format!("No account named '{name}' on this server."))
-            }
-            Err(e) => Err(friendly(e)),
+        // The server always answers 200 now (never 404 for an unknown
+        // grantee — see sync-server/README.md, "Sharing"): unrecognised
+        // names come back as `{"ok": false}` instead, so account-name
+        // enumeration isn't observable from the HTTP status alone.
+        let body: Value = match res {
+            Ok(r) => r.into_json().map_err(|e| format!("Bad response from server: {e}"))?,
+            Err(e) => return Err(friendly(e)),
+        };
+        if body.get("ok").and_then(|v| v.as_bool()) == Some(false) {
+            return Err(format!("No account named '{name}' on this server."));
         }
+        Ok(())
     })
     .await
     .map_err(err)?
 }
 
-/// Clears the credentials and the shared cache; local data stays. The token
-/// row on the server keeps existing until revoked there — signing back in
-/// mints a fresh one.
+/// Clears the credentials and the shared cache; local data stays. Best-effort
+/// revokes this device's token server-side first (`DELETE /tokens/current`)
+/// so it stops showing up in Settings → Sessions on other devices and can't
+/// be replayed — but a failure there (offline, server down) must never block
+/// signing out locally; the token row is left for the server to expire on
+/// its own sliding 90-day window either way.
 #[tauri::command]
-pub fn sync_sign_out(db: tauri::State<Db>) -> Result<(), String> {
-    let mut guard = db.0.lock().map_err(err)?;
-    let tx = guard.transaction().map_err(err)?;
-    tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
-    for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
-        db::write_meta(&tx, key, "0").map_err(err)?;
-    }
-    db::write_setting(&tx, TOKEN_SETTING, "").map_err(err)?;
-    db::write_setting(&tx, ACCOUNT_SETTING, "").map_err(err)?;
-    tx.commit().map_err(err)
+pub async fn sync_sign_out(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<Db>();
+        if let Ok((base, token)) = stored_base_and_token(&db) {
+            let _ = ureq::request("DELETE", &format!("{base}/tokens/current"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .timeout(Duration::from_secs(10))
+                .call();
+        }
+        crate::token_store::clear(&db)?;
+        let mut guard = db.0.lock().map_err(err)?;
+        let tx = guard.transaction().map_err(err)?;
+        tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
+        for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
+            db::write_meta(&tx, key, "0").map_err(err)?;
+        }
+        db::write_setting(&tx, ACCOUNT_SETTING, "").map_err(err)?;
+        tx.commit().map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Permanently deletes the signed-in account server-side (`DELETE /account`,
+/// re-verified with the password like a password change) and then clears
+/// local session state the same way `sync_sign_out` does — but *without*
+/// first revoking `/tokens/current`, since the account and every token on it
+/// are already gone once the server call succeeds. Local data (events, tasks,
+/// habits) is untouched; it just stops being synced anywhere.
+#[tauri::command]
+pub async fn account_delete(app: tauri::AppHandle, password: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (base, token) = {
+            let db = app.state::<Db>();
+            stored_base_and_token(&db)?
+        };
+        let res = ureq::request("DELETE", &format!("{base}/account"))
+            .set("Authorization", &format!("Bearer {token}"))
+            .timeout(Duration::from_secs(30))
+            .send_json(json!({ "password": password }));
+        if let Err(e) = res {
+            return Err(friendly(e));
+        }
+        let db = app.state::<Db>();
+        crate::token_store::clear(&db)?;
+        let mut guard = db.0.lock().map_err(err)?;
+        let tx = guard.transaction().map_err(err)?;
+        tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
+        for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
+            db::write_meta(&tx, key, "0").map_err(err)?;
+        }
+        db::write_setting(&tx, ACCOUNT_SETTING, "").map_err(err)?;
+        tx.commit().map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Fetches `GET /account/export` (every row this account owns, as JSON) and
+/// writes it to a file in the app's data dir rather than handing the — for a
+/// real account, potentially large — JSON blob back through the IPC bridge to
+/// sit in a JS string. No dialog/fs plugin is set up for this app yet (see
+/// `Cargo.toml`), so this is the "write from Rust, hand back the path" route
+/// the Phase E handoff called out as the fallback; the file name uses a Unix
+/// timestamp rather than a calendar date to avoid pulling in a date-formatting
+/// crate for a filename.
+#[tauri::command]
+pub async fn account_export(app: tauri::AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (base, token) = {
+            let db = app.state::<Db>();
+            stored_base_and_token(&db)?
+        };
+        let body = get_json(&format!("{base}/account/export"), &token)?;
+        let text = serde_json::to_string_pretty(&body).map_err(|e| e.to_string())?;
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_secs();
+        let path = dir.join(format!("albas-export-{stamp}.json"));
+        std::fs::write(&path, text).map_err(|e| e.to_string())?;
+        Ok(path.display().to_string())
+    })
+    .await
+    .map_err(err)?
 }
 
 #[cfg(test)]
@@ -252,7 +341,13 @@ pub async fn app_signin_start(
         let res = post_json(&format!("{base}/app-session"), None, &json!({}))?;
         let nonce = res["nonce"].as_str().ok_or("Bad response from server: no nonce")?;
         let code = res["code"].as_str().unwrap_or("");
-        let portal = format!("{}/{}?app_session={}", portal_base(&base), screen, nonce);
+        // The nonce rides in the URL *fragment*: fragments are never sent in
+        // an HTTP request (not to this server on the next navigation, not to
+        // any server the browser talks to), so it never ends up in an access
+        // log. `web/src/App.tsx` reads `location.hash` first and falls back
+        // to the query string for one release (old links already handed out
+        // used `?app_session=`), then that fallback should be dropped.
+        let portal = format!("{}/{}#app_session={}", portal_base(&base), screen, nonce);
         // Remembered the same way a ceremony is, so a poll can't be pointed at
         // a different host than the session was opened on.
         *app.state::<AuthFlow>().0.lock().map_err(err)? = Some(base);
@@ -300,4 +395,206 @@ pub async fn app_signin_poll(app: tauri::AppHandle, nonce: String) -> Result<Val
 pub async fn app_signin_cancel(app: tauri::AppHandle) -> Result<(), String> {
     *app.state::<AuthFlow>().0.lock().map_err(err)? = None;
     Ok(())
+}
+
+// --- Password sign-in (in-app) ---
+//
+// A password is the mandatory first credential, and unlike a passkey it needs
+// no OS authenticator, so it is the one sign-in that runs entirely in the app:
+// the WebView asks Rust, Rust asks the server over ureq, and the browser
+// handoff above becomes the secondary path for passkeys and Google.
+
+/// Resolves the base to sign in against: what the caller passed (the
+/// user-editable server field), else the shipped default.
+fn signin_base(url: &str) -> Result<String, String> {
+    let base = if url.trim().is_empty() { DEFAULT_URL.to_string() } else { url.to_string() };
+    let base = normalize_base(&base);
+    check_url(&base)?;
+    Ok(base)
+}
+
+#[tauri::command]
+pub async fn account_register_password(
+    app: tauri::AppHandle,
+    url: String,
+    name: String,
+    password: String,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = signin_base(&url)?;
+        let res = post_json(
+            &format!("{base}/register/password"),
+            None,
+            &json!({ "name": name.trim(), "password": password }),
+        )?;
+        let token = res["token"].as_str().ok_or("Bad response from server: no token")?;
+        let account = res["name"].as_str().unwrap_or(name.trim());
+        adopt_session(&app, &base, token, account)?;
+        Ok(json!({ "status": "ready", "account": account }))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// `status` is `ready` (this device is now on the account) or `totp_required`
+/// (the account has a confirmed authenticator and no code was sent — ask for
+/// one and call again). A wrong password or code is an `Err` with the
+/// server's message.
+#[tauri::command]
+pub async fn account_login_password(
+    app: tauri::AppHandle,
+    url: String,
+    name: String,
+    password: String,
+    code: Option<String>,
+    // A one-time recovery code, used in place of `code` when the
+    // authenticator itself isn't available. See `sync-server/src/totp.rs`'s
+    // recovery-code contract.
+    recovery_code: Option<String>,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = signin_base(&url)?;
+        let mut body = json!({ "name": name.trim(), "password": password });
+        if let Some(code) = code.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()) {
+            body["code"] = Value::String(code);
+        }
+        if let Some(rc) = recovery_code.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()) {
+            body["recovery_code"] = Value::String(rc);
+        }
+        let res = ureq::post(&format!("{base}/login/password"))
+            .timeout(Duration::from_secs(30))
+            .send_json(&body);
+        let res = match res {
+            Ok(r) => r.into_json::<Value>().map_err(|e| format!("Bad response from server: {e}"))?,
+            Err(ureq::Error::Status(428, _)) => return Ok(json!({ "status": "totp_required" })),
+            Err(e) => return Err(friendly(e)),
+        };
+        let token = res["token"].as_str().ok_or("Bad response from server: no token")?;
+        let account = res["name"].as_str().unwrap_or(name.trim());
+        adopt_session(&app, &base, token, account)?;
+        Ok(json!({ "status": "ready", "account": account }))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// One authenticated call against the signed-in server, for the credential
+/// management in Settings (`/passkeys`, `/password`, `/totp`…). The WebView
+/// can't `fetch` the server itself — its origin is `tauri://localhost`, the
+/// server has no CORS layer, and WebKit reports that as a bare "Load failed"
+/// — so every such request hops through here, the same way sync and shares do.
+///
+/// Returns `{ status, body }` for any HTTP answer, including errors, so the
+/// caller can treat a 404 as "server too old" the way the old fetch code did;
+/// only a transport failure is an `Err`.
+#[tauri::command]
+pub async fn sync_api(
+    app: tauri::AppHandle,
+    method: String,
+    path: String,
+    body: Option<Value>,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !path.starts_with('/') || path.contains("..") {
+            return Err(format!("Bad API path: {path}"));
+        }
+        let (base, token) = {
+            let db = app.state::<Db>();
+            stored_base_and_token(&db)?
+        };
+        let method = method.to_ascii_uppercase();
+        let req = ureq::request(&method, &format!("{base}{path}"))
+            .set("Authorization", &format!("Bearer {token}"))
+            .timeout(Duration::from_secs(30));
+        let res = match body {
+            Some(b) => req.send_json(&b),
+            None => req.call(),
+        };
+        let resp = match res {
+            Ok(r) => r,
+            Err(ureq::Error::Status(_, r)) => r,
+            Err(e) => return Err(friendly(e)),
+        };
+        let status = resp.status();
+        let text = resp.into_string().map_err(|e| format!("Bad response from server: {e}"))?;
+        let body = serde_json::from_str::<Value>(&text)
+            .unwrap_or_else(|_| json!({ "message": text.trim() }));
+        Ok(json!({ "status": status, "body": body }))
+    })
+    .await
+    .map_err(err)?
+}
+
+// --- Cross-device sign-in ---
+//
+// Both directions reuse the browser handoff's `app_sessions` rows; the only
+// new fact is that `POST /app-session/claim` accepts *any* account token, so a
+// signed-in app can approve a sign-in as well as a signed-in browser can.
+
+/// A signed-in device approving another device's pending sign-in (the nonce
+/// came in over a QR code). Returns the code the other screen is showing.
+#[tauri::command]
+pub async fn app_session_claim(app: tauri::AppHandle, nonce: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (base, token) = {
+            let db = app.state::<Db>();
+            stored_base_and_token(&db)?
+        };
+        let res = post_json(
+            &format!("{base}/app-session/claim"),
+            Some(&token),
+            &json!({ "nonce": nonce.trim() }),
+        )?;
+        Ok(json!({
+            "code": res["code"].as_str().unwrap_or(""),
+            "account": res["account"].as_str().unwrap_or(""),
+        }))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The reverse: a signed-in device opens a session and claims it for itself
+/// right away, so that a signed-out device that learns the nonce (QR again)
+/// can poll it and adopt this account. Five-minute, single-use, like every
+/// app session.
+#[tauri::command]
+pub async fn app_session_offer(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (base, token) = {
+            let db = app.state::<Db>();
+            stored_base_and_token(&db)?
+        };
+        let created = post_json(&format!("{base}/app-session"), None, &json!({}))?;
+        let nonce = created["nonce"].as_str().ok_or("Bad response from server: no nonce")?;
+        let claimed = post_json(
+            &format!("{base}/app-session/claim"),
+            Some(&token),
+            &json!({ "nonce": nonce }),
+        )?;
+        // Fragment, not query — see the matching comment in `app_signin_start`.
+        let url = format!("{}/login#linked={}", portal_base(&base), nonce);
+        Ok(json!({
+            "nonce": nonce,
+            "code": claimed["code"].as_str().unwrap_or(""),
+            "url": url,
+            "server": base,
+        }))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Points the poll loop at a session this device did *not* create — one it
+/// scanned. After this, `app_signin_poll` works exactly as for a browser
+/// sign-in.
+#[tauri::command]
+pub async fn app_signin_attach(app: tauri::AppHandle, url: String, nonce: String) -> Result<Value, String> {
+    let base = signin_base(&url)?;
+    let nonce = nonce.trim().to_string();
+    if nonce.is_empty() || !nonce.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("That code isn't an Albas sign-in code.".into());
+    }
+    *app.state::<AuthFlow>().0.lock().map_err(err)? = Some(base);
+    Ok(json!({ "nonce": nonce }))
 }

@@ -9,7 +9,7 @@
 // - Reminders are stripped (events' lead times, todos' reminder flag): your
 //   phone should not buzz for someone else's dentist appointment.
 
-import type { CalendarEvent, RawSharedRow, SharedGroup, Todo } from './types';
+import type { CalendarEvent, Category, CategoryScope, RawSharedRow, SharedGroup, Todo } from './types';
 import { migrateLegacyTask, migrateTodo, periodToEvent, taskToTodo } from './migrations';
 import { DEFAULT_COLOR } from './colors';
 
@@ -31,6 +31,27 @@ function parseJson(v: unknown, fallback: unknown): unknown {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Namespaces a bare category id the way every shared row's own id is namespaced. */
+function nsCategory(owner: string, rawId: unknown): string {
+  const id = str(rawId);
+  return id ? `${owner}:${id}` : '';
+}
+
+const SCOPE_VALUES: CategoryScope[] = ['calendar', 'tasks', 'habits'];
+
+function sharedCategory(id: string, p: Record<string, unknown>): Category {
+  return {
+    id,
+    name: str(p.name, '(untitled)'),
+    colorKey: str(p.color_key) || DEFAULT_COLOR,
+    sort: typeof p.sort === 'number' ? p.sort : 0,
+    scopes: str(p.scopes)
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s): s is CategoryScope => SCOPE_VALUES.includes(s as CategoryScope)),
+  };
+}
+
 function sharedEvent(owner: string, id: string, p: Record<string, unknown>): CalendarEvent | null {
   const startDate = str(p.start_date);
   if (!DATE_RE.test(startDate)) return null;
@@ -47,6 +68,7 @@ function sharedEvent(owner: string, id: string, p: Record<string, unknown>): Cal
     endTime: str(p.end_time) || null,
     recurrence: parseJson(p.recurrence, { type: 'none' }) as CalendarEvent['recurrence'],
     reminders: [],
+    category: nsCategory(owner, p.category),
     sharedBy: owner,
   };
 }
@@ -64,6 +86,7 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
   for (const [owner, ownerRows] of owners) {
     const events: CalendarEvent[] = [];
     const todos = new Map<string, Todo>();
+    const categories = new Map<string, Category>();
     const completions: Array<[string, string, number]> = [];
 
     for (const { tbl, pk, payload } of ownerRows) {
@@ -105,7 +128,7 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
             reminder: false,
             dueDate: str(p.due_date) || null,
             time: str(p.time) || null,
-            category: str(p.category),
+            category: nsCategory(owner, p.category),
             important: !!p.important,
             completions: {},
           });
@@ -122,8 +145,8 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
                 category: str(p.category),
                 completed: !!p.completed,
                 date: str(p.date) || null,
-              })
-            )
+              }),
+            ),
           );
           break;
         }
@@ -135,7 +158,10 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
           }
           break;
         }
-        // weights (or anything a newer server sends) are simply not displayed
+        case 'categories': {
+          categories.set(id, sharedCategory(id, p));
+          break;
+        }
       }
     }
 
@@ -150,6 +176,7 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
       owner,
       events: events.sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id)),
       todos: [...todos.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+      categories: [...categories.values()].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)),
     });
   }
 

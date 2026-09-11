@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use webauthn_rs::prelude::*;
 
-use crate::{admin_ok, mint_token, name_ok, now_ms, random_token, token_hash, AppState, Signups};
+use crate::{mint_token, name_ok, now_ms, random_token, token_hash, AdminError, AppState, Signups, NAME_RULE};
 
 const REG_TTL_MS: i64 = 5 * 60 * 1000;
 const AUTH_TTL_MS: i64 = 5 * 60 * 1000;
@@ -540,33 +540,19 @@ pub(crate) async fn login_finish(
     Ok(Json(json!({ "name": name, "token": token })))
 }
 
-#[derive(Deserialize)]
-pub(crate) struct InviteReq {
-    #[serde(default)]
-    name: Option<String>,
-}
-
-/// Admin-minted invite. With a `name` it can also attach a passkey to that
-/// existing account; without one it is a plain signup pass (useful when
-/// `ALBAS_SYNC_SIGNUPS=invite`).
+/// Mints an invite (`albas-sync admin invite create`). With a `name` it can
+/// also attach a passkey to that existing account; without one it is a plain
+/// signup pass (useful when `ALBAS_SYNC_SIGNUPS=invite`). Returns the plaintext
+/// code — only its hash is stored — and the expiry.
 ///
-/// Kept for that case and for the passkey-onto-existing-account use, but not
-/// getting further admin support: there is no list/revoke endpoint, and the
-/// admin console has no Invites panel. Product direction is open signup only
-/// — see `main.rs`'s module doc comment and root `CLAUDE.md`.
-pub(crate) async fn create_invite(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(req): Json<InviteReq>,
-) -> Result<(StatusCode, Json<Value>), Rejection> {
-    admin_ok(&state, &headers).map_err(|s| (s, String::new()))?;
-    let name = match req.name.as_deref().map(str::trim) {
+/// Kept for those two cases but not getting further admin support: there is
+/// no list/revoke command. Product direction is open signup only — see
+/// `main.rs`'s module doc comment and root `CLAUDE.md`.
+pub(crate) fn create_invite_db(conn: &Connection, name: Option<&str>) -> Result<(String, i64), AdminError> {
+    let name = match name.map(str::trim) {
         Some(n) if !n.is_empty() => {
             if !name_ok(n) {
-                return Err((
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "Account names are 1-64 characters: letters, digits, '-' or '_'.".into(),
-                ));
+                return Err(AdminError::Invalid(NAME_RULE));
             }
             Some(n.to_string())
         }
@@ -574,17 +560,11 @@ pub(crate) async fn create_invite(
     };
     let code = random_token();
     let expires_at = now_ms() + INVITE_TTL_MS;
-    let guard = state.conn.lock().map_err(internal)?;
-    guard
-        .execute(
-            "INSERT INTO invites (code_hash, name, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
-            params![token_hash(&code), name, now_ms(), expires_at],
-        )
-        .map_err(internal)?;
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "code": code, "name": name, "expiresAt": expires_at })),
-    ))
+    conn.execute(
+        "INSERT INTO invites (code_hash, name, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
+        params![token_hash(&code), name, now_ms(), expires_at],
+    )?;
+    Ok((code, expires_at))
 }
 
 /// Android Digital Asset Links: binds the app's signing certificate to this
