@@ -31,7 +31,7 @@ const DialogOverlay = React.forwardRef<
         // bg-scrim, not the stock bg-black/50: this app's scrim is a theme
         // variable and carries a blur, and a literal black would not follow
         // the light theme.
-        'fixed inset-0 z-50 bg-scrim backdrop-blur-[0.25rem] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+        'fixed inset-0 z-50 bg-scrim backdrop-blur-[0.25rem] data-[state=open]:animate-[fade_150ms_ease-out_both] data-[state=closed]:animate-[fade_150ms_ease-in_reverse_both] motion-reduce:animate-none',
         className,
       )}
       {...props}
@@ -61,7 +61,7 @@ function DialogContent({
           //    override it — tailwind-merge doesn't dedupe across responsive
           //    variants, so an unprefixed max-w- loses above the sm breakpoint.
           //    Width belongs to the call site now.
-          'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 border bg-popover p-6 shadow-modal duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+          'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 border bg-popover p-6 shadow-modal outline-none data-[state=open]:animate-[pop_200ms_ease-out_both] data-[state=closed]:animate-[pop_150ms_ease-in_reverse_both] motion-reduce:animate-none',
           className,
         )}
         {...props}

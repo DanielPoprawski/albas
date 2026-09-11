@@ -11,7 +11,7 @@
     ".": {
       "entry": ["index.html", "scripts/*.mjs"],
       "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],
-      "ignoreDependencies": ["tailwindcss", "tw-animate-css"]
+      "ignoreDependencies": ["tailwindcss"]
     },
     "web": {
       "project": ["src/**/*.{ts,tsx}"]

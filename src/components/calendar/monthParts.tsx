@@ -6,7 +6,7 @@ import type { DayCell, WeekRow } from './monthModel';
 /** Layout-independent pieces of the month grid, shared by both variants. */
 
 /**
- * Whether a cell's own content (chips, dots, titles, bars) should read as
+ * Whether a cell's own content (chips, titles, bars) should read as
  * dulled: an elapsed day in the current month, or any day outside it. Kept
  * separate from the cell *background* choice (outside beats past there) since
  * both cases dim the same way.
@@ -54,23 +54,6 @@ export function PeriodCorners({ cell }: { cell: DayCell }) {
         );
       })}
     </>
-  );
-}
-
-/** Repeating-to-do markers: filled = done that day, hollow ring = still due. */
-export function DueDots({ cell }: { cell: DayCell }) {
-  if (cell.dots.length === 0) return null;
-  return (
-    <div className={`flex gap-0.5 mt-0.5 ${dimCell(cell) ? 'opacity-50' : ''}`}>
-      {cell.dots.map((dot, i) => (
-        <div
-          key={i}
-          className="w-1.5 h-1.5 rounded-full"
-          // dynamic: the to-do's own colour
-          style={dot.done ? { backgroundColor: dot.hex } : { border: `1.5px solid ${dot.hex}`, opacity: 0.55 }}
-        />
-      ))}
-    </div>
   );
 }
 

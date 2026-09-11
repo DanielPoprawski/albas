@@ -1,8 +1,4 @@
 @import "tailwindcss";
-/* Supplies the animate-in / fade-in-0 / zoom-in-95 utilities that generated
-   shadcn components reference. Tailwind v4 dropped tailwindcss-animate, and
-   without this those classes silently compile to nothing. */
-@import "tw-animate-css";
 
 /*
  * Outfit (body/UI) and Sora (headings + the wordmark), self-hosted from
@@ -854,8 +850,30 @@ html.qr-scanning #root {
  * Keyframes
  * ─────────────────────────────────────────────────────────────────────────
  * Referenced by name from `animate-[…]` utilities in `MonthViewMobile`,
- * `ui/modal-chrome` and `AddModal`, each paired with `motion-reduce:animate-none`.
+ * `ui/modal-chrome`, `AddModal`, `ui/dialog` and `ui/select`, each paired with
+ * `motion-reduce:animate-none`. `fade` and `pop` run in `reverse` for Radix's
+ * `data-[state=closed]` exit — one keyframe each way, not a tw-animate-css import.
  */
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @keyframes month-slide-next {
   from {
     transform: translateX(18%);

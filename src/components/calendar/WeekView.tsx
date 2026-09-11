@@ -7,14 +7,14 @@ import { colorHex, PILL_BG_ALPHA } from '../../colors';
 import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
 import AddModal from '../AddModal';
 import HourGrid from './HourGrid';
-import { assignLanes, laneCount, weekSegments } from './spans';
+import { assignLanes, laneCount, weekSegments } from './monthModel';
 import type { CalendarEvent, Todo } from '../../types';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 export default function WeekView() {
-  const { selectedDate, setSelectedDate, todos, events, sharedEvents, firstDayOfWeek } = useApp();
+  const { selectedDate, setSelectedDate, todos, allEvents, firstDayOfWeek } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [editTodo, setEditTodo] = useState<Todo | null>(null);
   const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);
@@ -31,10 +31,7 @@ export default function WeekView() {
   const weekEnd = weekDays[6];
   const dayLabels = rotateWeek(DAY_NAMES, firstDayOfWeek);
 
-  const occurrences = useMemo(
-    () => expandEvents([...events, ...sharedEvents], weekStart, weekEnd),
-    [events, sharedEvents, weekStart, weekEnd],
-  );
+  const occurrences = useMemo(() => expandEvents(allEvents, weekStart, weekEnd), [allEvents, weekStart, weekEnd]);
   const longOccs = occurrences.filter(isLongOccurrence);
   const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
   const timedOccs = occurrences.filter((o) => !isBarOccurrence(o));

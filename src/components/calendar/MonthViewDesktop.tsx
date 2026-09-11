@@ -6,7 +6,7 @@ import { isDone } from '../../todoLogic';
 import { shortTime } from '../../eventLogic';
 import { CATEGORY_CLASSES, accentNameOf, colorHex, tintOf } from '../../colors';
 import { eventTitle, sharedTitleAttr } from '../../sharedDisplay';
-import { BarsOverlay, DueDots, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
+import { BarsOverlay, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
 import SearchBar from '../SearchBar';
 import type { MonthLayoutProps } from './monthModel';
 import { IconButton } from '../ui/button';
@@ -186,7 +186,6 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
                       >
                         {cell.date.getDate()}
                       </span>
-                      <DueDots cell={cell} />
                     </div>
 
                     <PeriodTitles cell={cell} onEditEvent={onEditEvent} />

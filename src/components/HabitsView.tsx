@@ -76,82 +76,6 @@ function fallbackLabel(todo: Todo): string {
   return 'Habit';
 }
 
-/* TODO rework stats — the overall stat cards and the week chart are parked
-   here (and their render site in HabitsView is commented out) until the
-   numbers are redone.
-
-function StatCard({
-  value,
-  label,
-}: {
-  value: string | number;
-  label: string;
-}) {
-  return (
-    <div className="flex-1 bg-surface border border-[var(--t-border)] px-5 py-4">
-      <div
-        className="font-heading font-bold text-2xl leading-none"
-      >
-        {value}
-      </div>
-      <div className="text-sm text-[var(--t-ink-secondary)] mt-1">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function WeekChart({ habits }: { habits: HabitData[] }) {
-  const today = new Date();
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const weekBars: { label: string; pct: number }[] = [];
-
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    const dateStr = fmt(date);
-
-    let done = 0;
-    for (const h of habits) {
-      // Check if this habit is due on this date
-      if (isDueOn(h.todo, dateStr)) {
-        done += h.todo.completions[dateStr] ? 1 : 0;
-      }
-    }
-
-    const pct = habits.length > 0 ? Math.round((done / habits.length) * 100) : 0;
-    weekBars.push({ label: dayNames[date.getDay()], pct });
-  }
-
-  return (
-    <div className="bg-surface border border-[var(--t-border)] p-5 mb-6">
-      <div
-        className="font-heading text-sm font-bold uppercase tracking-[0.5px] text-[var(--t-ink-muted)] mb-4"
-      >
-        This Week
-      </div>
-      <div
-        className="flex items-end gap-3 h-[6.875rem]"
-      >
-        {weekBars.map((bar, idx) => (
-          <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full gap-2">
-            <div className="w-full flex-1 flex flex-col justify-end">
-              <div
-                className="w-full bg-accent min-h-1"
-                // dynamic: the bar is as tall as the percentage it shows
-                style={{ height: bar.pct + '%' }}
-              />
-            </div>
-            <div className="text-xs text-[var(--t-ink-muted)]">{bar.label}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-*/
-
 function HabitCard({ habit }: { habit: HabitData }) {
   const { toggleTodo, setTodoValue, categoryById } = useApp();
   const color = colorHex(habit.todo.colorKey);
@@ -297,18 +221,6 @@ export default function HabitsView() {
       };
     });
 
-  // TODO rework stats — the overall stat cards and the week chart are parked
-  // (see the commented block in the body below) until the numbers are redone.
-  // const todayDoneCount = habits.filter(h => h.doneToday).length;
-  // const bestOverallStreak = habits.length > 0 ? Math.max(...habits.map(h => h.currentStreak)) : 0;
-  // let weekSum = 0;
-  // for (const h of habits) {
-  //   const last7 = h.history.slice(-7);
-  //   weekSum += last7.reduce((a, b) => a + b, 0);
-  // }
-  // const weeklyRateOverall =
-  //   habits.length > 0 ? Math.round((weekSum / (habits.length * 7)) * 100) : 0;
-
   return (
     // `flex-1 min-w-0` + a white ground: this is the design's `.main-column`,
     // and as a bare child of the shell's flex row it would otherwise size to
@@ -325,15 +237,6 @@ export default function HabitsView() {
 
       {/* Body - scrollable */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        {/* TODO rework stats — parked, not deleted:
-        <div className="flex flex-col md:flex-row gap-4 mb-5">
-          <StatCard value={`${todayDoneCount}/${habits.length}`} label="Completed today" />
-          <StatCard value={bestOverallStreak} label="Longest active streak" />
-          <StatCard value={`${weeklyRateOverall}%`} label="Weekly completion rate" />
-        </div>
-        {habits.length > 0 && <WeekChart habits={habits} />}
-        */}
-
         {/* Filter chips — only worth showing once there's something to filter by. */}
         {habitCategories.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Filter by category">

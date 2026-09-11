@@ -11,7 +11,7 @@ import HourGrid from './HourGrid';
 import type { CalendarEvent } from '../../types';
 
 export default function DayView() {
-  const { selectedDate, setSelectedDate, todos, events, sharedEvents, toggleTodo, firstDayOfWeek } = useApp();
+  const { selectedDate, setSelectedDate, todos, allEvents, toggleTodo, firstDayOfWeek } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);
   // Shared events are read-only — every edit path funnels through here.
@@ -23,10 +23,7 @@ export default function DayView() {
   const todayStr = fmt(new Date());
   const dateStr = selectedDate ?? todayStr;
 
-  const occurrences = useMemo(
-    () => expandEvents([...events, ...sharedEvents], dateStr, dateStr),
-    [events, sharedEvents, dateStr],
-  );
+  const occurrences = useMemo(() => expandEvents(allEvents, dateStr, dateStr), [allEvents, dateStr]);
   const longOccs = occurrences.filter(isLongOccurrence);
   const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
   const timedOccs = occurrences.filter((o) => !isBarOccurrence(o));

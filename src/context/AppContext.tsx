@@ -146,6 +146,8 @@ interface AppContextType {
   visibleShared: SharedGroup[];
   /** Visible shared events flattened, each carrying `sharedBy` — merged into the calendar. */
   sharedEvents: CalendarEvent[];
+  /** Own + visible shared events — what every calendar surface expands. */
+  allEvents: CalendarEvent[];
   /** Owners hidden on this device (local preference, never synced). */
   hiddenOwners: string[];
   toggleOwnerHidden: (owner: string) => void;
@@ -664,6 +666,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [settings.__shared_hidden]);
   const visibleShared = useMemo(() => shared.filter((g) => !hiddenOwners.includes(g.owner)), [shared, hiddenOwners]);
   const sharedEvents = useMemo(() => visibleShared.flatMap((g) => g.events), [visibleShared]);
+  const allEvents = useMemo(() => [...events, ...sharedEvents], [events, sharedEvents]);
 
   function toggleOwnerHidden(owner: string) {
     const next = hiddenOwners.includes(owner) ? hiddenOwners.filter((o) => o !== owner) : [...hiddenOwners, owner];
@@ -731,6 +734,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         shared,
         visibleShared,
         sharedEvents,
+        allEvents,
         hiddenOwners,
         toggleOwnerHidden,
         signedIn,

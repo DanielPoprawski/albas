@@ -1,11 +1,9 @@
 import { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { fmt } from '../../dates';
-import { isDoneOn, isDueOn, isRepeating } from '../../todoLogic';
+import { diffDays, fmt } from '../../dates';
+import { isDueOn, isRepeating } from '../../todoLogic';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
 import { colorHex } from '../../colors';
-import { assignLanes, laneCount, weekSegments } from './spans';
-import type { Segment } from './spans';
 import type { Occurrence } from '../../eventLogic';
 import type { FirstDayOfWeek, Todo } from '../../types';
 
@@ -42,11 +40,61 @@ export function getCalendarDays(
 
 const MAX_BAR_LANES = 3;
 
-/** A repeating to-do due on a day: filled = completed, hollow = still due. */
-export interface DueDot {
-  hex: string;
-  done: boolean;
+/* ── Week spans ── */
+
+/** A date-span clamped to one week row of the calendar. Columns are 1-based. */
+export interface Segment<T> {
+  item: T;
+  startCol: number; // 1..7
+  span: number; // 1..7
+  startsHere: boolean; // true span start (round the left edge)
+  endsHere: boolean; // true span end (round the right edge)
 }
+
+/** Clamp inclusive date-spans to a week (7 consecutive YYYY-MM-DD strings). */
+export function weekSegments<T extends { startDate: string; endDate: string }>(
+  items: T[],
+  weekDays: string[],
+): Segment<T>[] {
+  const weekStart = weekDays[0];
+  const weekEnd = weekDays[6];
+  const out: Segment<T>[] = [];
+  for (const item of items) {
+    if (item.startDate > weekEnd || item.endDate < weekStart) continue;
+    const segStart = item.startDate > weekStart ? item.startDate : weekStart;
+    const segEnd = item.endDate < weekEnd ? item.endDate : weekEnd;
+    out.push({
+      item,
+      startCol: diffDays(weekStart, segStart) + 1,
+      span: diffDays(segStart, segEnd) + 1,
+      startsHere: item.startDate >= weekStart,
+      endsHere: item.endDate <= weekEnd,
+    });
+  }
+  return out;
+}
+
+/** How many lanes an assignment occupies (0 when empty). */
+export function laneCount(lanes: { lane: number }[]): number {
+  return lanes.reduce((n, l) => Math.max(n, l.lane + 1), 0);
+}
+
+/** Greedy lane assignment: first free lane whose segments don't overlap in columns. */
+export function assignLanes<T>(segments: Segment<T>[]): { seg: Segment<T>; lane: number }[] {
+  const sorted = [...segments].sort((a, b) => a.startCol - b.startCol || b.span - a.span);
+  const laneEnds: number[] = []; // last occupied column per lane
+  return sorted.map((seg) => {
+    let lane = laneEnds.findIndex((end) => end < seg.startCol);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(0);
+    }
+    laneEnds[lane] = seg.startCol + seg.span - 1;
+    return { seg, lane };
+  });
+}
+
+/* ── Cell model ── */
 
 export interface DayCell {
   date: Date;
@@ -58,7 +106,6 @@ export interface DayCell {
   isPast: boolean;
   /** From getDay(), not the column index — a Sunday start moves the weekend columns. */
   isWeekend: boolean;
-  dots: DueDot[];
   /** Cell wash from the week-plus spans covering this day, if any. */
   background: string | undefined;
   longStarts: Occurrence[];
@@ -103,12 +150,6 @@ export interface MonthModelOptions {
   pillCap: number;
   /** Floor on the row count, so the row height doesn't jump between months. */
   minWeeks?: number;
-  /**
-   * Whether repeating to-dos leave a dot on the days they're due. The phone
-   * home page lists every habit directly under the calendar, so the dots were
-   * repeating information into the grid's tightest space.
-   */
-  dueDots?: boolean;
 }
 
 /**
@@ -116,8 +157,8 @@ export interface MonthModelOptions {
  * All grid logic belongs here — a fix applied in one layout only is exactly
  * what this split exists to prevent.
  */
-export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthModelOptions): WeekRow[] {
-  const { currentMonth, selectedDate, todos, events, sharedEvents, firstDayOfWeek } = useApp();
+export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): WeekRow[] {
+  const { currentMonth, selectedDate, todos, allEvents, firstDayOfWeek } = useApp();
 
   const todayStr = fmt(new Date());
   const days = getCalendarDays(currentMonth, firstDayOfWeek, minWeeks);
@@ -126,16 +167,12 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
   const rangeEnd = fmt(days[days.length - 1].date);
   // Shared events ride the same pipeline (lanes, pills, washes, overflow);
   // each carries `sharedBy`, which the render sites use to dim and de-click.
-  const occurrences = useMemo(
-    () => expandEvents([...events, ...sharedEvents], rangeStart, rangeEnd),
-    [events, sharedEvents, rangeStart, rangeEnd],
-  );
+  const occurrences = useMemo(() => expandEvents(allEvents, rangeStart, rangeEnd), [allEvents, rangeStart, rangeEnd]);
 
   return useMemo(() => {
     const weeks: { date: Date; isCurrentMonth: boolean }[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
-    const repeatingTodos = todos.filter(isRepeating);
     const onceTodos = todos.filter((t) => !isRepeating(t));
 
     // week-plus spans (trips, programs — the old periods) tint their day cells
@@ -155,14 +192,7 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
       const cells = week.map(({ date, isCurrentMonth }): DayCell => {
         const dateStr = fmt(date);
 
-        // One-time to-dos render as pills, so dots represent repeating ones only
-        const dots = dueDots
-          ? repeatingTodos
-              .filter((t) => isDueOn(t, dateStr, firstDayOfWeek) || isDoneOn(t, dateStr))
-              .map((t) => ({ hex: colorHex(t.colorKey), done: isDoneOn(t, dateStr) }))
-              .slice(0, 4)
-          : [];
-
+        // Repeating to-dos never mark the grid; the day view and Habits list them.
         const dayOnce = onceTodos.filter((t) => isDueOn(t, dateStr, firstDayOfWeek));
         // timed single-day events + bars that overflowed the lane cap
         const dayPillOccs = occurrences.filter(
@@ -182,7 +212,6 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
           // YYYY-MM-DD sorts lexically, so a string compare is a date compare
           isPast: dateStr < todayStr,
           isWeekend: date.getDay() === 0 || date.getDay() === 6,
-          dots,
           background: periodBackground(cellLongs.map((o) => colorHex(o.event.colorKey))),
           longStarts: cellLongs.filter((o) => o.startDate === dateStr),
           longEnds: cellLongs.filter((o) => o.endDate === dateStr),
@@ -201,5 +230,5 @@ export function useMonthModel({ pillCap, minWeeks = 0, dueDots = true }: MonthMo
     });
     // `days` is rebuilt each render from currentMonth, so key on that instead
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks, dueDots]);
+  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks]);
 }

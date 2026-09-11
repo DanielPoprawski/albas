@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { LayoutGrid, ListChecks, Settings as SettingsIcon, Target } from 'lucide-react';
 import { remindDueEvents, remindDueTodos } from '../notifications';
-import Calendar from './Calendar';
+import MonthView from './calendar/MonthView';
+import WeekView from './calendar/WeekView';
+import DayView from './calendar/DayView';
 import HomeView from './HomeView';
 import RightPanel from './RightPanel';
 import TodoViewRedesign from './TodoViewRedesign';
@@ -74,62 +77,11 @@ const SIDEBAR_SECTION = 'flex flex-col gap-2';
  */
 const MAIN_COLUMN = 'min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5';
 
-const ICON = {
-  width: 15,
-  height: 15,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 1.8,
-} as const;
-
 const NAV: { route: Route; label: string; icon: ReactNode }[] = [
-  {
-    route: 'dashboard',
-    label: 'Dashboard',
-    icon: (
-      <svg {...ICON}>
-        <rect x="3" y="3" width="7" height="7" />
-        <rect x="14" y="3" width="7" height="7" />
-        <rect x="3" y="14" width="7" height="7" />
-        <rect x="14" y="14" width="7" height="7" />
-      </svg>
-    ),
-  },
-  {
-    route: 'todo',
-    label: 'To-Do',
-    icon: (
-      <svg {...ICON}>
-        <rect x="3" y="4" width="6" height="6" />
-        <path d="M4.5 7l1 1 2-2" />
-        <line x1="12" y1="7" x2="21" y2="7" />
-        <rect x="3" y="14" width="6" height="6" />
-        <path d="M4.5 17l1 1 2-2" />
-        <line x1="12" y1="17" x2="21" y2="17" />
-      </svg>
-    ),
-  },
-  {
-    route: 'habits',
-    label: 'Habits',
-    icon: (
-      <svg {...ICON}>
-        <circle cx="12" cy="12" r="8" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    ),
-  },
-  {
-    route: 'settings',
-    label: 'Settings',
-    icon: (
-      <svg {...ICON}>
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
-      </svg>
-    ),
-  },
+  { route: 'dashboard', label: 'Dashboard', icon: <LayoutGrid size="1rem" /> },
+  { route: 'todo', label: 'To-Do', icon: <ListChecks size="1rem" /> },
+  { route: 'habits', label: 'Habits', icon: <Target size="1rem" /> },
+  { route: 'settings', label: 'Settings', icon: <SettingsIcon size="1rem" /> },
 ];
 
 function Sidebar({
@@ -259,6 +211,7 @@ export default function AppShell() {
   const {
     activeView,
     setActiveView,
+    calendarMode,
     todos,
     events,
     loaded,
@@ -394,7 +347,17 @@ export default function AppShell() {
               </div>
             )}
 
-            {route === 'dashboard' && (isMobile ? <HomeView /> : <Calendar />)}
+            {route === 'dashboard' &&
+              (isMobile ? (
+                <HomeView />
+              ) : (
+                // No navigation row here: the desktop header lives in MonthViewDesktop.
+                <div className="flex flex-col h-full min-h-0 bg-surface">
+                  {calendarMode === 'month' && <MonthView />}
+                  {calendarMode === 'week' && <WeekView />}
+                  {calendarMode === 'day' && <DayView />}
+                </div>
+              ))}
             {route === 'dashboard' && !isMobile && <RightPanel />}
 
             {route === 'todo' && <TodoViewRedesign />}

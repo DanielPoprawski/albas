@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Settings, Repeat2, Home, CheckSquare } from 'lucide-react';
-import Calendar from './Calendar';
+import MonthView from './calendar/MonthView';
+import WeekView from './calendar/WeekView';
+import DayView from './calendar/DayView';
 import CalendarNav from './calendar/CalendarNav';
 import AddModal from './AddModal';
 import QuickAddField from './QuickAddField';
@@ -37,7 +39,7 @@ export default function HomeView() {
   return (
     <div className="h-full overflow-y-auto scrollbar-hide">
       <div className="h-[60vh] min-h-[16.25rem] flex flex-col">
-        <Calendar isMobile />
+        <MobileCalendar />
       </div>
 
       <div className="p-sm">
@@ -137,6 +139,21 @@ function MobileShell({
 /**
  * Dashboard screen: mini calendar + habits + tasks
  */
+/**
+ * The calendar body in its current mode. The phone's mode button rides in the
+ * top bar (`MobileShell`), so there is no navigation row here.
+ */
+function MobileCalendar() {
+  const { calendarMode } = useApp();
+  return (
+    <div className="flex flex-col h-full min-h-0 bg-surface">
+      {calendarMode === 'month' && <MonthView isMobile />}
+      {calendarMode === 'week' && <WeekView />}
+      {calendarMode === 'day' && <DayView />}
+    </div>
+  );
+}
+
 function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
   return (
     <div className={SCREEN}>
@@ -144,7 +161,7 @@ function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void 
       {/* Edge to edge: every pixel of side padding is a letter of an event
           title that doesn't fit in a cell. */}
       <div className="shrink-0 border-b border-line">
-        <Calendar isMobile />
+        <MobileCalendar />
       </div>
       <div className={CONTENT}>
         <HabitsSection onEdit={setEditing} />

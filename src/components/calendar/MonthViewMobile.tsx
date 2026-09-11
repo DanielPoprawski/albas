@@ -23,12 +23,6 @@ export const PILL_CAP = 1;
  */
 export const MIN_WEEKS = 6;
 
-/**
- * No due dots on a phone. Home lists every habit immediately below the
- * calendar, so the dots repeated that list into the grid's tightest space.
- */
-export const DUE_DOTS = false;
-
 /** How long the month slide runs; matches the keyframes in App.css. */
 /** The slide is 220ms — written literally, since Tailwind only emits class strings it can see. */
 const SLIDE_CLASS = {
