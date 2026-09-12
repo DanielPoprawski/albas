@@ -9,7 +9,6 @@ import QuickAddField from './QuickAddField';
 import HabitsSection from './todo/HabitsSection';
 import TasksSection from './todo/TasksSection';
 import { useIsMobile } from '../useMedia';
-import { MOBILE_HEADER_BUTTON } from './mobileChrome';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
 import type { Todo } from '../types';
@@ -24,6 +23,10 @@ import type { Todo } from '../types';
  * viewport-relative height keeps roughly the same amount of month visible on
  * any device.
  */
+/** The phone header's square icon button — must match `CalendarNav`'s view picker so the bar's two corners agree. */
+const MOBILE_HEADER_BUTTON =
+  'flex size-8 shrink-0 cursor-pointer items-center justify-center border-0 bg-subtle p-0 text-ink transition-all active:bg-line';
+
 export default function HomeView() {
   const [editing, setEditing] = useState<Todo | null>(null);
   const isMobile = useIsMobile();

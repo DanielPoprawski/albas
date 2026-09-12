@@ -46,10 +46,9 @@ web/
 │   ├── App.tsx                # splash / login / register / offline / signed-in router
 │   ├── index.css              # public site styling (ported from the .dc.html design)
 │   ├── components/
-│   │   ├── auth/               # Splash, PasskeyLogin, PasswordLogin, RegisterForm, OfflineInfo, SignedIn
+│   │   ├── auth/               # Splash (+Logo, OfflineInfo), PasskeyLogin, PasswordLogin, RegisterForm, SignedIn
 │   ├── lib/
 │   │   ├── webauthn.ts         # base64url <-> ArrayBuffer, and the create()/get() ceremony wrappers
-│   │   ├── http.ts             # shared request() transport: /api base, JSON, error parsing
 │   │   └── api.ts              # fetch wrapper for the public-site endpoints (register/login/password/totp)
 ├── build.ts                    # bun build -> dist/, index.html entrypoint
 ├── package.json                # Bun project config (separate from root)

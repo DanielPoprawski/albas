@@ -14,7 +14,7 @@ import {
   type TotpStatus,
 } from '../../lib/api';
 import { webauthnSupported } from '../../lib/webauthn';
-import { Logo } from './Logo';
+import { Logo } from './Splash';
 
 type Handoff =
   | { kind: 'none' }

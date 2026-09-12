@@ -1,9 +1,12 @@
 /**
  * The extension point for sign-in methods.
  *
- * Settings → Account & Sign-in renders whatever is registered here rather than
- * a hardcoded list, so adding a method is a new file under `src/authMethods/`
- * plus one `registerAuthMethod()` call — no edit to `Settings.tsx`.
+ * Settings → Account & Sign-in renders whatever `authMethods()` returns rather
+ * than a hardcoded list, so adding a method is a new file under
+ * `src/authMethods/` exporting an `AuthMethod`, plus one entry in the list at
+ * the bottom of this file — no edit to the Settings cards. A module that is
+ * not implemented yet exports nothing, so an unfinished method can never show
+ * a row for a credential that does not exist.
  *
  * The contract is deliberately narrow:
  *  - `load()` returns the credentials **really attached** to the signed-in
@@ -51,7 +54,7 @@ export interface AuthMethodContext {
 }
 
 export interface AuthMethod {
-  /** Unique, stable; re-registering the same id replaces the earlier one. */
+  /** Unique, stable. */
   id: string;
   /** Sort order in the table and the action row. Lower comes first. */
   order: number;
@@ -64,13 +67,13 @@ export interface AuthMethod {
   Action?: ComponentType<{ ctx: AuthMethodContext }>;
 }
 
-const registry = new Map<string, AuthMethod>();
+// Below the types on purpose: the method modules import only types from this
+// file, so there is no runtime cycle.
+import { passkeyMethod } from './passkey';
+import { passwordMethod } from './password';
+import { totpMethod } from './totp';
 
-export function registerAuthMethod(method: AuthMethod): void {
-  registry.set(method.id, method);
-}
-
-/** Everything registered, in `order`. */
+/** Every built-in method, in `order`. */
 export function authMethods(): AuthMethod[] {
-  return [...registry.values()].sort((a, b) => a.order - b.order);
+  return [passkeyMethod, passwordMethod, totpMethod].sort((a, b) => a.order - b.order);
 }

@@ -69,7 +69,7 @@ for `bun run dev`, a `localStorage` blob.
   for `index.html`'s pre-paint. shadcn's `accent` is a hover surface, not the brand color
   (`--t-accent`); use `forms/shared.tsx`, not shadcn `Button`. Icons are lucide.
 - **All Tauri IPC goes through `src/ipc.ts`** (typed wrapper per `generate_handler![]` command);
-  never call `invoke` elsewhere. Web portal HTTP goes through `web/src/lib/http.ts` `request()`.
+  never call `invoke` elsewhere. Web portal HTTP goes through `web/src/lib/api.ts` `request()`.
   Auth validation constants live in `shared/authRules.ts` (both apps). `bun run lint` is Biome
   (signal-only lint config in `biome.json`; the **formatter is on** — 2-space, single quotes,
   120 cols — and CI runs `biome ci`, so format before pushing); `bun run knip` reports dead
@@ -79,7 +79,7 @@ for `bun run dev`, a `localStorage` blob.
 - Layout widths (`--layout-sidebar-w`/`--layout-right-w`) are inline vars on `<html>` via
   `applyLayout()`, persisted as `__layout_*` and mirrored to `localStorage['albas-layout']`;
   `MonthViewDesktop`'s `RESERVED` sums them. Global shortcuts + the Settings list both come from
-  `src/shortcuts.ts` `SHORTCUTS`; `/` reaches components via `focusRegistry.ts`.
+  `src/shortcuts.ts` `SHORTCUTS`; `/` reaches components via `registerFocusTarget` there.
   `SearchBar` (regex/highlight/bulk actions) is one per route. Creating things: `QuickAddField`
   (one line + Enter, on every list surface and the phone tabs; no floating "+"), calendar clicks
   (month cell → `AddModal` with the date, hour-grid slot → with the hour), Ctrl+N. Both go through
@@ -112,7 +112,7 @@ for `bun run dev`, a `localStorage` blob.
   → Rust `sync_api`. Don't reintroduce `fetch` there.
 - **All WebAuthn happens in the system browser** (`web/`); the app holds no WebAuthn code. It is
   the *secondary* path ("More sign-in options"): nonce + poll handoff (`app_session.rs`,
-  `useBrowserSignIn.ts`) with a 4-char code — deliberately not an `albas://` deep link. Adding a
+  `useBrowserSignIn` in `signInHooks.ts`) with a 4-char code — deliberately not an `albas://` deep link. Adding a
   passkey = sign in on the portal with the password, then "Add a passkey" (`/passkeys/start|finish`).
   Firefox on Linux can't do a discoverable passkey login (bare NotAllowedError) — that was the
   original "login doesn't work" bug. The nonce rides in the URL **fragment**

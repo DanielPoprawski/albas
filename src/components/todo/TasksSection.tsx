@@ -4,7 +4,7 @@ import { fmt, shortDate } from '../../dates';
 import { shortTime } from '../../eventLogic';
 import { doneDate, groupTasks, isDone, isOverdue, byImportanceThenDue, UNCATEGORIZED } from '../../todoLogic';
 import { colorHex } from '../../colors';
-import RowActions from './RowActions';
+import { RowActions } from './TodoTaskRow';
 import { SectionHeading } from '../ui/section-heading';
 import type { Todo } from '../../types';
 

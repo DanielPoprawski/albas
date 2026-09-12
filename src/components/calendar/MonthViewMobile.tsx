@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { rotateWeek } from '../../dates';
 import { isDone } from '../../todoLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import { BarsOverlay, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
 import { useMonthSwipe } from './useMonthSwipe';
 import type { MonthLayoutProps } from './monthModel';

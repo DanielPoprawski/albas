@@ -1,9 +1,8 @@
 import { useCallback, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { isAndroid } from '../../platform';
-import QrScanner from './QrScanner';
-import { parseQrPayload } from './qrPayload';
-import type { useBrowserSignIn } from './useBrowserSignIn';
+import { isAndroid } from '../../persistence';
+import QrScanner, { parseQrPayload } from './QrScanner';
+import type { useBrowserSignIn } from './signInHooks';
 import * as ipc from '../../ipc';
 import type { AppSessionApproval, AppSessionOffer } from '../../ipc';
 import { FormMessage } from '../ui/field';

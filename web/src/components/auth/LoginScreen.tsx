@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Screen } from '../../screens';
+import type { Screen } from '../../App';
 import type { Session } from '../../lib/api';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { PasskeyLogin } from './PasskeyLogin';

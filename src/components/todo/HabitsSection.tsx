@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { fmt, rotateWeek, weekOf } from '../../dates';
 import { isDoneOn, isDueOn, isRepeating, repeatLabel, statusLabel, valueOn } from '../../todoLogic';
 import { colorHex } from '../../colors';
-import RowActions from './RowActions';
+import { RowActions } from './TodoTaskRow';
 import { SectionHeading } from '../ui/section-heading';
 import type { Todo } from '../../types';
 

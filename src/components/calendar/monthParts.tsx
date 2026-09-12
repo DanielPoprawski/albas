@@ -1,5 +1,5 @@
 import { colorHex } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import type { Occurrence } from '../../eventLogic';
 import type { DayCell, WeekRow } from './monthModel';
 

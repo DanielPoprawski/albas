@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { useBrowserSignIn } from './auth/useBrowserSignIn';
-import { usePasswordSignIn } from './auth/usePasswordSignIn';
+import { useBrowserSignIn, usePasswordSignIn } from './auth/signInHooks';
 import PasswordForm from './auth/PasswordForm';
 import { SignedOutPanel } from './auth/CrossDevice';
 import { Card } from './ui/card';

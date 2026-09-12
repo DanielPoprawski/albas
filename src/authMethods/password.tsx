@@ -12,7 +12,7 @@
  */
 import { useState } from 'react';
 import { apiError, apiRequest, MIN_PASSWORD_LENGTH } from '../syncServer';
-import { registerAuthMethod, type AuthMethodContext, type AuthMethodRow } from './registry';
+import type { AuthMethod, AuthMethodContext, AuthMethodRow } from './registry';
 
 async function load(ctx: AuthMethodContext): Promise<AuthMethodRow[]> {
   if (!ctx.token) return [];
@@ -83,4 +83,4 @@ function SetPasswordAction({ ctx }: { ctx: AuthMethodContext }) {
   );
 }
 
-registerAuthMethod({ id: 'password', order: 20, load, Action: SetPasswordAction });
+export const passwordMethod: AuthMethod = { id: 'password', order: 20, load, Action: SetPasswordAction };

@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import * as ipc from '../../ipc';
 import type { SyncStatusInfo } from '../../ipc';
-import type { useBrowserSignIn } from '../auth/useBrowserSignIn';
-import type { usePasswordSignIn } from '../auth/usePasswordSignIn';
+import type { useBrowserSignIn, usePasswordSignIn } from '../auth/signInHooks';
 import PasswordForm from '../auth/PasswordForm';
 import { SignedInPanel, SignedOutPanel } from '../auth/CrossDevice';
 import { FormMessage, MicroLabel } from '../ui/field';
@@ -18,7 +17,7 @@ import {
   type AuthMethod,
   type AuthMethodContext,
   type AuthMethodRow,
-} from '../../authMethods';
+} from '../../authMethods/registry';
 import {
   Card,
   LINK_MUTED,

@@ -13,7 +13,7 @@
  */
 import { inTauri } from '../persistence';
 import { apiError, apiRequest } from '../syncServer';
-import { registerAuthMethod, type AuthMethodContext, type AuthMethodRow } from './registry';
+import type { AuthMethod, AuthMethodContext, AuthMethodRow } from './registry';
 
 /** What `GET /passkeys` returns. The server stores no device name, so `label`
  *  is derived from the credential id — see the handler's comment. */
@@ -81,4 +81,4 @@ function AddPasskey({ ctx }: { ctx: AuthMethodContext }) {
   );
 }
 
-registerAuthMethod({ id: 'passkey', order: 10, load, Action: AddPasskey });
+export const passkeyMethod: AuthMethod = { id: 'passkey', order: 10, load, Action: AddPasskey };

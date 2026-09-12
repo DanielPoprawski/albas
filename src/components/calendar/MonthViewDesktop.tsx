@@ -5,7 +5,7 @@ import { rotateWeek, weekdayAt, fmt } from '../../dates';
 import { isDone } from '../../todoLogic';
 import { shortTime } from '../../eventLogic';
 import { CATEGORY_CLASSES, accentNameOf, colorHex, tintOf } from '../../colors';
-import { eventTitle, sharedTitleAttr } from '../../sharedDisplay';
+import { eventTitle, sharedTitleAttr } from '../../sharedLogic';
 import { BarsOverlay, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
 import SearchBar from '../SearchBar';
 import type { MonthLayoutProps } from './monthModel';

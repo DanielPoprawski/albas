@@ -3,7 +3,7 @@ import { Search, X, Trash2, Palette, ChevronLeft, ChevronRight, Pencil } from 'l
 import { useApp } from '../context/AppContext';
 import { addDays, parse } from '../dates';
 import { colorHex } from '../colors';
-import { registerFocusTarget } from '../focusRegistry';
+import { registerFocusTarget } from '../shortcuts';
 import { isRepeating } from '../todoLogic';
 import { buildMatcher, isRegexLiteral } from '../searchMatch';
 import type { CalendarEvent, Todo } from '../types';

@@ -1,12 +1,32 @@
 import { useEffect, useState } from 'react';
 import './index.css';
 import { claimGoogleTicket, getSession, saveSession, type Session } from './lib/api';
-import { PATH_OF, screenOfPath, type Screen } from './screens';
-import { Splash } from './components/auth/Splash';
+import { OfflineInfo, Splash } from './components/auth/Splash';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { RegisterForm } from './components/auth/RegisterForm';
-import { OfflineInfo } from './components/auth/OfflineInfo';
 import { SignedIn } from './components/auth/SignedIn';
+
+export type Screen = 'splash' | 'login' | 'register' | 'offline';
+
+const PATH_OF: Record<Screen, string> = {
+  splash: '/',
+  login: '/login',
+  register: '/register',
+  offline: '/offline',
+};
+
+function screenOfPath(pathname: string): Screen {
+  switch (pathname) {
+    case '/login':
+      return 'login';
+    case '/register':
+      return 'register';
+    case '/offline':
+      return 'offline';
+    default:
+      return 'splash';
+  }
+}
 
 /**
  * Reads a param from the URL *fragment* first — `src-tauri/src/account.rs`

@@ -24,7 +24,7 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { apiError, apiRequest } from '../syncServer';
-import { registerAuthMethod, type AuthMethodContext, type AuthMethodRow } from './registry';
+import type { AuthMethod, AuthMethodContext, AuthMethodRow } from './registry';
 
 interface TotpStatus {
   enrolled: boolean;
@@ -305,4 +305,4 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
   );
 }
 
-registerAuthMethod({ id: 'totp', order: 30, load, Action: TotpAction });
+export const totpMethod: AuthMethod = { id: 'totp', order: 30, load, Action: TotpAction };

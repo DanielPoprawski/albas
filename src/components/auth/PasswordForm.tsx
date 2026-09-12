@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { MIN_PASSWORD_LENGTH } from '../../syncServer';
-import type { PasswordSignInState } from './usePasswordSignIn';
+import type { PasswordSignInState } from './signInHooks';
 
 const INPUT = 'field-input disabled:opacity-50';
 const LABEL = 'micro-label block mb-xs';

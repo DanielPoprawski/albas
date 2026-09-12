@@ -1,5 +1,29 @@
 import { useEffect, useRef } from 'react';
-import { focusSearch } from './focusRegistry';
+
+/**
+ * A tiny cross-component "focus this thing" registry. `/` needs to reach a DOM
+ * node owned by a component that may not even be mounted yet — the search
+ * bar's input — without threading refs through AppShell's route switch or
+ * standing up a React context nobody else needs. The owning component
+ * registers a focus function on mount; whoever wants the focus calls the named
+ * request and gets a no-op if nothing is listening.
+ */
+type FocusTarget = 'search';
+
+const focusRegistry: Partial<Record<FocusTarget, () => void>> = {};
+
+/** Registers `fn` as the current owner of `target`. Returns an unregister callback for cleanup. */
+export function registerFocusTarget(target: FocusTarget, fn: () => void): () => void {
+  focusRegistry[target] = fn;
+  return () => {
+    if (focusRegistry[target] === fn) delete focusRegistry[target];
+  };
+}
+
+/** Focuses the currently-mounted search bar, wherever it lives. */
+function focusSearch(): void {
+  focusRegistry.search?.();
+}
 
 export type ShortcutGroup = 'Navigation' | 'Create' | 'Search';
 

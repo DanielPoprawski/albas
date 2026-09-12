@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fmt } from '../../dates';
 import { shortTime, timeToMinutes, type Occurrence } from '../../eventLogic';
 import { colorHex } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import type { CalendarEvent } from '../../types';
 
 /** `top`/`height` for a point `min` minutes into the day, in hour-grid units. */

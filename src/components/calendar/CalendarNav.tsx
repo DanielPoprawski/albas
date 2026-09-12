@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { MOBILE_HEADER_BUTTON } from '../mobileChrome';
 import { CalendarDays, CalendarRange, CalendarClock, ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { addDays, fmt, parse } from '../../dates';
@@ -82,7 +81,11 @@ export function ModeModal({
         onClick={() => setOpen(true)}
         aria-label={`Calendar view: ${mode}`}
         title="Calendar view"
-        className={cn(MOBILE_HEADER_BUTTON, 'text-ink-muted hover:text-ink active:scale-95')}
+        className={cn(
+          // Matches `HomeView`'s Settings button so the phone header's two corners agree.
+          'flex size-8 shrink-0 cursor-pointer items-center justify-center border-0 bg-subtle p-0 text-ink transition-all active:bg-line',
+          'text-ink-muted hover:text-ink active:scale-95',
+        )}
       >
         <Current size="1rem" />
       </button>

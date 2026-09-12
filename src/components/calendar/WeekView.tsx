@@ -4,7 +4,7 @@ import { fmt, parse, rotateWeek, weekOf } from '../../dates';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
 import { isDone, isDueOn, isRepeating } from '../../todoLogic';
 import { colorHex, PILL_BG_ALPHA } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import AddModal from '../AddModal';
 import HourGrid from './HourGrid';
 import { assignLanes, laneCount, weekSegments } from './monthModel';

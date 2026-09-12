@@ -5,7 +5,7 @@ import { fmt, shortDate } from '../../dates';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
 import { isDoneOn, isDueOn, valueOn } from '../../todoLogic';
 import { colorHex } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedDisplay';
+import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import AddModal from '../AddModal';
 import HourGrid from './HourGrid';
 import type { CalendarEvent } from '../../types';
