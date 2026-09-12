@@ -7,9 +7,10 @@ to the app never requires redeploying it.
 
 One server can host **several people**. Each account has its own fully isolated
 set of rows, unlocked by per-device bearer tokens; the token a device sends to
-`/sync` is what decides whose data it reads and writes. There are no passwords
-anywhere: people sign up and sign in from inside the app with a **passkey**
-(security key, fingerprint, face unlock), which mints a token per device.
+`/sync` is what decides whose data it reads and writes. People sign up and sign
+in from inside the app with a **username and password**; a **passkey** (security
+key, fingerprint, face unlock) and a **TOTP** second factor can be added
+afterwards from the web sign-in site. Every login mints a token per device.
 Accounts can also **share** their calendar and/or to-dos read-only with each
 other — see Sharing below.
 
@@ -45,24 +46,28 @@ devices. It is a credential: send a token over something private — not a
 repo, an issue, or email. There is no separate admin token — administration is
 the `albas-sync admin` CLI run inside the container (see "Admin CLI" below).
 
-## Accounts and passkeys
+## Accounts and credentials
 
-An account is a name plus a set of credentials: **passkeys** (how a person
-signs in) and **tokens** (what each signed-in device uses afterwards, one per
-login, only SHA-256 hashes stored). With `ALBAS_SYNC_ORIGIN` set, anyone with
-the server URL can create an account from the app's welcome screen: pick a
-name, confirm with a security key / fingerprint / face unlock, done. Set
+An account is a name plus a set of credentials: a **password** (the mandatory
+first one, Argon2id), optional **passkeys** and a **TOTP** second factor, and
+**tokens** (what each signed-in device uses afterwards, one per login, only
+SHA-256 hashes stored). Anyone with the server URL can create an account from
+the app's welcome screen: pick a name and a password, done. Set
 `ALBAS_SYNC_SIGNUPS=invite` to require an admin-minted invite code instead.
 
-The WebAuthn ceremony runs inside the app (via the platform's authenticator);
-the server only issues challenges and verifies responses, with the relying
-party derived from `ALBAS_SYNC_ORIGIN`. Login is usernameless — the
-authenticator identifies the account.
+WebAuthn ceremonies run in the system browser on the public site (`web/`); the
+app itself holds no WebAuthn code and receives the result through the
+`/app-session` handoff (`src/app_session.rs`). The server only issues
+challenges and verifies responses, with the relying party derived from
+`ALBAS_SYNC_ORIGIN`. Passkey login is usernameless — the authenticator
+identifies the account.
 
 **Invites** (admin-minted) cover two cases: signup passes when signups are
-locked down, and *attaching a passkey to an account that already exists* — an
-invite minted with that account's exact name is the only way, which is how the
-owner enrolls a security key on the env-token-bootstrapped `owner` account:
+locked down, and *attaching a passkey through the legacy `/register/*` passkey
+ceremony to an account that already exists* — an invite minted with that
+account's exact name unlocks it, which is how an env-token-bootstrapped `owner`
+account with no password can still get a credential (a signed-in person adds
+passkeys self-service instead — see below):
 
 ```bash
 scripts/admin.sh invite create --name owner
@@ -187,10 +192,8 @@ on a second presentation — replay protection, not just numeric correctness.
 
 **TOTP is a second factor for password login only.** `login/password` calls
 `totp::verify_if_enrolled` after the password verifies; passkey login does not,
-deliberately. A passkey is already possession plus user verification, and the
-ceremony runs through the OS authenticator via a Tauri plugin that has nowhere
-to prompt for a typed code. An account with no confirmed secret is unaffected
-either way.
+deliberately — a passkey is already possession plus user verification. An
+account with no confirmed secret is unaffected either way.
 
 **Sessions** — `GET /tokens` lists this account's bearer tokens
 (`{id, label, createdAt, expiresAt, lastUsedAt, current}`), `DELETE
@@ -212,7 +215,7 @@ payloads included — this is the account owner asking for their own data back.
 
 ## Rate limiting and lockout
 
-Two independent layers, both new: **per-IP** (nginx's `limit_req_zone` in
+Two independent layers: **per-IP** (nginx's `limit_req_zone` in
 `nginx/tls.conf`, and — in case nginx is ever bypassed or the app is run
 without it, e.g. `cargo run` behind a plain reverse proxy or none at all — a
 `tower_governor` layer in `main.rs` on the same routes, 10 requests/minute
@@ -409,13 +412,15 @@ works well).
 | `ALBAS_SYNC_ASSETLINKS`     | *(unset)*             | Raw JSON served at `/.well-known/assetlinks.json` (Android Digital Asset Links). |
 | `ALBAS_SYNC_DB`             | `/data/albas-sync.db` | SQLite file, shared by the server and `albas-sync admin`. Back this up (`.backup` under "Admin CLI"). |
 | `ALBAS_SYNC_ADDR`           | `0.0.0.0:8787`        | Listen address.                                                          |
+| `ALBAS_SYNC_GOOGLE_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URI` | *(unset)* | Google OAuth (server-side confidential client, `google.rs`). All three or none; unset hides the Google button (`GET /auth/config`). |
 | `ALBAS_SYNC_KEK`            | *(unset)*             | Base64 of exactly 32 raw bytes — the key TOTP secrets are encrypted under at rest (AES-256-GCM). Generate with `openssl rand -base64 32`. Unset means `POST /totp/enroll` refuses with 503 rather than storing a secret in the clear; an *existing* encrypted secret that can't be decrypted (unset/rotated/corrupted) fails TOTP verification closed, logging the reason server-side rather than exposing it. Losing or rotating this key without a plan makes every enrolled account's TOTP unverifiable — `albas-sync admin totp clear <name>` is the recovery, same as a lost authenticator. |
 
-On a fresh database there must be *some* way to end up with an account —
-`ALBAS_SYNC_ORIGIN` (passkey signup) or `ALBAS_SYNC_TOKEN`, or one created
-beforehand with `albas-sync admin account create <name>` (the CLI initialises
-the schema itself, so it works on an empty volume); with none of those the
-server refuses to start rather than run uselessly.
+On a fresh database the startup guard insists on *some* way to end up with an
+account — `ALBAS_SYNC_ORIGIN` or `ALBAS_SYNC_TOKEN`, or one created beforehand
+with `albas-sync admin account create <name>` (the CLI initialises the schema
+itself, so it works on an empty volume); with none of those the server refuses
+to start rather than run uselessly. Password signup itself needs neither, so in
+practice `ALBAS_SYNC_ORIGIN` is always set.
 
 ## Protocol
 
@@ -483,7 +488,7 @@ Last-write-wins is **per row**, not per field. Two devices editing different
 fields of the same to-do while both offline will keep only the later edit
 wholesale. For a single user across a couple of devices this is nearly always
 what you want; if it ever isn't, the merge rule lives in one `ON CONFLICT …
-WHERE` clause in `src/main.rs`.
+WHERE` clause in `src/sync.rs`.
 
 ## What is not synced
 
@@ -495,10 +500,19 @@ the one that wrote them.
 To sync a subset later, give `meta` its own `updated_at`/`deleted` columns and add
 it to `TABLES` in `src-tauri/src/sync.rs`, keeping the `__` prefix excluded.
 
+## Source layout
+
+`src/main.rs` holds the router, `AppState`, the `*_db` helpers the CLI shares,
+and the startup guard. Everything else is one module per concern: `schema.rs`
+(`init_db`, `ensure_column`, legacy migrations), `sync.rs` (`POST /sync`, the
+merge rule), `shares.rs`, `tokens.rs`, `account.rs` (delete/export),
+`passkey.rs`, `password.rs`, `totp.rs`, `google.rs`, `app_session.rs` (the
+browser → app handoff), `lockout.rs`, `admin.rs` (the CLI), `tests.rs`.
+
 ## Tests
 
 ```bash
-cargo test                     # server: token comparison and the merge rule
+cargo test                     # src/tests.rs: merge rule, sharing, tokens, lockout, schema
 ```
 
 The client's half, including a live two-device round trip:

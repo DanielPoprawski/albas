@@ -23,7 +23,7 @@ still current.
 ## Key Constraints
 
 - **Same origin as the sync server.** No CORS layer, and the WebAuthn RP ID is this exact
-  domain — not a subdomain or the apex. See root `CLAUDE.md`, "Domain and origins".
+  domain — not a subdomain or the apex. See root `CLAUDE.md`, "Data & sync invariants".
 - **Token handling:** the session token (minted on passkey/password login) lives in
   `localStorage['albas-session']`. There is no admin token anywhere in this app.
 - **Passkey login is discoverable (usernameless).** `POST /login/start` takes no body and no
@@ -43,13 +43,14 @@ web/
 │   │                           #   proxies "/api/*" in dev
 │   ├── index.html             # public site HTML shell -> frontend.tsx
 │   ├── frontend.tsx           # public site React root -> App.tsx
-│   ├── App.tsx                # splash / login / register / offline / signed-in router
-│   ├── index.css              # public site styling (ported from the .dc.html design)
+│   ├── App.tsx                # `Screen` type, paths, and the splash/login/register/offline/signed-in router
+│   ├── index.css              # public site styling
 │   ├── components/
-│   │   ├── auth/               # Splash (+Logo, OfflineInfo), PasskeyLogin, PasswordLogin, RegisterForm, SignedIn
+│   │   └── auth/               # Splash (+Logo, OfflineInfo), LoginScreen (PasswordLogin, PasskeyLogin,
+│   │                           #   GoogleSignInButton), RegisterForm, SignedIn
 │   ├── lib/
 │   │   ├── webauthn.ts         # base64url <-> ArrayBuffer, and the create()/get() ceremony wrappers
-│   │   └── api.ts              # fetch wrapper for the public-site endpoints (register/login/password/totp)
+│   │   └── api.ts              # `request()` + `ApiError`, and one function per endpoint the site calls
 ├── build.ts                    # bun build -> dist/, index.html entrypoint
 ├── package.json                # Bun project config (separate from root)
 └── bun.lock                    # Bun lockfile (separate from root)
@@ -91,16 +92,21 @@ reaches `sync-server`, so `main.rs`'s routes are unprefixed.
 - **Add a passkey** (signed-in page): `POST /api/passkeys/start` (bearer) → `{regId, options}`
   (`options` is base64url per `webauthn-rs` — decode with `lib/webauthn.ts`), then
   `POST /api/passkeys/finish {regId, credential}`. `GET /api/passkeys` lists them.
-- **`?linked=<nonce>`** on `/login`: a "link another device" QR opened by a camera app. The
-  nonce is only usable from inside the Albas app; the page just says so.
+- **Google**: `GET /api/auth/config` says whether Google is configured (the button only renders
+  when it is); the button navigates to `/api/auth/google/start`, and the callback lands back
+  here with a ticket that `claimGoogleTicket` exchanges for a session.
+- **`#linked=<nonce>`** on `/login`: a "link another device" QR opened by a camera app. The
+  nonce is only usable from inside the Albas app; the page just says so. It rides in the URL
+  fragment so it never reaches an access log; `paramFromHashOrQuery` accepts the old
+  `?linked=` query form for one more release. `#app_session=` (the app's browser sign-in
+  handoff) works the same way.
 - **Session**: once signed in, `localStorage['albas-session'] = {name, token}`. The signed-in
   view shows the account name and a Log Out button (clears the key); it does not need to
   re-validate the token against the server on load — an expired/revoked token just fails the
   next authenticated call, which is rare here since this page makes none after login.
 
-Registration's `Invite Code` field from the original design mock is **intentionally not
-built** — see root `CLAUDE.md`, "Project direction" ("Moving away from invites"). Signup is
-open by default; don't add the field back without checking that note first.
+Registration has **no invite-code field** by design: signups are open, and invites only
+bootstrap existing accounts (root `CLAUDE.md`, "Auth invariants"). Don't add it back.
 
 ## Theming
 
@@ -109,9 +115,9 @@ rather than the main app's `--t-*` light/dark token system. Its colours are the 
 properties at the top of `src/index.css` (same values as the app's light palette, named once;
 never write a hex below that block). **No inline `style={}`**: the CSP is `style-src 'self'`
 (`sync-server/nginx/tls.conf`), so an inline style is silently dropped in production — add a
-class to `index.css` (`.btn-block`, `.copy-muted`, `.code-block`, `.mt-2/.mt-3` exist). That system is Tauri-app-specific (see root `CLAUDE.md`,
-"Theming"); this app doesn't import it and doesn't need to. If dark mode is wanted here later,
-that's a new design decision, not a token swap — don't invent one unasked.
+class to `index.css` (`.btn-block`, `.copy-muted`, `.code-block`, `.mt-2/.mt-3` exist). The
+`--t-*` system is Tauri-app-specific (root `CLAUDE.md`, "Frontend rules"); this app doesn't
+import it. If dark mode is wanted here later, that's a new design decision, not a token swap.
 
 Fonts (`Outfit`, `Sora`) are self-hosted variable TTFs in `src/fonts/`, declared with
 `@font-face` at the top of `index.css`; Bun inlines them as `data:` URIs, which is why the CSP's
@@ -119,7 +125,7 @@ Fonts (`Outfit`, `Sora`) are self-hosted variable TTFs in `src/fonts/`, declared
 
 ## What NOT to Do
 
-- ❌ **Don't add an Invites panel or invite-code field.** See "Project direction" above.
+- ❌ **Don't add an Invites panel or invite-code field.** Signups are open by design.
 - ❌ **Don't add a username field to passkey login.** It's discoverable/usernameless by design.
 - ❌ **Don't rebuild an admin console or an admin token.** Administration is the
   `albas-sync admin` CLI; there are no admin HTTP routes to call.
@@ -147,7 +153,8 @@ that route never runs; nginx gets there first.
 
 ## Maintenance & Protocol Updates
 
-When `sync-server/src/main.rs` or `passkey.rs`/`password.rs`/`totp.rs` change:
+When the sync-server router (`main.rs`) or `passkey.rs`/`password.rs`/`totp.rs`/`google.rs`
+change:
 1. A new/changed field on an existing response → update the inline shape in `lib/api.ts`.
 2. Admin-side changes (`*_db` functions, `admin.rs`) never touch this app — there is no admin
    surface here.

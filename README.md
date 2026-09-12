@@ -61,7 +61,7 @@ app**:
 | `bun run app:android` | A standalone signed release APK, **and installs it** on the connected device, **and launches it**. The only Android command; there is no debug/`.dev` variant on the menu. |
 | `scripts/dev.sh` | A `gum` menu over all of the above (plus the sync-server commands). |
 | `bun run clean` | Deletes the rebuildable build caches (debug and unused-Android cargo targets, Gradle output, `sync-server/target`) — tens of GB. Keeps `release/` and the aarch64 Android target so the next real build stays fast. |
-| `sync-server/scripts/publish.sh` | Builds the sync-server Docker image (amd64), pushes it to GHCR, rebuilds the web console, then SSHes into the server to upload `web/dist/` and pull + restart the stack (expect one passkey prompt). `--build-only` skips the deploy. |
+| `sync-server/scripts/publish.sh` | Builds the sync-server Docker image (amd64), pushes it to GHCR, rebuilds the web sign-in site, then SSHes into the server to upload `web/dist/` and pull + restart the stack (expect one passkey prompt). `--build-only` skips the deploy. |
 
 ### Building
 
@@ -82,9 +82,9 @@ Android development is release builds only: a debug build would install as a **s
 (`dev.daniel_p.albas.dev`, its own database) that starts signed out, which made it more
 friction than it was worth. The build type still exists in `build.gradle.kts` — run
 `bun run tauri android build --debug --apk --target aarch64` by hand on the rare occasion you
-want WebView devtools, which are on for debug builds only. `CLAUDE.md` has the full story on
-Android identities, signing and a Tauri quirk where `android dev` installs the suffixed app
-but launches the unsuffixed one.
+want WebView devtools, which are on for debug builds only. App id plus signing key is the app's
+identity on the device, and a Tauri quirk means `android dev` installs the suffixed app but
+launches the unsuffixed one — another reason it is off the menu.
 
 ### Versioning
 
@@ -125,8 +125,26 @@ albas-sync: opaque row store               sync-server/
   wins* (last-write-wins, per row). `seq` is server-assigned and monotonic and decides *what a
   device hasn't seen*. A skewed device clock therefore can never make another device skip a row.
 
-`CLAUDE.md` documents the design rules in detail, including the ones that are load-bearing and
-easy to break by accident.
+### Module map
+
+- `src/context/` — `SettingsContext`, `UiContext`, `DataContext` composed behind `useApp()` (or the
+  narrow `useSettings`/`useUi`/`useData`); `appearance.ts` stamps theme/font/layout on `<html>`,
+  `seedData.ts` is the first-launch demo data. `persistence.ts` chooses SQLite (Tauri) or a
+  `localStorage` blob (`bun run dev`); `ipc.ts` is the only Tauri `invoke` surface.
+- `src/components/` — `calendar/` (month/week/day views, hour grid), `todo/`, `forms/` (todo/event
+  forms, `shared.tsx` primitives), `addModal/` (create/edit modals over a field `catalog.ts`),
+  `settings/` (one file per card), `auth/` (password form, browser handoff, QR), `ui/` (small
+  primitives, no barrel).
+- `src/authMethods/` — password, passkey, TOTP cards; `registry.ts` lists them. `shared/authRules.ts`
+  holds the validation constants both apps use.
+- `src-tauri/src/` — `lib.rs` (commands), `db.rs` (SQLite), `sync.rs` (sync client), `account.rs`
+  (auth), `token_store.rs` (OS keyring on desktop).
+- `sync-server/src/` — `main.rs` (router, `*_db` helpers), `schema.rs`, `sync.rs`, `shares.rs`,
+  `tokens.rs`, `account.rs`, `passkey.rs`, `password.rs`, `totp.rs`, `google.rs`, `app_session.rs`,
+  `lockout.rs`, `admin.rs`, `tests.rs`.
+- `web/src/` — `App.tsx` (screen router), `components/auth/`, `lib/api.ts`, `lib/webauthn.ts`.
+
+`CLAUDE.md` is the short list of rules that are load-bearing and easy to break by accident.
 
 ## How it's hosted
 
@@ -197,8 +215,26 @@ source of truth that silently drifts from what is actually deployed.
 - [x] One unified version number across every artifact
 - [x] Consolidate onto a single origin serving both the API and the web UI *(client + configs done; DNS pending)*
 - [x] Server administration — accounts, invites, device tokens, shares *(the planned web admin console was replaced by the `albas-sync admin` CLI, 2026-09; see `sync-server/README.md`, "Admin CLI")*
-- [ ] Rate limiting and automated backups on the server
-- [ ] Encryption at rest, and eventually end-to-end encryption
+- [x] Rate limiting and per-credential lockout on the server
+- [x] Backups — a Litestream sidecar replicating to a local directory (`sync-server/litestream.yml`);
+      no off-site replica yet
+- [ ] Encryption at rest (TOTP secrets already are; payloads are not), and eventually end-to-end
+      encryption
+
+### Known gaps
+
+- To-do reminders fire on the due day, not at the to-do's `time`. The habits route is unpersisted
+  (`ActiveView` has no name for it).
+- Settings' display name is read-only.
+- `CalendarEvent` has no `location`, so the Add modal folds it into the description. Categories seed
+  only on a fresh, signed-out install.
+- Push 2FA is wanted but unbuilt (device registration, a push channel, pending state).
+- Linking an existing account to Google needs an authenticated Settings action. Habits stats were
+  removed pending a rework.
+- Server limits: unbounded tombstones, in-memory ceremony maps (`passkey::Pending`,
+  `google::Pending`; `app_sessions` is capped at 1000), a single `Mutex<Connection>`.
+- Direction: local-only stays free and complete offline; sync is the paid part. Payloads are
+  plaintext for now.
 
 **On encryption:** end-to-end encryption and an admin console that can read payloads are
 mutually exclusive — that is the definition, not an implementation detail. The intended path
