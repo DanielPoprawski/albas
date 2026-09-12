@@ -2,7 +2,7 @@
 
 Albas: Tauri v2 desktop + Android to-do/calendar/habit app. Local-first — SQLite on device is truth,
 fully offline. React + TS + Tailwind v4 (`src/`); Rust backend (`src-tauri/src/`, commands in `lib.rs`
-→ `generate_handler![]`). `AppContext.tsx` holds frontend state, `persistence.ts` picks SQLite or,
+→ `generate_handler![]`). `src/context/` holds frontend state (Data/Ui/Settings providers behind `useApp()`; `appearance.ts` stamps theme/font/layout), `persistence.ts` picks SQLite or,
 for `bun run dev`, a `localStorage` blob.
 ## Commands (package manager is **bun**)
 - `bun run tauri dev` — desktop dev (Wayland WebKit workarounds baked into the `tauri` script).
@@ -141,7 +141,7 @@ for `bun run dev`, a `localStorage` blob.
   `"sync_token"`), SQLite settings on mobile (no keyring backend
   there). `sync.rs`/`account.rs` read it through `token_store::get`, never `db::read_setting`
   directly. The `__sync_token` settings row still exists but now holds a non-secret `"1"`/`""`
-  marker — `AppContext.tsx`'s `signedIn = !!settings.__sync_token?.trim()` check reads only
+  marker — `SettingsContext.tsx`'s `signedIn = !!settings.__sync_token?.trim()` check reads only
   presence, so it needed no change; nothing should read that key expecting the real token.
 - **TOTP** (`totp.rs`): the secret is AES-256-GCM-encrypted at rest under `ALBAS_SYNC_KEK` (32
   bytes, base64 in the env) — unset means enrollment 503s rather than storing plaintext, and an

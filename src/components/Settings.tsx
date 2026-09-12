@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
-import { useApp, FONT_SIZES, FONT_STACKS } from '../context/AppContext';
-import type { FontChoice, FontSizeChoice } from '../context/AppContext';
+import { FONT_SIZES, FONT_STACKS, type FontChoice, type FontSizeChoice } from '../appearance';
+import { useApp } from '../context/AppContext';
 import { colorHex, DEFAULT_COLOR, isHex, PALETTE_COMPACT } from '../colors';
 import { inTauri } from '../persistence';
 import { parseIcs } from '../ics';
@@ -52,7 +52,7 @@ type SyncState =
  * theme here is a stored value that `applyTheme()` stamps onto <html>, and
  * "follow the OS" is a fifth state with no `data-theme` to write.
  *
- * `AppContext`'s `THEMES` / `readTheme()` now validate against these same two,
+ * `appearance.ts`'s `THEMES` / `readTheme()` now validate against these same two,
  * so a database still holding `grey-high`/`grey-low` fails that check and falls
  * back to the default rather than selecting an option that no longer paints.
  */

@@ -1,5 +1,5 @@
 import { colorHex, DEFAULT_COLOR } from './colors';
-import type { NewEvent, NewTodo } from './context/AppContext';
+import type { NewEvent, NewTodo } from './context/DataContext';
 import { addMinutes } from './dates';
 import type { AddType, Category, Recurrence, Repeat } from './types';
 

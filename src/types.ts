@@ -106,7 +106,7 @@ export interface CalendarEvent {
  * Two themes, both drawn: `:root` in App.css is light, `[data-theme='dark']`
  * is dark. `grey-high`/`grey-low` were dropped — the redesign never drew them,
  * so they were four names for two palettes. A database still holding one fails
- * `AppContext`'s THEMES check and falls back to the default, which is light.
+ * `appearance.ts`'s THEMES check and falls back to the default, which is light.
  */
 export type ThemeName = 'light' | 'dark';
 /** Which weekday grids start on, as a JS `getDay()` value: 0 = Sunday, 1 = Monday. */

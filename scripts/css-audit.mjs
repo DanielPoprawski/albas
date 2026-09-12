@@ -38,7 +38,7 @@ const only = (flag) => args.size === 0 || args.has(flag);
 const HEX_ALLOWLIST = [
   'src/colors.ts', // the TS mirror of :root (asserted by (c))
   'src/components/forms/shared.tsx', // the colour wheel's conic-gradient
-  'src/context/AppContext.tsx', // pre-CSS surface fallback in applyAppearance
+  'src/appearance.ts', // pre-CSS surface fallback in applyAppearance
   'src/components/Logo.tsx', // brand art: the gradient stops and the white glyph are the logo, not UI
   'src/ics.ts', // exports the stored hex
 ];

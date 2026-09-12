@@ -209,7 +209,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  *
  * The second and last theme. `grey-high`/`grey-low` are gone for good — the
- * redesign never drew them, `ThemeName` names two, and `AppContext`'s THEMES
+ * redesign never drew them, `ThemeName` names two, and `appearance.ts`'s THEMES
  * validates against those two.
  *
  * This block redefines only the `--t-*` properties whose *value* changes; the
@@ -769,7 +769,7 @@ html.qr-scanning #root {
 @layer components {
   .sidebar {
     /* Adjustable via a drag handle, persisted as `__layout_sidebar_w` and
-       applied by `applyLayout()` in AppContext.tsx; the fallback is this same
+       applied by `applyLayout()` in appearance.ts; the fallback is this same
        12.5rem for a device with nothing stored yet. */
     width: var(--layout-sidebar-w, 12.5rem);
     flex-shrink: 0;

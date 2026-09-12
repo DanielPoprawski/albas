@@ -1,5 +1,6 @@
 import { useRef } from 'react';
-import { LAYOUT_LIMITS, clampRem, useApp } from '../context/AppContext';
+import { LAYOUT_LIMITS, clampRem } from '../appearance';
+import { useApp } from '../context/AppContext';
 import QuickAddField from './QuickAddField';
 import ResizeHandle from './ResizeHandle';
 import { fmt, weekOf } from '../dates';
