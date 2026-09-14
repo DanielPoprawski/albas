@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 export type ButtonSize = 'sm' | 'md';
+export type IconButtonVariant = 'primary' | 'ghost' | 'accent2';
 
 /**
  * Three variants, and that is the whole vocabulary: solid purple for the one
@@ -54,7 +55,24 @@ Button.displayName = 'Button';
  * to match the design's `.calendar-header button`, which is the only place a
  * bare icon sits on its own border.
  */
-export const IconButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
+/**
+ * `ghost` is the design's one bordered icon square; `primary` is the same
+ * square filled with the accent; `accent2` is the calendar's ‹ › steppers,
+ * filled with the secondary accent and warming to the accent on hover.
+ */
+const ICON_VARIANTS: Record<IconButtonVariant, string> = {
+  ghost: 'icon-btn',
+  primary:
+    'size-[1.75rem] items-center justify-center border border-accent bg-accent text-on-accent transition-colors duration-150 hover:bg-accent-hover',
+  accent2:
+    'size-[1.75rem] items-center justify-center border-0 bg-accent-2 text-on-accent-2 transition-colors duration-150 hover:bg-accent',
+};
+
+export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: IconButtonVariant;
+}
+
+export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
   ({ className, variant = 'ghost', type = 'button', ...props }, ref) => (
     <button
       ref={ref}
@@ -62,10 +80,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
       data-slot="icon-button"
       className={cn(
         'inline-flex shrink-0 cursor-pointer disabled:pointer-events-none',
-        variant === 'primary'
-          ? 'size-[1.75rem] items-center justify-center border border-accent bg-accent text-on-accent transition-colors duration-150 hover:bg-accent-hover'
-          : // The design's one bordered icon square (the calendar's ‹ › steppers).
-            'icon-btn',
+        ICON_VARIANTS[variant],
         className,
       )}
       {...props}

@@ -1,42 +1,37 @@
 import type { AddType, CalendarEvent, CategoryScope, Todo } from '../../types';
-import { PALETTE_COMPACT } from '../../colors';
-import type { EventRepeat, HabitFreq, Priority } from '../../createItem';
+import type { EventRepeat } from '../../createItem';
 
-export type FieldKey =
-  | 'allday'
-  | 'repeat'
-  | 'reminder'
-  | 'location'
-  | 'color'
-  | 'desc'
-  | 'due'
-  | 'priority'
-  | 'category'
-  | 'target';
+export type FieldKey = 'allday' | 'repeat' | 'reminder' | 'location' | 'desc' | 'due' | 'category' | 'target';
 
-export const CATALOG: Record<AddType, Array<{ key: FieldKey; label: string }>> = {
+export interface Section {
+  id: string;
+  title: string;
+  keys: FieldKey[];
+}
+
+/**
+ * The optional fields, grouped under collapsible headers. Expanding a section
+ * switches all of its fields on; a field only reaches the payload while its
+ * section is open (CreateModal's `has()` rule).
+ */
+export const SECTIONS: Record<AddType, Section[]> = {
   event: [
-    { key: 'allday', label: 'All-day' },
-    { key: 'repeat', label: 'Repeat' },
-    { key: 'reminder', label: 'Reminder' },
-    { key: 'location', label: 'Location' },
-    { key: 'category', label: 'Category' },
-    { key: 'color', label: 'Color' },
-    { key: 'desc', label: 'Description' },
+    { id: 'when', title: 'When', keys: ['allday', 'repeat'] },
+    { id: 'details', title: 'Details', keys: ['category', 'location'] },
+    { id: 'notify', title: 'Notify', keys: ['reminder'] },
+    { id: 'notes', title: 'Notes', keys: ['desc'] },
   ],
   task: [
-    { key: 'due', label: 'Due date' },
-    { key: 'priority', label: 'Priority' },
-    { key: 'category', label: 'List' },
-    { key: 'reminder', label: 'Reminder' },
-    { key: 'desc', label: 'Description' },
+    { id: 'when', title: 'When', keys: ['due'] },
+    { id: 'details', title: 'Details', keys: ['category'] },
+    { id: 'notify', title: 'Notify', keys: ['reminder'] },
+    { id: 'notes', title: 'Notes', keys: ['desc'] },
   ],
   habit: [
-    { key: 'target', label: 'Daily target' },
-    { key: 'category', label: 'Category' },
-    { key: 'reminder', label: 'Reminder' },
-    { key: 'color', label: 'Color' },
-    { key: 'desc', label: 'Description' },
+    { id: 'repeat', title: 'Repeat', keys: ['repeat', 'target'] },
+    { id: 'details', title: 'Details', keys: ['category'] },
+    { id: 'notify', title: 'Notify', keys: ['reminder'] },
+    { id: 'notes', title: 'Notes', keys: ['desc'] },
   ],
 };
 
@@ -48,8 +43,6 @@ export const PLACEHOLDERS: Record<AddType, string> = {
 
 /** Which `categoriesFor()` scope each Add-modal type's category chip offers. */
 export const SCOPE_FOR: Record<AddType, CategoryScope> = { event: 'calendar', task: 'tasks', habit: 'habits' };
-
-export const PALETTE = PALETTE_COMPACT;
 
 /** One optional field's row, revealed with the `rowIn` keyframes (App.css). */
 export const FIELD_ROW = 'flex items-center gap-2.5 animate-[rowIn_0.2s_ease_both] motion-reduce:animate-none';
@@ -91,5 +84,3 @@ export const REMINDER_MINUTES: Record<string, number> = {
 };
 
 export const REPEAT_OPTIONS: EventRepeat[] = ['Never', 'Daily', 'Weekly', 'Monthly'];
-export const FREQ_OPTIONS: HabitFreq[] = ['Daily', 'Weekdays', 'Weekly'];
-export const PRIORITY_OPTIONS: Priority[] = ['Low', 'Normal', 'High'];

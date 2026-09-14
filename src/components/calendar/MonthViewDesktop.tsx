@@ -1,15 +1,17 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { rotateWeek, weekdayAt, fmt } from '../../dates';
+import { rotateWeek, weekdayAt } from '../../dates';
+import { goToday, isThisMonth, stepMonth } from '../../calendarNav';
 import { isDone } from '../../todoLogic';
 import { shortTime } from '../../eventLogic';
 import { CATEGORY_CLASSES, accentNameOf, colorHex, tintOf } from '../../colors';
 import { eventTitle, sharedTitleAttr } from '../../sharedLogic';
 import { BarsOverlay, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
-import SearchBar from '../SearchBar';
+import SearchPalette from '../search/SearchPalette';
 import type { MonthLayoutProps } from './monthModel';
-import { IconButton } from '../ui/button';
+import MonthYearPopover from './MonthYearPopover';
+import { Button, IconButton } from '../ui/button';
 import { Card } from '../ui/card';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
@@ -58,7 +60,7 @@ const CELL_ASPECT = 3 / 2;
 const RESERVED = 'var(--layout-sidebar-w, 12.5rem) + 1rem + 0.5rem + 0.5rem + var(--layout-right-w, 20rem)';
 
 export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDayClick }: MonthLayoutProps) {
-  const { firstDayOfWeek, currentMonth, setCurrentMonth } = useApp();
+  const { firstDayOfWeek, currentMonth, setCurrentMonth, setSelectedDate } = useApp();
 
   // Measure the rows area, not the whole sheet: the weekday header's height
   // isn't part of any cell. Width never feeds back into height (that comes from
@@ -77,15 +79,7 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
   // 0 until the first measurement lands; full width is the sane starting point
   const width = rowsHeight > 0 ? (rowsHeight / rows) * CELL_ASPECT * 7 : undefined;
 
-  const monthStr = fmt(currentMonth).substring(0, 7);
-
-  const handlePrevMonth = () => {
-    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
-  };
+  const nav = { setCurrentMonth, setSelectedDate };
 
   return (
     <Card
@@ -93,39 +87,33 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
       style={{ width, maxWidth: `calc(100vw - (${RESERVED}))` }}
       className="flex-1 min-h-0 overflow-hidden flex flex-col"
     >
-      {/* Calendar header: navigation, and search on the right (adding is a
-          click on a day — the "+ Add" button that used to sit here duplicated
-          that). */}
-      <div className="flex items-center gap-xs px-4 py-4 border-b border-line flex-shrink-0 bg-surface">
-        <IconButton onClick={handlePrevMonth}>
-          <ChevronLeft size="0.875rem" />
-        </IconButton>
+      {/* Calendar header: Today + month navigation on the left, search
+          centred (adding is a click on a day — the "+ Add" button that used
+          to sit here duplicated that). The third column is an empty spacer
+          so the search stays centred on the sheet. */}
+      <div className="grid grid-cols-[auto_minmax(12.5rem,1fr)_auto] items-center gap-4 px-4 py-3 border-b border-line flex-shrink-0 bg-surface">
+        <div className="flex items-center gap-xs">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            disabled={isThisMonth(currentMonth)}
+            onClick={() => goToday(nav)}
+          >
+            Today
+          </Button>
+          <IconButton variant="accent2" aria-label="Previous month" onClick={() => stepMonth(nav, -1)}>
+            <ChevronLeft size="0.875rem" />
+          </IconButton>
+          <MonthYearPopover month={currentMonth} onPick={setCurrentMonth} />
+          <IconButton variant="accent2" aria-label="Next month" onClick={() => stepMonth(nav, 1)}>
+            <ChevronRight size="0.875rem" />
+          </IconButton>
+        </div>
 
-        <select
-          value={monthStr}
-          onChange={(e) => {
-            const [year, month] = e.target.value.split('-').map(Number);
-            setCurrentMonth(new Date(year, month - 1, 1));
-          }}
-          className="px-xs py-[0.375rem] border border-line bg-surface text-sm font-medium font-body cursor-pointer"
-        >
-          {Array.from({ length: 12 }).map((_, i) => {
-            const d = new Date(currentMonth.getFullYear(), i, 1);
-            const key = fmt(d).substring(0, 7);
-            const label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
-            return (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            );
-          })}
-        </select>
+        <SearchPalette scope="calendar" className="w-full max-w-[35rem] justify-self-center" />
 
-        <IconButton onClick={handleNextMonth}>
-          <ChevronRight size="0.875rem" />
-        </IconButton>
-
-        <SearchBar scope="calendar" className="ml-auto" />
+        <div className="w-[4.5rem]" aria-hidden />
       </div>
 
       {/* Weekday headers */}
@@ -162,8 +150,8 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
                     key={cell.dateStr}
                     className={`relative cursor-pointer px-1.5 py-[0.3125rem] ${
                       !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : 'bg-surface'
-                    } ${!isLastCol ? 'border-r border-line' : ''} ${
-                      cell.isCurrentMonth ? 'border-b border-line' : 'border-b border-line'
+                    } ${!isLastCol ? 'border-r border-line' : ''} border-b border-line ${
+                      cell.isToday ? 'today-cell' : ''
                     }`}
                     // dynamic: a long span washes its cells in its own colour
                     style={{ background: cell.background }}

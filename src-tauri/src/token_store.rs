@@ -18,8 +18,6 @@
 
 use crate::db::{self, Db};
 
-const KEYRING_SERVICE: &str = "albas";
-const KEYRING_USER: &str = "sync_token";
 /// The non-secret "am I signed in" marker written to the *same* settings key
 /// `sync.rs` used to store the real token under. See the module doc comment.
 const MARKER_SETTING: &str = "__sync_token";
@@ -28,15 +26,20 @@ const MARKER_SETTING: &str = "__sync_token";
 /// never call this on its own, or the marker and the real stored token could
 /// disagree about whether anyone is signed in.
 fn write_marker(conn: &rusqlite::Connection, signed_in: bool) -> Result<(), String> {
-    db::write_setting(conn, MARKER_SETTING, if signed_in { "1" } else { "" }).map_err(|e| e.to_string())
+    db::write_setting(conn, MARKER_SETTING, if signed_in { "1" } else { "" })
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod store {
-    use super::{KEYRING_SERVICE, KEYRING_USER};
+    const KEYRING_SERVICE: &str = "albas";
+    const KEYRING_USER: &str = "sync_token";
 
     pub(super) fn get(_db: &super::Db) -> Option<String> {
-        keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()?.get_password().ok()
+        keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+            .ok()?
+            .get_password()
+            .ok()
     }
 
     pub(super) fn set(_db: &super::Db, token: &str) -> Result<(), String> {
@@ -68,7 +71,7 @@ mod store {
     use super::Db;
     use crate::db;
 
-    const MOBILE_SECRET_SETTING: &str = "__sync_token_secret";
+    const MOBILE_SECRET_SETTING: &str = db::TOKEN_SECRET_SETTING;
 
     pub(super) fn get(dbs: &Db) -> Option<String> {
         let conn = dbs.0.lock().ok()?;

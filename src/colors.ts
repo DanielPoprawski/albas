@@ -103,7 +103,32 @@ export const TODO_CATEGORIES: { label: string; hex: string }[] = [
  */
 export function accentOf(hex: string): CategoryAccent {
   const found = Object.values(CATEGORY_ACCENTS).find((a) => a.hex.toLowerCase() === hex.toLowerCase());
-  return found ?? { hex, tint: tintOf(hex), line: tintOf(hex, 0.35), ink: hex };
+  if (found) return found;
+  // A wheel pick is its own ink on its tint only while it reads as text; a
+  // pale one (yellow, lime, a light grey) falls back to the theme's ink.
+  const ink = contrastRatio(hex, '#ffffff') >= MIN_INK_CONTRAST ? hex : 'var(--t-ink)';
+  return { hex, tint: tintOf(hex), line: tintOf(hex, 0.35), ink };
+}
+
+/** WCAG AA for body text; below it a hue is a mark, not an ink. */
+const MIN_INK_CONTRAST = 4.5;
+
+/** WCAG relative luminance of a `#rrggbb`. */
+function luminance(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const [r, g, b] = rgb.map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between two `#rrggbb`s, 1 (same) to 21 (black on white). */
+export function contrastRatio(hexA: string, hexB: string): number {
+  const la = luminance(hexA);
+  const lb = luminance(hexB);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
 /**
@@ -179,6 +204,14 @@ export const PALETTE_ROWS: string[][] = [
 ];
 
 /**
+ * The one palette every colour picker offers: the 12 base hues, one per
+ * column of `PALETTE_ROWS`. Categories own colours now, so a picker is a
+ * swatch row plus the wheel — the light/dark shades and the grey ramp were
+ * per-item detail nobody needs on a category.
+ */
+export const CATEGORY_PALETTE: string[] = PALETTE_ROWS[1];
+
+/**
  * The last desktop row: black through white in eleven steps. The twelfth cell
  * is the colour wheel, which is why this stops at eleven.
  */
@@ -214,6 +247,27 @@ const LEGACY: Record<string, string> = {
 };
 
 export const DEFAULT_COLOR: string = CATEGORY_ACCENTS.purple.hex;
+
+/**
+ * The mark colour of an item with no category ("General"). Mirrors
+ * `--t-ink-secondary`'s light value: General is a neutral inbox, so its dots
+ * and checkboxes draw in the same grey as secondary text, not in a hue.
+ */
+export const NEUTRAL_COLOR = '#6b7280';
+
+/**
+ * The colour an item is *drawn* in. Colours belong to categories: an item in
+ * one takes that category's colour, an item in General takes the neutral. The
+ * stored `colorKey` is never consulted, so recolouring a category recolours
+ * every item in it at once.
+ */
+export function displayColor(
+  item: { category: string },
+  categoryById: (id: string) => { colorKey: string } | undefined,
+): string {
+  const cat = categoryById(item.category);
+  return cat ? colorHex(cat.colorKey) : NEUTRAL_COLOR;
+}
 
 /** Resolve a stored color (hex or legacy named key) to a hex string. */
 export function colorHex(key: string | null | undefined): string {

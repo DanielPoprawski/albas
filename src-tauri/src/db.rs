@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -207,6 +207,11 @@ fn repoint_default_server(conn: &Connection) -> rusqlite::Result<()> {
 /// User preferences live in `meta` under this prefix so they can't collide with
 /// internal bookkeeping keys like `legacy_import_done`.
 const SETTING_PREFIX: &str = "setting:";
+/// Where `token_store.rs` keeps the real bearer token on mobile (no keyring
+/// there). Never handed to the WebView: `load_state` filters it out and
+/// `set_setting` refuses it, so the token only ever moves through
+/// `token_store::{get,set,clear}`.
+pub(crate) const TOKEN_SECRET_SETTING: &str = "__sync_token_secret";
 
 /// Unprefixed `meta` access, for bookkeeping the frontend never sees —
 /// `legacy_import_done`, the sync watermarks. Settings go through the
@@ -237,6 +242,11 @@ pub fn write_setting(conn: &Connection, key: &str, value: &str) -> rusqlite::Res
 
 #[tauri::command]
 pub fn set_setting(db: tauri::State<Db>, key: String, value: String) -> Result<(), String> {
+    // The token secret and the signed-in marker belong to `token_store.rs`;
+    // a frontend write to either would desynchronise them from the keyring.
+    if key == TOKEN_SECRET_SETTING || key == crate::sync::TOKEN_SETTING {
+        return Err(format!("{key} is managed by the app and cannot be set directly."));
+    }
     let conn = db.0.lock().map_err(err)?;
     write_setting(&conn, &key, &value).map_err(err)
 }
@@ -376,18 +386,24 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         .map_err(err)?;
 
     let mut completions: HashMap<String, HashMap<String, f64>> = HashMap::new();
-    conn.prepare("SELECT habit_id, date, value FROM habit_completions WHERE deleted = 0 AND value > 0")
-        .map_err(err)?
-        .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, f64>(2)?))
-        })
-        .map_err(err)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(err)?
-        .into_iter()
-        .for_each(|(habit_id, date, value)| {
-            completions.entry(habit_id).or_default().insert(date, value);
-        });
+    conn.prepare(
+        "SELECT habit_id, date, value FROM habit_completions WHERE deleted = 0 AND value > 0",
+    )
+    .map_err(err)?
+    .query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, f64>(2)?,
+        ))
+    })
+    .map_err(err)?
+    .collect::<rusqlite::Result<Vec<_>>>()
+    .map_err(err)?
+    .into_iter()
+    .for_each(|(habit_id, date, value)| {
+        completions.entry(habit_id).or_default().insert(date, value);
+    });
 
     let habits = conn
         .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important FROM habits WHERE deleted = 0")
@@ -478,9 +494,11 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         .map_err(err)?;
 
     let settings = conn
-        .prepare("SELECT key, value FROM meta WHERE key LIKE 'setting:%'")
+        .prepare("SELECT key, value FROM meta WHERE key LIKE 'setting:%' AND key != ?1")
         .map_err(err)?
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .query_map([format!("{SETTING_PREFIX}{TOKEN_SECRET_SETTING}")], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
         .map_err(err)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(err)?
@@ -496,7 +514,15 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         )
         .is_err();
 
-    Ok(AppData { tasks, habits, events, periods, categories, settings, needs_legacy_import })
+    Ok(AppData {
+        tasks,
+        habits,
+        events,
+        periods,
+        categories,
+        settings,
+        needs_legacy_import,
+    })
 }
 
 fn upsert_task(conn: &Connection, t: &Task) -> rusqlite::Result<()> {
@@ -523,13 +549,24 @@ fn upsert_habit(conn: &Connection, h: &Habit) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn upsert_completion(conn: &Connection, habit_id: &str, date: &str, value: f64) -> rusqlite::Result<()> {
+fn upsert_completion(
+    conn: &Connection,
+    habit_id: &str,
+    date: &str,
+    value: f64,
+) -> rusqlite::Result<()> {
     // value <= 0 tombstones the row instead of deleting it, so sync can propagate the clear
     conn.execute(
         "INSERT INTO habit_completions (habit_id, date, value, updated_at, deleted)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(habit_id, date) DO UPDATE SET value=?3, updated_at=?4, deleted=?5",
-        params![habit_id, date, value.max(0.0), now_ms(), (value <= 0.0) as i64],
+        params![
+            habit_id,
+            date,
+            value.max(0.0),
+            now_ms(),
+            (value <= 0.0) as i64
+        ],
     )?;
     Ok(())
 }
@@ -541,6 +578,66 @@ fn tombstone(conn: &Connection, table: &str, id: &str) -> rusqlite::Result<()> {
         params![now_ms(), id],
     )?;
     Ok(())
+}
+
+/// Settings › Danger zone: tombstone every live event (and every legacy
+/// period, which the frontend folds into events on load). One transaction and
+/// one `updated_at`, so the push after this carries the whole wipe as one
+/// batch of tombstones and other devices delete the same rows.
+fn wipe_events(conn: &Connection) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    let now = now_ms();
+    tx.execute(
+        "UPDATE events SET deleted = 1, updated_at = ?1 WHERE deleted = 0",
+        params![now],
+    )?;
+    tx.execute(
+        "UPDATE periods SET deleted = 1, updated_at = ?1 WHERE deleted = 0",
+        params![now],
+    )?;
+    tx.commit()
+}
+
+/// Settings › Danger zone: tombstone every live to-do of one kind. Tasks and
+/// habits share the `habits` table, told apart by the JSON `schedule` column
+/// (`{"type":"once"}` is a task — the same test as `isRepeating` in
+/// `src/todoLogic.ts`). Completions go with their rows.
+fn wipe_todos(conn: &Connection, kind: &str) -> Result<(), String> {
+    let cmp = match kind {
+        "task" => "=",
+        "habit" => "!=",
+        other => return Err(format!("unknown to-do kind {other:?}")),
+    };
+    let tx = conn.unchecked_transaction().map_err(err)?;
+    let now = now_ms();
+    tx.execute(
+        &format!(
+            "UPDATE habit_completions SET deleted = 1, updated_at = ?1
+             WHERE deleted = 0 AND habit_id IN (
+               SELECT id FROM habits WHERE deleted = 0 AND json_extract(schedule, '$.type') {cmp} 'once')"
+        ),
+        params![now],
+    )
+    .map_err(err)?;
+    tx.execute(
+        &format!(
+            "UPDATE habits SET deleted = 1, updated_at = ?1
+             WHERE deleted = 0 AND json_extract(schedule, '$.type') {cmp} 'once'"
+        ),
+        params![now],
+    )
+    .map_err(err)?;
+    tx.commit().map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_all_events(db: tauri::State<Db>) -> Result<(), String> {
+    wipe_events(&*db.0.lock().map_err(err)?).map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_all_todos(db: tauri::State<Db>, kind: String) -> Result<(), String> {
+    wipe_todos(&*db.0.lock().map_err(err)?, &kind)
 }
 
 #[tauri::command]
@@ -564,7 +661,12 @@ pub fn delete_habit(db: tauri::State<Db>, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_completion(db: tauri::State<Db>, habit_id: String, date: String, value: f64) -> Result<(), String> {
+pub fn set_completion(
+    db: tauri::State<Db>,
+    habit_id: String,
+    date: String,
+    value: f64,
+) -> Result<(), String> {
     upsert_completion(&*db.0.lock().map_err(err)?, &habit_id, &date, value).map_err(err)
 }
 
@@ -659,7 +761,11 @@ pub fn delete_period(db: tauri::State<Db>, id: String) -> Result<(), String> {
 /// One-time import of the pre-SQLite localStorage blob. Transactional and
 /// guarded by a meta flag so StrictMode double-effects can't import twice.
 #[tauri::command]
-pub fn import_legacy(db: tauri::State<Db>, tasks: Vec<Task>, habits: Vec<Habit>) -> Result<(), String> {
+pub fn import_legacy(
+    db: tauri::State<Db>,
+    tasks: Vec<Task>,
+    habits: Vec<Habit>,
+) -> Result<(), String> {
     let mut guard = db.0.lock().map_err(err)?;
     let tx = guard.transaction().map_err(err)?;
     let already: bool = tx
@@ -720,4 +826,72 @@ pub fn load_shared(db: tauri::State<Db>) -> Result<Vec<SharedRow>, String> {
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(err)?;
     Ok(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(&test_schema()).unwrap();
+        conn.execute_batch(
+            "INSERT INTO habits (id, name, kind, schedule, created_at, updated_at)
+             VALUES ('t1', 'task', 'yesno', '{\"type\":\"once\"}', '2026-01-01', 1),
+                    ('h1', 'habit', 'yesno', '{\"type\":\"daily\"}', '2026-01-01', 1);
+             INSERT INTO habit_completions (habit_id, date, value, updated_at)
+             VALUES ('t1', '2026-01-02', 1, 1), ('h1', '2026-01-02', 1, 1);
+             INSERT INTO events (id, title, start_date, end_date, updated_at)
+             VALUES ('e1', 'event', '2026-01-01', '2026-01-01', 1);",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn live(conn: &Connection, table: &str, id_col: &str) -> Vec<String> {
+        let mut st = conn
+            .prepare(&format!(
+                "SELECT {id_col} FROM {table} WHERE deleted = 0 ORDER BY 1"
+            ))
+            .unwrap();
+        st.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    #[test]
+    fn wipe_tasks_leaves_habits() {
+        let c = conn();
+        wipe_todos(&c, "task").unwrap();
+        assert_eq!(live(&c, "habits", "id"), ["h1"]);
+        assert_eq!(live(&c, "habit_completions", "habit_id"), ["h1"]);
+        // A tombstone is a newer write: it must outrank the row it replaces.
+        let ts: i64 = c
+            .query_row("SELECT updated_at FROM habits WHERE id = 't1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(ts > 1);
+    }
+
+    #[test]
+    fn wipe_habits_leaves_tasks() {
+        let c = conn();
+        wipe_todos(&c, "habit").unwrap();
+        assert_eq!(live(&c, "habits", "id"), ["t1"]);
+        assert_eq!(live(&c, "habit_completions", "habit_id"), ["t1"]);
+    }
+
+    #[test]
+    fn wipe_rejects_unknown_kind() {
+        assert!(wipe_todos(&conn(), "period").is_err());
+    }
+
+    #[test]
+    fn wipe_events_tombstones_every_event() {
+        let c = conn();
+        wipe_events(&c).unwrap();
+        assert!(live(&c, "events", "id").is_empty());
+    }
 }

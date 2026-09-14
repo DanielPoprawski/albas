@@ -109,6 +109,12 @@ export interface CalendarEvent {
  * `appearance.ts`'s THEMES check and falls back to the default, which is light.
  */
 export type ThemeName = 'light' | 'dark';
+/**
+ * What the user chose in Settings: one of the two themes, or `system` — follow
+ * the OS via `prefers-color-scheme`. Only the resolved `ThemeName` ever lands
+ * in `data-theme`.
+ */
+export type ThemePref = ThemeName | 'system';
 /** Which weekday grids start on, as a JS `getDay()` value: 0 = Sunday, 1 = Monday. */
 export type FirstDayOfWeek = 0 | 1;
 
@@ -137,6 +143,14 @@ export interface ShareGrant {
   todos: boolean;
 }
 
-export type ActiveView = 'calendar' | 'todos' | 'settings';
+/**
+ * A selection key: kind + id, e.g. `todo:abc`. Held in a `Set` across
+ * queries, tabs and views and resolved against the *live* items when acting,
+ * so a bulk edit never works from a stale snapshot. Shared events' ids are
+ * `${owner}:${pk}` — split on the first colon only.
+ */
+export type ItemKey = `event:${string}` | `todo:${string}`;
+
+export type ActiveView = 'calendar' | 'todos' | 'habits' | 'settings';
 export type AddType = 'event' | 'task' | 'habit';
 export type CalendarMode = 'month' | 'week' | 'day';

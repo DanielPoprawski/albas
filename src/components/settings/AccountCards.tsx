@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useSettings } from '../../context/SettingsContext';
 import * as ipc from '../../ipc';
 import type { SyncStatusInfo } from '../../ipc';
 import type { useBrowserSignIn, usePasswordSignIn } from '../auth/signInHooks';
@@ -101,6 +102,7 @@ export function SessionCard({
           Sync Now
         </button>
       </SettingItem>
+      <PushDelaySetting />
       <SignedInPanel />
       <SettingItem label="Log out" description="Sign out of this device">
         <button onClick={() => setConfirming(true)} className="button-small button-danger">
@@ -137,6 +139,59 @@ export function SessionCard({
       {syncState.kind === 'ok' && <FormMessage kind="success">{syncState.message}</FormMessage>}
       {syncState.kind === 'error' && <FormMessage>{syncState.message}</FormMessage>}
     </Card>
+  );
+}
+
+/**
+ * How long after the last edit the automatic push waits (`DataContext`
+ * `scheduleSync`). Stored as `__sync_debounce_ms` — device-local, like the
+ * layout widths — and edited here in seconds; blank restores the 2 s default.
+ */
+const PUSH_DELAY_DEFAULT_S = 2;
+const PUSH_DELAY_MIN_S = 0.5;
+const PUSH_DELAY_MAX_S = 10;
+
+function PushDelaySetting() {
+  const { getSetting, setSetting } = useSettings();
+  const stored = Number.parseInt(getSetting('__sync_debounce_ms') ?? '', 10);
+  const [text, setText] = useState(stored > 0 ? String(stored / 1000) : '');
+
+  const commit = () => {
+    const n = Number.parseFloat(text);
+    if (!Number.isFinite(n) || n <= 0) {
+      setText('');
+      setSetting('__sync_debounce_ms', '');
+      return;
+    }
+    const clamped = Math.min(PUSH_DELAY_MAX_S, Math.max(PUSH_DELAY_MIN_S, n));
+    setText(String(clamped));
+    setSetting('__sync_debounce_ms', String(Math.round(clamped * 1000)));
+  };
+
+  return (
+    <SettingItem
+      label="Push after edits"
+      description={`Seconds to wait after a change before syncing it (${PUSH_DELAY_MIN_S}–${PUSH_DELAY_MAX_S}; blank = ${PUSH_DELAY_DEFAULT_S}).`}
+    >
+      <label className="flex items-center gap-2">
+        <MicroLabel className="text-ink">Seconds</MicroLabel>
+        <input
+          className="field-input w-20"
+          type="number"
+          inputMode="decimal"
+          min={PUSH_DELAY_MIN_S}
+          max={PUSH_DELAY_MAX_S}
+          step={0.5}
+          placeholder={String(PUSH_DELAY_DEFAULT_S)}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+        />
+      </label>
+    </SettingItem>
   );
 }
 
@@ -195,7 +250,6 @@ export function AccountSigninCard({
   onConnect,
   status,
   syncToken,
-  onAccountDeleted,
 }: {
   browser: ReturnType<typeof useBrowserSignIn>;
   password: ReturnType<typeof usePasswordSignIn>;
@@ -210,7 +264,6 @@ export function AccountSigninCard({
   status: SyncStatusInfo | null;
   syncToken: string | null;
   /** Refreshes local state after the account itself is gone from the server. */
-  onAccountDeleted: () => Promise<void>;
 }) {
   const configured = !!status?.configured;
 
@@ -330,10 +383,6 @@ export function AccountSigninCard({
           <div className="mt-6 pt-5 border-t border-line">
             <ExportDataSection ctx={ctx} />
           </div>
-
-          <div className="mt-6 pt-5 border-t border-line">
-            <DangerZoneSection ctx={ctx} onDeleted={onAccountDeleted} />
-          </div>
         </>
       )}
     </Card>
@@ -377,82 +426,6 @@ function ExportDataSection({ ctx }: { ctx: AuthMethodContext }) {
     </div>
   );
 }
-
-/**
- * Permanently deletes the signed-in account server-side. Deliberately no
- * `window.confirm` — the password field itself, disabled until non-empty, is
- * the confirmation gate, matching the rest of this file's style.
- */
-function DangerZoneSection({ ctx, onDeleted }: { ctx: AuthMethodContext; onDeleted: () => Promise<void> }) {
-  const [expanded, setExpanded] = useState(false);
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function cancel() {
-    setExpanded(false);
-    setPassword('');
-    setError(null);
-  }
-
-  async function confirmDelete() {
-    setBusy(true);
-    setError(null);
-    try {
-      await ipc.accountDelete(password);
-      setPassword('');
-      setExpanded(false);
-      await onDeleted();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div>
-      <h4 className="card-title text-sm mb-2 text-danger">Danger zone</h4>
-      {!expanded ? (
-        <button className="button-small button-danger" onClick={() => setExpanded(true)} disabled={!ctx.token}>
-          Delete account
-        </button>
-      ) : (
-        <div className="max-w-[25rem]">
-          <p className="setting-desc mb-2">
-            This permanently deletes your account and everything synced to it - events, tasks, habits, shares, and every
-            sign-in method - from the server. Local data on this device stays until you reset the app, but will no
-            longer sync anywhere. This cannot be undone.
-          </p>
-          <input
-            type="password"
-            className="field-input max-w-[12.5rem] block mb-2"
-            autoComplete="current-password"
-            placeholder="Confirm your password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
-          />
-          <div className="flex gap-2">
-            <button
-              className="button-small button-danger"
-              onClick={() => void confirmDelete()}
-              disabled={busy || password.length === 0}
-            >
-              {busy ? 'Deleting...' : 'Permanently delete account'}
-            </button>
-            <button className="button-small" onClick={cancel} disabled={busy}>
-              Cancel
-            </button>
-          </div>
-          {error && <FormMessage>{error}</FormMessage>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Sessions ────────────────────────────────────────────────────────────*/
 
 /** Mirrors the `GET /tokens` row shape (Phase E, `sync-server`). */
 interface TokenRow {

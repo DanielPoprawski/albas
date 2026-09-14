@@ -26,8 +26,8 @@ use std::time::Duration;
 /// U+0001 cannot occur in an id, ISO date, or any other key column we use.
 const PK_SEP: char = '\u{1}';
 
-const META_PULL_SEQ: &str = "sync_pull_seq";
-const META_PUSH_AT: &str = "sync_push_at";
+pub(crate) const META_PULL_SEQ: &str = "sync_pull_seq";
+pub(crate) const META_PUSH_AT: &str = "sync_push_at";
 const META_LAST_AT: &str = "sync_last_at";
 pub(crate) const META_SHARED_SEQ: &str = "sync_shared_seq";
 pub(crate) const META_GRANT_REV: &str = "sync_grant_rev";
@@ -112,7 +112,14 @@ const TABLES: &[Spec] = &[
     Spec {
         tbl: "periods",
         pk: &["id"],
-        cols: &["name", "color_key", "start_date", "end_date", "notes", "habit_ids"],
+        cols: &[
+            "name",
+            "color_key",
+            "start_date",
+            "end_date",
+            "notes",
+            "habit_ids",
+        ],
     },
     Spec {
         tbl: "categories",
@@ -129,6 +136,12 @@ struct Change {
     payload: serde_json::Value,
     updated_at: i64,
     deleted: bool,
+    /// The server's sequence number for a pulled row (0 from a server too old
+    /// to send one). Lets `merge` park the pull watermark just before a row
+    /// this build cannot apply, so it is fetched again after an upgrade
+    /// instead of being skipped forever. Never pushed.
+    #[serde(default, skip_serializing)]
+    seq: i64,
 }
 
 #[derive(Serialize)]
@@ -248,9 +261,11 @@ pub(crate) fn check_url(url: &str) -> Result<(), String> {
     if url.starts_with("https://") {
         return Ok(());
     }
-    Err("Sync URL must start with https:// — the sync token is the only credential, \
+    Err(
+        "Sync URL must start with https:// — the sync token is the only credential, \
          so it can never travel in cleartext."
-        .into())
+            .into(),
+    )
 }
 
 fn collect(conn: &Connection, since: i64) -> rusqlite::Result<Vec<Change>> {
@@ -283,6 +298,7 @@ fn collect(conn: &Connection, since: i64) -> rusqlite::Result<Vec<Change>> {
                 payload: serde_json::Value::Object(payload),
                 updated_at: r.get(n_pk + n_col)?,
                 deleted: r.get::<_, i64>(n_pk + n_col + 1)? != 0,
+                seq: 0,
             })
         })?;
         for row in rows {
@@ -374,20 +390,69 @@ fn apply_shared(
     Ok(changed)
 }
 
-fn post(url: &str, token: &str, req: &SyncReq) -> Result<SyncRes, String> {
+enum PostError {
+    /// The server no longer accepts this device's token (revoked, expired, or
+    /// the account is gone). Distinguished so `run` can sign the device out
+    /// instead of retrying forever against a dead credential.
+    Unauthorized,
+    Other(String),
+}
+
+fn post(url: &str, token: &str, req: &SyncReq) -> Result<SyncRes, PostError> {
     let resp = ureq::post(url)
         .set("Authorization", &format!("Bearer {token}"))
         .timeout(Duration::from_secs(30))
         .send_json(req);
 
     match resp {
-        Ok(r) => r.into_json::<SyncRes>().map_err(|e| format!("Bad response from server: {e}")),
-        Err(ureq::Error::Status(401, _)) => {
-            Err("Server rejected the sync token (401).".into())
-        }
-        Err(ureq::Error::Status(code, _)) => Err(format!("Server returned HTTP {code}.")),
-        Err(e) => Err(format!("Couldn't reach the sync server: {e}")),
+        Ok(r) => r
+            .into_json::<SyncRes>()
+            .map_err(|e| PostError::Other(format!("Bad response from server: {e}"))),
+        Err(ureq::Error::Status(401, _)) => Err(PostError::Unauthorized),
+        Err(ureq::Error::Status(code, _)) => Err(PostError::Other(format!("Server returned HTTP {code}."))),
+        Err(e) => Err(PostError::Other(format!("Couldn't reach the sync server: {e}"))),
     }
+}
+
+struct Merge {
+    applied: usize,
+    skipped: usize,
+    shared_changed: bool,
+    /// The pull watermark to store: the server's `seq`, or one less than the
+    /// first skipped row's `seq` so the next pull re-sends it (and everything
+    /// after it — re-applying is idempotent under last-write-wins).
+    pull_seq: i64,
+}
+
+/// Folds a pull into the own tables and the shared cache. Pure with respect to
+/// the watermarks: the caller writes `meta`, so this can be tested on its own.
+fn merge(tx: &Connection, res: &SyncRes, stored_grant_rev: i64) -> rusqlite::Result<Merge> {
+    let mut applied = 0usize;
+    let mut skipped = 0usize;
+    let mut pull_seq = res.seq;
+    for c in &res.changes {
+        let ok = match TABLES.iter().find(|s| s.tbl == c.tbl) {
+            Some(spec) => apply_one(tx, spec, c)?,
+            None => false,
+        };
+        if ok {
+            applied += 1;
+        } else {
+            skipped += 1;
+            // Only a server that numbers its rows lets us hold the watermark;
+            // `seq == 0` means it did not, and advancing is the best we can do.
+            if c.seq > 0 {
+                pull_seq = pull_seq.min(c.seq - 1);
+            }
+        }
+    }
+    let shared_changed = apply_shared(tx, &res.shared, res.grant_rev, stored_grant_rev)?;
+    Ok(Merge {
+        applied,
+        skipped,
+        shared_changed,
+        pull_seq,
+    })
 }
 
 fn run(db: &Db) -> Result<SyncOutcome, String> {
@@ -402,7 +467,9 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_URL.to_string());
         let meta_i64 = |key: &str| {
-            db::read_meta(&conn, key).and_then(|v| v.parse().ok()).unwrap_or(0i64)
+            db::read_meta(&conn, key)
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0i64)
         };
         (
             url.trim().to_string(),
@@ -424,41 +491,48 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
     let pushed = changes.len();
 
     // The lock is released across the network call so the UI keeps working.
-    let res = post(&url, &token, &SyncReq { since, changes, shared_since, grant_rev })?;
+    let res = match post(
+        &url,
+        &token,
+        &SyncReq {
+            since,
+            changes,
+            shared_since,
+            grant_rev,
+        },
+    ) {
+        Ok(res) => res,
+        Err(PostError::Unauthorized) => {
+            // The credential is dead server-side; keeping the signed-in marker
+            // would leave the UI claiming an account while every sync fails.
+            crate::account::clear_session(db)?;
+            return Err("The server no longer accepts this device's sign-in. Sign in again.".into());
+        }
+        Err(PostError::Other(msg)) => return Err(msg),
+    };
 
-    let mut applied = 0usize;
-    let mut skipped = 0usize;
-    let shared_changed;
     let stamp = now_ms();
-    {
+    let merged = {
         let mut guard = db.0.lock().map_err(err)?;
         let tx = guard.transaction().map_err(err)?;
-        for c in &res.changes {
-            match TABLES.iter().find(|s| s.tbl == c.tbl) {
-                Some(spec) => {
-                    if apply_one(&tx, spec, c).map_err(err)? {
-                        applied += 1;
-                    } else {
-                        skipped += 1;
-                    }
-                }
-                None => skipped += 1,
-            }
-        }
-        shared_changed = apply_shared(&tx, &res.shared, res.grant_rev, grant_rev).map_err(err)?;
-        db::write_meta(&tx, META_PULL_SEQ, &res.seq.to_string()).map_err(err)?;
-        db::write_meta(&tx, META_PUSH_AT, &cutoff.to_string()).map_err(err)?;
+        let merged = merge(&tx, &res, grant_rev).map_err(err)?;
+        db::write_meta(&tx, META_PULL_SEQ, &merged.pull_seq.to_string()).map_err(err)?;
+        // `collect` is strictly-newer-than, so a row stamped in the same
+        // millisecond as `cutoff` after the collect must still be caught next
+        // time; storing `cutoff - 1` re-pushes at most one millisecond's rows.
+        db::write_meta(&tx, META_PUSH_AT, &(cutoff - 1).to_string()).map_err(err)?;
         db::write_meta(&tx, META_SHARED_SEQ, &res.shared_seq.to_string()).map_err(err)?;
         db::write_meta(&tx, META_GRANT_REV, &res.grant_rev.to_string()).map_err(err)?;
         db::write_meta(&tx, META_LAST_AT, &stamp.to_string()).map_err(err)?;
         tx.commit().map_err(err)?;
-    }
+        merged
+    };
 
     Ok(SyncOutcome {
         pushed,
-        pulled: applied,
-        skipped,
-        shared_changed,
+        pulled: merged.applied,
+        skipped: merged.skipped,
+        shared_changed: merged.shared_changed,
         last_sync: Some(stamp.to_string()),
     })
 }
@@ -557,9 +631,11 @@ mod tests {
             let conn = target.0.lock().unwrap();
             assert!(apply_one(&conn, spec, &changes[0]).unwrap());
             let (name, time, target_val): (String, Option<String>, f64) = conn
-                .query_row("SELECT name, time, target FROM habits WHERE id = 'h1'", [], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })
+                .query_row(
+                    "SELECT name, time, target FROM habits WHERE id = 'h1'",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
                 .unwrap();
             assert_eq!(name, "Run");
             assert_eq!(time.as_deref(), Some("07:30"));
@@ -585,11 +661,17 @@ mod tests {
             let conn = source.0.lock().unwrap();
             collect(&conn, 0).unwrap()
         };
-        let c = changes.iter().find(|c| c.tbl == "habit_completions").unwrap();
+        let c = changes
+            .iter()
+            .find(|c| c.tbl == "habit_completions")
+            .unwrap();
         assert_eq!(c.pk, format!("h1{PK_SEP}2026-07-20"));
 
         let target = db();
-        let spec = TABLES.iter().find(|s| s.tbl == "habit_completions").unwrap();
+        let spec = TABLES
+            .iter()
+            .find(|s| s.tbl == "habit_completions")
+            .unwrap();
         let conn = target.0.lock().unwrap();
         assert!(apply_one(&conn, spec, c).unwrap());
         let v: f64 = conn
@@ -628,6 +710,7 @@ mod tests {
             }),
             updated_at: 800,
             deleted: false,
+            seq: 0,
         };
         assert!(apply_one(&conn, spec, &stale).unwrap());
         let title: String = conn
@@ -635,7 +718,10 @@ mod tests {
             .unwrap();
         assert_eq!(title, "Local wins");
 
-        let fresh = Change { updated_at: 1000, ..stale };
+        let fresh = Change {
+            updated_at: 1000,
+            ..stale
+        };
         assert!(apply_one(&conn, spec, &fresh).unwrap());
         let title: String = conn
             .query_row("SELECT title FROM events WHERE id='e1'", [], |r| r.get(0))
@@ -663,6 +749,7 @@ mod tests {
             }),
             updated_at: 200,
             deleted: true,
+            seq: 0,
         };
         assert!(apply_one(&conn, spec, &del).unwrap());
         let deleted: i64 = conn
@@ -763,7 +850,9 @@ mod tests {
         {
             let conn = b.0.lock().unwrap();
             let deleted: i64 = conn
-                .query_row("SELECT deleted FROM habits WHERE id = ?1", [&id], |r| r.get(0))
+                .query_row("SELECT deleted FROM habits WHERE id = ?1", [&id], |r| {
+                    r.get(0)
+                })
                 .unwrap();
             assert_eq!(deleted, 1, "deletion should have propagated to B");
         }
@@ -788,7 +877,9 @@ mod tests {
     }
 
     fn shared_pks(conn: &Connection) -> Vec<String> {
-        let mut stmt = conn.prepare("SELECT pk FROM shared_rows ORDER BY pk").unwrap();
+        let mut stmt = conn
+            .prepare("SELECT pk FROM shared_rows ORDER BY pk")
+            .unwrap();
         stmt.query_map([], |r| r.get(0))
             .unwrap()
             .collect::<rusqlite::Result<Vec<String>>>()
@@ -801,7 +892,10 @@ mod tests {
         let conn = d.0.lock().unwrap();
         let changed = apply_shared(
             &conn,
-            &[shared_change("events", "e1", false), shared_change("habits", "h1", false)],
+            &[
+                shared_change("events", "e1", false),
+                shared_change("habits", "h1", false),
+            ],
             1,
             1,
         )
@@ -814,7 +908,10 @@ mod tests {
         assert_eq!(shared_pks(&conn), vec!["h1"]);
 
         let changed = apply_shared(&conn, &[], 1, 1).unwrap();
-        assert!(!changed, "an empty incremental pull must not trigger a UI refresh");
+        assert!(
+            !changed,
+            "an empty incremental pull must not trigger a UI refresh"
+        );
     }
 
     /// A grant-revision change wipes the cache before applying the snapshot,
@@ -824,10 +921,13 @@ mod tests {
         let d = db();
         let conn = d.0.lock().unwrap();
         apply_shared(&conn, &[shared_change("events", "e1", false)], 1, 1).unwrap();
-        let changed =
-            apply_shared(&conn, &[shared_change("events", "e2", false)], 2, 1).unwrap();
+        let changed = apply_shared(&conn, &[shared_change("events", "e2", false)], 2, 1).unwrap();
         assert!(changed);
-        assert_eq!(shared_pks(&conn), vec!["e2"], "e1 was revoked with the old grant");
+        assert_eq!(
+            shared_pks(&conn),
+            vec!["e2"],
+            "e1 was revoked with the old grant"
+        );
 
         // Full revoke: rev bumps, snapshot is empty, cache must drain and the
         // change must still be reported so the UI refreshes.
@@ -837,6 +937,55 @@ mod tests {
     }
 
     /// A row from a build with an extra column is reported, not half-applied.
+    /// A row this build cannot apply must not be skipped past: the watermark
+    /// parks just before it so the upgraded build pulls it again.
+    #[test]
+    fn skipped_row_holds_the_pull_watermark() {
+        let d = db();
+        let mut guard = d.0.lock().unwrap();
+        let tx = guard.transaction().unwrap();
+        let ok = |pk: &str, seq: i64| Change {
+            tbl: "tasks".into(),
+            pk: pk.into(),
+            payload: serde_json::json!({
+                "title": "t", "category": "", "completed": 0, "date": serde_json::Value::Null
+            }),
+            updated_at: 100,
+            deleted: false,
+            seq,
+        };
+        let newer_schema = Change {
+            tbl: "tasks".into(),
+            pk: "t-new".into(),
+            payload: serde_json::json!({ "title": "from a newer build" }),
+            updated_at: 100,
+            deleted: false,
+            seq: 42,
+        };
+        let res = SyncRes {
+            seq: 50,
+            changes: vec![ok("a", 40), newer_schema, ok("b", 45)],
+            shared: vec![],
+            shared_seq: 50,
+            grant_rev: 0,
+        };
+        let m = merge(&tx, &res, 0).unwrap();
+        assert_eq!((m.applied, m.skipped), (2, 1));
+        assert_eq!(m.pull_seq, 41, "watermark parks before the skipped row");
+
+        // A server that sends no per-row seq gives nothing to hold on to.
+        let mut unnumbered = SyncRes {
+            seq: 60,
+            changes: vec![ok("c", 0)],
+            shared: vec![],
+            shared_seq: 60,
+            grant_rev: 0,
+        };
+        unnumbered.changes[0].payload = serde_json::json!({ "title": "partial" });
+        let m = merge(&tx, &unnumbered, 0).unwrap();
+        assert_eq!((m.skipped, m.pull_seq), (1, 60));
+    }
+
     #[test]
     fn payload_missing_a_column_is_skipped() {
         let d = db();
@@ -848,6 +997,7 @@ mod tests {
             payload: serde_json::json!({ "title": "No category key" }),
             updated_at: 300,
             deleted: false,
+            seq: 0,
         };
         assert!(!apply_one(&conn, spec, &partial).unwrap());
         let n: i64 = conn

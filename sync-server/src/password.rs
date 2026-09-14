@@ -22,10 +22,7 @@
 //! Never reuse `token_hash` — that is a SHA for high-entropy tokens.
 
 use crate::AppState;
-use argon2::{
-    password_hash::SaltString,
-    Argon2, PasswordHasher, PasswordVerifier, PasswordHash,
-};
+use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -56,9 +53,18 @@ pub(crate) async fn password_status(
     let account_id = crate::account_for(&conn, &headers)
         .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized".into()))?;
     let hash: Option<String> = conn
-        .query_row("SELECT password_hash FROM accounts WHERE id = ?1", params![account_id], |r| r.get(0))
+        .query_row(
+            "SELECT password_hash FROM accounts WHERE id = ?1",
+            params![account_id],
+            |r| r.get(0),
+        )
         .optional()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?
         .flatten();
     Ok(Json(json!({ "set": hash.is_some() })))
 }
@@ -68,23 +74,38 @@ pub(crate) fn hash_password(password: &str) -> Result<String, Rejection> {
     if password.len() < MIN_PASSWORD_LENGTH {
         return Err((
             StatusCode::UNPROCESSABLE_ENTITY,
-            format!("Password must be at least {} characters long.", MIN_PASSWORD_LENGTH),
+            format!(
+                "Password must be at least {} characters long.",
+                MIN_PASSWORD_LENGTH
+            ),
         ));
     }
     if password.len() > MAX_PASSWORD_LENGTH {
         return Err((
             StatusCode::UNPROCESSABLE_ENTITY,
-            format!("Password must be at most {} characters long.", MAX_PASSWORD_LENGTH),
+            format!(
+                "Password must be at most {} characters long.",
+                MAX_PASSWORD_LENGTH
+            ),
         ));
     }
     let mut salt_bytes = [0u8; 16];
     getrandom::getrandom(&mut salt_bytes).expect("OS randomness unavailable");
-    let salt = SaltString::encode_b64(&salt_bytes)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Salt error: {}", e)))?;
+    let salt = SaltString::encode_b64(&salt_bytes).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Salt error: {}", e),
+        )
+    })?;
     Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Hash error: {}", e)))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Hash error: {}", e),
+            )
+        })
 }
 
 /// Creates an account with a password as its first credential. Reuses the
@@ -95,33 +116,47 @@ pub(crate) async fn register_password(
     State(state): State<Arc<AppState>>,
     body: Json<Value>,
 ) -> Result<Json<Value>, Rejection> {
-    let name = body
-        .get("name")
+    let name = body.get("name").and_then(|v| v.as_str()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Missing or invalid 'name' field.".into(),
+    ))?;
+    let password = body.get("password").and_then(|v| v.as_str()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Missing or invalid 'password' field.".into(),
+    ))?;
+    let invite = body
+        .get("invite")
         .and_then(|v| v.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'name' field.".into()))?;
-    let password = body
-        .get("password")
-        .and_then(|v| v.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'password' field.".into()))?;
-    let invite = body.get("invite").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty());
+        .filter(|s| !s.trim().is_empty());
 
     let password_hash = hash_password(password)?;
 
     let mut guard = state.conn.lock().unwrap();
     let info = crate::passkey::resolve_registration(&guard, state.signups, invite, name)?;
 
-    let tx = guard
-        .transaction()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+    let tx = guard.transaction().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
     if let Some(invite_id) = info.invite_id {
         let burned = tx
             .execute(
                 "UPDATE invites SET used_at = ?1 WHERE id = ?2 AND used_at IS NULL",
                 params![crate::now_ms(), invite_id],
             )
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
+            })?;
         if burned == 0 {
-            return Err((StatusCode::GONE, "This invite has already been used.".into()));
+            return Err((
+                StatusCode::GONE,
+                "This invite has already been used.".into(),
+            ));
         }
     }
     let account_id = match info.account_id {
@@ -130,7 +165,12 @@ pub(crate) async fn register_password(
                 "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
                 params![&password_hash, id],
             )
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                )
+            })?;
             id
         }
         None => match tx.execute(
@@ -143,13 +183,26 @@ pub(crate) async fn register_password(
             {
                 return Err((StatusCode::CONFLICT, "That account name is taken.".into()))
             }
-            Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e))),
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Database error: {}", e),
+                ))
+            }
         },
     };
-    let token = crate::mint_token(&tx, account_id, "password")
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Token error: {}", e)))?;
-    tx.commit()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+    let token = crate::mint_token(&tx, account_id, "password").map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Token error: {}", e),
+        )
+    })?;
+    tx.commit().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
 
     Ok(Json(json!({ "name": info.name, "token": token })))
 }
@@ -163,10 +216,10 @@ pub(crate) async fn set_password(
     let account_id = crate::account_for(&conn, &headers)
         .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized".into()))?;
 
-    let password = body
-        .get("password")
-        .and_then(|v| v.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'password' field.".into()))?;
+    let password = body.get("password").and_then(|v| v.as_str()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Missing or invalid 'password' field.".into(),
+    ))?;
 
     let password_hash = hash_password(password)?;
 
@@ -174,7 +227,12 @@ pub(crate) async fn set_password(
         "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
         params![&password_hash, account_id],
     )
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
 
     Ok(Json(json!({})))
 }
@@ -194,7 +252,12 @@ pub(crate) async fn clear_password(
             [account_id],
             |row| row.get(0),
         )
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
 
     if !has_passkey {
         return Err((
@@ -207,7 +270,12 @@ pub(crate) async fn clear_password(
         "UPDATE accounts SET password_hash = NULL WHERE id = ?1",
         [account_id],
     )
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+    })?;
 
     Ok(Json(json!({})))
 }
@@ -216,15 +284,15 @@ pub(crate) async fn login_password(
     State(state): State<Arc<AppState>>,
     body: Json<Value>,
 ) -> Result<Json<Value>, Rejection> {
-    let name = body
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'name' field.".into()))?;
+    let name = body.get("name").and_then(|v| v.as_str()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Missing or invalid 'name' field.".into(),
+    ))?;
 
-    let password = body
-        .get("password")
-        .and_then(|v| v.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid 'password' field.".into()))?;
+    let password = body.get("password").and_then(|v| v.as_str()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Missing or invalid 'password' field.".into(),
+    ))?;
 
     let code = body.get("code").and_then(|v| v.as_str());
     let recovery_code = body.get("recovery_code").and_then(|v| v.as_str());
@@ -239,7 +307,12 @@ pub(crate) async fn login_password(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?;
 
     let (account_id, password_hash) = match account_row {
         Some((id, Some(hash))) => (id, hash),
@@ -265,10 +338,17 @@ pub(crate) async fn login_password(
     crate::lockout::check(&conn, account_id, "password")?;
 
     // Verify password
-    let parsed_hash = PasswordHash::new(&password_hash)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Invalid stored hash".into()))?;
+    let parsed_hash = PasswordHash::new(&password_hash).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Invalid stored hash".into(),
+        )
+    })?;
 
-    if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_err() {
+    if Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
         crate::lockout::record_failure(&conn, account_id, "password")?;
         return Err((StatusCode::UNAUTHORIZED, "Invalid name or password.".into()));
     }
@@ -277,19 +357,25 @@ pub(crate) async fn login_password(
     // recovery code. "Code missing" gets its own status so a client can
     // reveal the code field rather than telling the user their password was
     // wrong. Its own lockout ("totp") is enforced inside `verify_if_enrolled`.
-    crate::totp::verify_if_enrolled(&conn, account_id, code, recovery_code).map_err(|(status, msg)| {
-        if msg == crate::totp::CODE_REQUIRED {
-            (StatusCode::PRECONDITION_REQUIRED, msg)
-        } else {
-            (status, msg)
-        }
-    })?;
+    crate::totp::verify_if_enrolled(&conn, account_id, code, recovery_code).map_err(
+        |(status, msg)| {
+            if msg == crate::totp::CODE_REQUIRED {
+                (StatusCode::PRECONDITION_REQUIRED, msg)
+            } else {
+                (status, msg)
+            }
+        },
+    )?;
 
     crate::lockout::reset(&conn, account_id, "password")?;
 
     // Mint a new token
-    let token = crate::mint_token(&conn, account_id, "password")
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Token error: {}", e)))?;
+    let token = crate::mint_token(&conn, account_id, "password").map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Token error: {}", e),
+        )
+    })?;
 
     Ok(Json(json!({ "name": name, "token": token })))
 }
@@ -305,9 +391,18 @@ pub(crate) fn verify_account_password(
     password: &str,
 ) -> Result<(), Rejection> {
     let hash: Option<String> = conn
-        .query_row("SELECT password_hash FROM accounts WHERE id = ?1", params![account_id], |r| r.get(0))
+        .query_row(
+            "SELECT password_hash FROM accounts WHERE id = ?1",
+            params![account_id],
+            |r| r.get(0),
+        )
         .optional()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+        })?
         .flatten();
     let Some(hash) = hash else {
         return Err((
@@ -315,8 +410,12 @@ pub(crate) fn verify_account_password(
             "Set a password on this account first.".into(),
         ));
     };
-    let parsed_hash = PasswordHash::new(&hash)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Invalid stored hash".into()))?;
+    let parsed_hash = PasswordHash::new(&hash).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Invalid stored hash".into(),
+        )
+    })?;
     Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
         .map_err(|_| (StatusCode::UNAUTHORIZED, "Incorrect password.".into()))
@@ -334,8 +433,11 @@ mod tests {
     }
 
     fn add_account(c: &Connection, name: &str) -> i64 {
-        c.execute("INSERT INTO accounts (name, created_at) VALUES (?1, 0)", [name])
-            .unwrap();
+        c.execute(
+            "INSERT INTO accounts (name, created_at) VALUES (?1, 0)",
+            [name],
+        )
+        .unwrap();
         c.last_insert_rowid()
     }
 

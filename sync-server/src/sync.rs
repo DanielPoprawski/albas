@@ -1,7 +1,11 @@
 //! `POST /sync`: the pull-then-push transaction and the share filtering that
 //! decides which of another account's rows ride along.
 
-use axum::{extract::State, http::{HeaderMap, StatusCode}, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use rusqlite::{params, Connection};
 use std::sync::Arc;
 
@@ -25,7 +29,10 @@ pub(crate) async fn sync(
     headers: HeaderMap,
     Json(req): Json<SyncReq>,
 ) -> Result<Json<SyncRes>, StatusCode> {
-    let mut guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let account_id = account_for(&guard, &headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let tx = guard
         .transaction()
@@ -35,12 +42,16 @@ pub(crate) async fn sync(
     Ok(Json(res))
 }
 
-pub(crate) fn apply_sync(tx: &Connection, account_id: i64, req: &SyncReq) -> rusqlite::Result<SyncRes> {
+pub(crate) fn apply_sync(
+    tx: &Connection,
+    account_id: i64,
+    req: &SyncReq,
+) -> rusqlite::Result<SyncRes> {
     // Pull *before* applying the push, so the client never receives its own
     // writes back as an echo — they are assigned seqs below this snapshot.
     let changes = {
         let mut stmt = tx.prepare(
-            "SELECT tbl, pk, payload, updated_at, deleted FROM rows
+            "SELECT tbl, pk, payload, updated_at, deleted, seq FROM rows
              WHERE account_id = ?1 AND seq > ?2 ORDER BY seq",
         )?;
         let rows = stmt.query_map(params![account_id, req.since], |r| {
@@ -51,6 +62,7 @@ pub(crate) fn apply_sync(tx: &Connection, account_id: i64, req: &SyncReq) -> rus
                     .unwrap_or(serde_json::Value::Null),
                 updated_at: r.get(3)?,
                 deleted: r.get::<_, i64>(4)? != 0,
+                seq: r.get(5)?,
             })
         })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
@@ -60,9 +72,16 @@ pub(crate) fn apply_sync(tx: &Connection, account_id: i64, req: &SyncReq) -> rus
     // changed since the client's snapshot (rows may have been revoked), so it
     // rebuilds from zero — in which case tombstones are omitted, since the
     // client has nothing they could apply to.
-    let my_rev: i64 =
-        tx.query_row("SELECT grant_rev FROM accounts WHERE id = ?1", [account_id], |r| r.get(0))?;
-    let effective_since = if req.grant_rev == my_rev { req.shared_since } else { 0 };
+    let my_rev: i64 = tx.query_row(
+        "SELECT grant_rev FROM accounts WHERE id = ?1",
+        [account_id],
+        |r| r.get(0),
+    )?;
+    let effective_since = if req.grant_rev == my_rev {
+        req.shared_since
+    } else {
+        0
+    };
     let mut shared = Vec::new();
     {
         let mut grants = tx.prepare(
@@ -72,7 +91,12 @@ pub(crate) fn apply_sync(tx: &Connection, account_id: i64, req: &SyncReq) -> rus
         )?;
         let grants = grants
             .query_map([account_id], |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)? != 0, r.get::<_, i64>(3)? != 0))
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)? != 0,
+                    r.get::<_, i64>(3)? != 0,
+                ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         for (owner_id, owner_name, calendar, todos) in grants {
@@ -80,8 +104,16 @@ pub(crate) fn apply_sync(tx: &Connection, account_id: i64, req: &SyncReq) -> rus
             if tbls.is_empty() {
                 continue;
             }
-            let tbl_list = tbls.iter().map(|t| format!("'{t}'")).collect::<Vec<_>>().join(", ");
-            let skip_tombstones = if effective_since == 0 { " AND deleted = 0" } else { "" };
+            let tbl_list = tbls
+                .iter()
+                .map(|t| format!("'{t}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let skip_tombstones = if effective_since == 0 {
+                " AND deleted = 0"
+            } else {
+                ""
+            };
             let sql = format!(
                 "SELECT tbl, pk, payload, updated_at, deleted FROM rows
                  WHERE account_id = ?1 AND seq > ?2 AND tbl IN ({tbl_list}){skip_tombstones}

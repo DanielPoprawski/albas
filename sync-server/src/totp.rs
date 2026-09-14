@@ -151,10 +151,12 @@ fn decrypt_secret(stored: &str) -> Result<String, Rejection> {
     }
     let (nonce_bytes, ct) = raw.split_at(12);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let plain = cipher.decrypt(Nonce::from_slice(nonce_bytes), ct).map_err(|e| {
-        tracing::error!("totp: failed to decrypt stored secret: {e}");
-        fail()
-    })?;
+    let plain = cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ct)
+        .map_err(|e| {
+            tracing::error!("totp: failed to decrypt stored secret: {e}");
+            fail()
+        })?;
     String::from_utf8(plain).map_err(|e| {
         tracing::error!("totp: decrypted secret was not valid UTF-8: {e}");
         fail()
@@ -170,12 +172,41 @@ fn totp_from_secret(secret_b32: &str) -> Result<TOTP, Rejection> {
     let secret = Secret::Encoded(secret_b32.to_string())
         .to_bytes()
         .map_err(|e| internal(format!("stored TOTP secret is invalid: {e}")))?;
-    TOTP::new(Algorithm::SHA1, 6, 1, STEP_SECONDS as u64, secret, None, String::new())
-        .map_err(|e| internal(format!("could not rebuild TOTP verifier: {e}")))
+    TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        STEP_SECONDS as u64,
+        secret,
+        None,
+        String::new(),
+    )
+    .map_err(|e| internal(format!("could not rebuild TOTP verifier: {e}")))
 }
 
 fn current_step() -> i64 {
     crate::now_ms() / 1000 / STEP_SECONDS
+}
+
+/// Length-then-bytes comparison that does not short-circuit on the first
+/// differing digit, matching what `totp-rs`'s own `check` does internally.
+fn ct_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
+}
+
+/// The step, within the ±1 skew `totp_from_secret` configures, whose code is
+/// `code` — or `None` when it matches nothing. Resolved explicitly so the
+/// replay record is keyed on the step the code *belongs to*: recording the
+/// current step instead let a code minted for step N be accepted again at
+/// N+1 and N+2, since `totp-rs` still tolerated it then and `totp_used` only
+/// held N.
+fn matching_step(totp: &TOTP, code: &str) -> Option<i64> {
+    let now = current_step();
+    (now - 1..=now + 1).find(|step| ct_eq(&totp.generate((*step * STEP_SECONDS) as u64), code))
 }
 
 /// Rejects (and does *not* record) a code already accepted for this exact
@@ -201,8 +232,11 @@ fn check_and_record_replay(
         params![account_id, step],
     )
     .map_err(internal)?;
-    conn.execute("DELETE FROM totp_used WHERE step < ?1", [step - REPLAY_WINDOW_STEPS])
-        .map_err(internal)?;
+    conn.execute(
+        "DELETE FROM totp_used WHERE step < ?1",
+        [step - REPLAY_WINDOW_STEPS],
+    )
+    .map_err(internal)?;
     Ok(())
 }
 
@@ -230,7 +264,10 @@ fn generate_recovery_codes() -> Vec<String> {
 /// identically — a recovery code is typed back in by hand, once, under
 /// pressure; the format shouldn't be a second thing that can go wrong.
 fn normalize_recovery_code(code: &str) -> String {
-    code.chars().filter(|c| c.is_ascii_alphanumeric()).flat_map(|c| c.to_lowercase()).collect()
+    code.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
 }
 
 fn hash_recovery_code(code: &str) -> String {
@@ -240,7 +277,11 @@ fn hash_recovery_code(code: &str) -> String {
 /// Consumes one unused recovery code for this account, if `code` matches one.
 /// Single-use: the matching row's `used_at` is stamped so it can never verify
 /// again, recovery-code or otherwise.
-fn verify_recovery_code(conn: &rusqlite::Connection, account_id: i64, code: &str) -> Result<(), Rejection> {
+fn verify_recovery_code(
+    conn: &rusqlite::Connection,
+    account_id: i64,
+    code: &str,
+) -> Result<(), Rejection> {
     let hash = hash_recovery_code(code);
     let id: Option<i64> = conn
         .query_row(
@@ -253,8 +294,11 @@ fn verify_recovery_code(conn: &rusqlite::Connection, account_id: i64, code: &str
     let Some(id) = id else {
         return Err((StatusCode::UNAUTHORIZED, CODE_WRONG.into()));
     };
-    conn.execute("UPDATE recovery_codes SET used_at = ?1 WHERE id = ?2", params![crate::now_ms(), id])
-        .map_err(internal)?;
+    conn.execute(
+        "UPDATE recovery_codes SET used_at = ?1 WHERE id = ?2",
+        params![crate::now_ms(), id],
+    )
+    .map_err(internal)?;
     Ok(())
 }
 
@@ -315,12 +359,11 @@ pub(crate) fn verify_if_enrolled(
     crate::lockout::check(conn, account_id, "totp")?;
     let secret_b32 = decrypt_secret(&secret_enc)?;
     let totp = totp_from_secret(&secret_b32)?;
-    let ok = totp.check_current(code).map_err(internal)?;
-    if !ok {
+    let Some(step) = matching_step(&totp, code) else {
         crate::lockout::record_failure(conn, account_id, "totp")?;
         return Err((StatusCode::UNAUTHORIZED, CODE_WRONG.into()));
-    }
-    if let Err(e) = check_and_record_replay(conn, account_id, current_step()) {
+    };
+    if let Err(e) = check_and_record_replay(conn, account_id, step) {
         crate::lockout::record_failure(conn, account_id, "totp")?;
         return Err(e);
     }
@@ -341,7 +384,9 @@ pub(crate) async fn totp_status(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(internal)?;
-    Ok(Json(json!({ "enrolled": enrolled, "confirmed": confirmed })))
+    Ok(Json(
+        json!({ "enrolled": enrolled, "confirmed": confirmed }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -403,7 +448,10 @@ pub(crate) async fn enroll_start(
     let uri = totp.get_url();
     let stored = encrypt_secret(&secret_b32)?;
     guard
-        .execute("UPDATE accounts SET totp_secret = ?1 WHERE id = ?2", params![stored, account_id])
+        .execute(
+            "UPDATE accounts SET totp_secret = ?1 WHERE id = ?2",
+            params![stored, account_id],
+        )
         .map_err(internal)?;
     Ok(Json(json!({ "secret": secret_b32, "uri": uri })))
 }
@@ -421,7 +469,11 @@ pub(crate) async fn enroll_confirm(
     let guard = state.conn.lock().map_err(internal)?;
     let account_id = crate::account_for(&guard, &headers).ok_or_else(unauthorized)?;
     let secret_enc: Option<String> = guard
-        .query_row("SELECT totp_secret FROM accounts WHERE id = ?1", [account_id], |r| r.get(0))
+        .query_row(
+            "SELECT totp_secret FROM accounts WHERE id = ?1",
+            [account_id],
+            |r| r.get(0),
+        )
         .map_err(internal)?;
     let Some(secret_enc) = secret_enc else {
         return Err((
@@ -437,12 +489,18 @@ pub(crate) async fn enroll_confirm(
         return Err((StatusCode::UNAUTHORIZED, CODE_WRONG.into()));
     }
     guard
-        .execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [account_id])
+        .execute(
+            "UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1",
+            [account_id],
+        )
         .map_err(internal)?;
 
     // Fresh codes replace any left over from a previous enrollment.
     guard
-        .execute("DELETE FROM recovery_codes WHERE account_id = ?1", [account_id])
+        .execute(
+            "DELETE FROM recovery_codes WHERE account_id = ?1",
+            [account_id],
+        )
         .map_err(internal)?;
     let codes = generate_recovery_codes();
     let now = crate::now_ms();
@@ -471,7 +529,10 @@ pub(crate) async fn disable_totp(
         )
         .map_err(internal)?;
     guard
-        .execute("DELETE FROM recovery_codes WHERE account_id = ?1", [account_id])
+        .execute(
+            "DELETE FROM recovery_codes WHERE account_id = ?1",
+            [account_id],
+        )
         .map_err(internal)?;
     guard
         .execute("DELETE FROM totp_used WHERE account_id = ?1", [account_id])
@@ -516,19 +577,30 @@ mod tests {
     }
 
     fn add_account(c: &Connection, name: &str) -> i64 {
-        c.execute("INSERT INTO accounts (name, created_at) VALUES (?1, 0)", [name]).unwrap();
+        c.execute(
+            "INSERT INTO accounts (name, created_at) VALUES (?1, 0)",
+            [name],
+        )
+        .unwrap();
         c.last_insert_rowid()
     }
 
     fn store_secret(c: &Connection, id: i64, secret_b32: &str) {
         let stored = encrypt_secret(secret_b32).unwrap();
-        c.execute("UPDATE accounts SET totp_secret = ?1 WHERE id = ?2", params![stored, id]).unwrap();
+        c.execute(
+            "UPDATE accounts SET totp_secret = ?1 WHERE id = ?2",
+            params![stored, id],
+        )
+        .unwrap();
     }
 
     /// Generates a code from the same secret+time totp-rs itself would use, so
     /// tests exercise real verification rather than a hardcoded digit string.
     fn code_for(secret_b32: &str) -> String {
-        totp_from_secret(secret_b32).unwrap().generate_current().unwrap()
+        totp_from_secret(secret_b32)
+            .unwrap()
+            .generate_current()
+            .unwrap()
     }
 
     #[test]
@@ -537,7 +609,10 @@ mod tests {
         set_test_kek();
 
         let enc = encrypt_secret("JBSWY3DPEHPK3PXP").unwrap();
-        assert_ne!(enc, "JBSWY3DPEHPK3PXP", "must not store the secret in the clear");
+        assert_ne!(
+            enc, "JBSWY3DPEHPK3PXP",
+            "must not store the secret in the clear"
+        );
         assert_eq!(decrypt_secret(&enc).unwrap(), "JBSWY3DPEHPK3PXP");
 
         // SAFETY: test-only; still holding ENV_LOCK.
@@ -596,12 +671,15 @@ mod tests {
             let c = mem();
             let id = add_account(&c, "sarah");
             let secret = Secret::generate_secret();
-            let totp_rs::Secret::Encoded(secret_b32) = secret.to_encoded() else { unreachable!() };
+            let totp_rs::Secret::Encoded(secret_b32) = secret.to_encoded() else {
+                unreachable!()
+            };
             store_secret(&c, id, &secret_b32);
 
             // Not confirmed yet: still passes through with no code.
             assert!(verify_if_enrolled(&c, id, None, None).is_ok());
-            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id]).unwrap();
+            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
+                .unwrap();
 
             let code = code_for(&secret_b32);
             assert!(verify_if_enrolled(&c, id, Some(&code), None).is_ok());
@@ -610,6 +688,53 @@ mod tests {
             // though the code is still numerically correct.
             let err = verify_if_enrolled(&c, id, Some(&code), None).unwrap_err();
             assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        });
+    }
+
+    /// A code from the previous step is still valid (skew), but only once:
+    /// the replay record must key on the step the code was minted for, not
+    /// on whatever step the server happened to be in when it checked it.
+    #[test]
+    fn a_skewed_code_is_single_use_too() {
+        with_kek(|| {
+            let c = mem();
+            let id = add_account(&c, "skew");
+            let secret = Secret::generate_secret();
+            let totp_rs::Secret::Encoded(secret_b32) = secret.to_encoded() else {
+                unreachable!()
+            };
+            store_secret(&c, id, &secret_b32);
+            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
+                .unwrap();
+            let totp = totp_from_secret(&secret_b32).unwrap();
+
+            // Mint for "one step ago", re-minting if the clock rolled over
+            // between reading the step and generating.
+            let previous = loop {
+                let step = current_step() - 1;
+                let code = totp.generate((step * STEP_SECONDS) as u64);
+                if current_step() - 1 == step {
+                    break (step, code);
+                }
+            };
+            assert!(verify_if_enrolled(&c, id, Some(&previous.1), None).is_ok());
+            let recorded: i64 = c
+                .query_row(
+                    "SELECT step FROM totp_used WHERE account_id = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                recorded, previous.0,
+                "replay record keys on the matched step"
+            );
+
+            let err = verify_if_enrolled(&c, id, Some(&previous.1), None).unwrap_err();
+            assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+
+            // The current step's code is a different code and still works.
+            assert!(verify_if_enrolled(&c, id, Some(&code_for(&secret_b32)), None).is_ok());
         });
     }
 
@@ -624,7 +749,8 @@ mod tests {
                 _ => unreachable!(),
             };
             store_secret(&c, id, &secret_b32);
-            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id]).unwrap();
+            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
+                .unwrap();
 
             let real = code_for(&secret_b32);
             let mut wrong: Vec<char> = real.chars().collect();
@@ -643,7 +769,11 @@ mod tests {
             // The 11th attempt is refused as locked before the code is even
             // looked at — even the *correct* code is refused while locked out.
             let err = verify_if_enrolled(&c, id, Some(&real), None).unwrap_err();
-            assert_eq!(err.0, StatusCode::LOCKED, "11th attempt must see the lockout from the 10th failure");
+            assert_eq!(
+                err.0,
+                StatusCode::LOCKED,
+                "11th attempt must see the lockout from the 10th failure"
+            );
         });
     }
 
@@ -658,7 +788,8 @@ mod tests {
                 _ => unreachable!(),
             };
             store_secret(&c, id, &secret_b32);
-            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id]).unwrap();
+            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
+                .unwrap();
 
             let err = verify_if_enrolled(&c, id, None, None).unwrap_err();
             assert_eq!(err.0, StatusCode::UNAUTHORIZED);
@@ -706,20 +837,28 @@ mod tests {
             let id = add_account(&c, "sarah");
             c.execute(
                 "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
-                params![crate::password::hash_password("CorrectHorseBattery1").unwrap(), id],
+                params![
+                    crate::password::hash_password("CorrectHorseBattery1").unwrap(),
+                    id
+                ],
             )
             .unwrap();
             let token = crate::mint_token(&c, id, "device").unwrap();
             let headers = headers_for(&token);
             let state = state_with(c);
 
-            let status = totp_status(State(state.clone()), headers.clone()).await.unwrap().0;
+            let status = totp_status(State(state.clone()), headers.clone())
+                .await
+                .unwrap()
+                .0;
             assert_eq!(status["enrolled"], false);
 
             let wrong_password = enroll_start(
                 State(state.clone()),
                 headers.clone(),
-                Json(EnrollReq { password: "not-it".into() }),
+                Json(EnrollReq {
+                    password: "not-it".into(),
+                }),
             )
             .await;
             assert_eq!(wrong_password.unwrap_err().0, StatusCode::UNAUTHORIZED);
@@ -727,7 +866,9 @@ mod tests {
             let enrolled = enroll_start(
                 State(state.clone()),
                 headers.clone(),
-                Json(EnrollReq { password: "CorrectHorseBattery1".into() }),
+                Json(EnrollReq {
+                    password: "CorrectHorseBattery1".into(),
+                }),
             )
             .await
             .unwrap()
@@ -737,24 +878,32 @@ mod tests {
             assert!(uri.starts_with("otpauth://totp/"));
             assert!(uri.contains(&secret_b32));
 
-            let status = totp_status(State(state.clone()), headers.clone()).await.unwrap().0;
+            let status = totp_status(State(state.clone()), headers.clone())
+                .await
+                .unwrap()
+                .0;
             assert_eq!(status["enrolled"], true);
             assert_eq!(status["confirmed"], false);
 
             let bad = enroll_confirm(
                 State(state.clone()),
                 headers.clone(),
-                Json(ConfirmReq { code: "000000".into() }),
+                Json(ConfirmReq {
+                    code: "000000".into(),
+                }),
             )
             .await;
             assert!(bad.is_err());
 
             let code = code_for(&secret_b32);
-            let confirmed =
-                enroll_confirm(State(state.clone()), headers.clone(), Json(ConfirmReq { code }))
-                    .await
-                    .unwrap()
-                    .0;
+            let confirmed = enroll_confirm(
+                State(state.clone()),
+                headers.clone(),
+                Json(ConfirmReq { code }),
+            )
+            .await
+            .unwrap()
+            .0;
             assert_eq!(confirmed["confirmed"], true);
             let codes: Vec<String> = confirmed["recoveryCodes"]
                 .as_array()
@@ -775,19 +924,28 @@ mod tests {
             let err = enroll_start(
                 State(state.clone()),
                 headers.clone(),
-                Json(EnrollReq { password: "CorrectHorseBattery1".into() }),
+                Json(EnrollReq {
+                    password: "CorrectHorseBattery1".into(),
+                }),
             )
             .await
             .unwrap_err();
             assert_eq!(err.0, StatusCode::CONFLICT);
 
-            let _ = disable_totp(State(state.clone()), headers.clone()).await.unwrap();
-            let status = totp_status(State(state.clone()), headers.clone()).await.unwrap().0;
+            let _ = disable_totp(State(state.clone()), headers.clone())
+                .await
+                .unwrap();
+            let status = totp_status(State(state.clone()), headers.clone())
+                .await
+                .unwrap()
+                .0;
             assert_eq!(status["enrolled"], false);
             assert!(enroll_start(
                 State(state),
                 headers,
-                Json(EnrollReq { password: "CorrectHorseBattery1".into() })
+                Json(EnrollReq {
+                    password: "CorrectHorseBattery1".into()
+                })
             )
             .await
             .is_ok());

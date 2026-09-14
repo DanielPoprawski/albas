@@ -49,20 +49,30 @@ const TTL_MS: i64 = 5 * 60 * 1000;
 const MAX_PENDING: i64 = 1000;
 
 fn internal(e: impl std::fmt::Display) -> Rejection {
-    (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {e}"))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("Database error: {e}"),
+    )
 }
 
 /// The four characters shown in both the app and the browser so the user can
 /// see they are completing *their* login. Derived from the nonce's hash rather
 /// than the nonce, so displaying it reveals nothing that helps guess the nonce.
 pub(crate) fn confirm_code(nonce_hash: &str) -> String {
-    nonce_hash.chars().take(4).collect::<String>().to_uppercase()
+    nonce_hash
+        .chars()
+        .take(4)
+        .collect::<String>()
+        .to_uppercase()
 }
 
 /// Drops sessions past their TTL. Called on every entry point, mirroring the
 /// lazy sweep the in-memory ceremony map does — there is no background task.
 fn sweep(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute("DELETE FROM app_sessions WHERE created_at < ?1", [now_ms() - TTL_MS])?;
+    conn.execute(
+        "DELETE FROM app_sessions WHERE created_at < ?1",
+        [now_ms() - TTL_MS],
+    )?;
     Ok(())
 }
 
@@ -109,8 +119,8 @@ pub(crate) async fn claim(
     let conn = state.conn.lock().unwrap();
     sweep(&conn).map_err(internal)?;
 
-    let account_id = account_for(&conn, &headers)
-        .ok_or((StatusCode::UNAUTHORIZED, "Sign in first.".into()))?;
+    let account_id =
+        account_for(&conn, &headers).ok_or((StatusCode::UNAUTHORIZED, "Sign in first.".into()))?;
 
     let hash = token_hash(nonce);
     // Expired and never-existed are the same answer on purpose: the nonce is a
@@ -125,15 +135,27 @@ pub(crate) async fn claim(
         .map_err(internal)?;
 
     match claimed {
-        None => return Err((StatusCode::NOT_FOUND, "That sign-in request has expired.".into())),
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                "That sign-in request has expired.".into(),
+            ))
+        }
         Some(Some(_)) => {
-            return Err((StatusCode::CONFLICT, "That sign-in request was already used.".into()))
+            return Err((
+                StatusCode::CONFLICT,
+                "That sign-in request was already used.".into(),
+            ))
         }
         Some(None) => {}
     }
 
     let name: String = conn
-        .query_row("SELECT name FROM accounts WHERE id = ?1", [account_id], |r| r.get(0))
+        .query_row(
+            "SELECT name FROM accounts WHERE id = ?1",
+            [account_id],
+            |r| r.get(0),
+        )
         .map_err(internal)?;
 
     // Stored in the clear, unavoidably: the app must receive the raw token.
@@ -145,7 +167,9 @@ pub(crate) async fn claim(
     )
     .map_err(internal)?;
 
-    Ok(Json(json!({ "code": confirm_code(&hash), "account": name })))
+    Ok(Json(
+        json!({ "code": confirm_code(&hash), "account": name }),
+    ))
 }
 
 /// The app's poll. A ready session is consumed by the read, so a leaked nonce
@@ -175,9 +199,15 @@ pub(crate) async fn poll(
             conn.execute("DELETE FROM app_sessions WHERE nonce_hash = ?1", [&hash])
                 .map_err(internal)?;
             let name: String = conn
-                .query_row("SELECT name FROM accounts WHERE id = ?1", [account_id], |r| r.get(0))
+                .query_row(
+                    "SELECT name FROM accounts WHERE id = ?1",
+                    [account_id],
+                    |r| r.get(0),
+                )
                 .map_err(internal)?;
-            Ok(Json(json!({ "status": "ready", "token": token, "account": name })))
+            Ok(Json(
+                json!({ "status": "ready", "token": token, "account": name }),
+            ))
         }
         // account_id set with no token cannot happen: `claim` writes both in one
         // statement. Treat it as pending rather than handing out a half-state.
@@ -206,7 +236,11 @@ mod tests {
     fn signed_in() -> (Arc<AppState>, String, String) {
         let mut c = Connection::open_in_memory().unwrap();
         crate::init_db(&mut c, None).unwrap();
-        c.execute("INSERT INTO accounts (name, created_at) VALUES ('alice', 0)", []).unwrap();
+        c.execute(
+            "INSERT INTO accounts (name, created_at) VALUES ('alice', 0)",
+            [],
+        )
+        .unwrap();
         let id = c.last_insert_rowid();
         let token = crate::mint_token(&c, id, "password").unwrap();
         (state_with(c), token, "alice".to_string())
@@ -220,7 +254,10 @@ mod tests {
 
     async fn open_session(state: &Arc<AppState>) -> (String, String) {
         let v = create(State(state.clone())).await.unwrap().0;
-        (v["nonce"].as_str().unwrap().to_string(), v["code"].as_str().unwrap().to_string())
+        (
+            v["nonce"].as_str().unwrap().to_string(),
+            v["code"].as_str().unwrap().to_string(),
+        )
     }
 
     /// The happy path, and the property the app depends on: nothing is handed
@@ -230,7 +267,10 @@ mod tests {
         let (state, browser, account) = signed_in();
         let (nonce, code) = open_session(&state).await;
 
-        let before = poll(State(state.clone()), Path(nonce.clone())).await.unwrap().0;
+        let before = poll(State(state.clone()), Path(nonce.clone()))
+            .await
+            .unwrap()
+            .0;
         assert_eq!(before["status"], "pending");
         assert!(before.get("token").is_none());
 
@@ -260,11 +300,18 @@ mod tests {
     async fn a_ready_session_cannot_be_collected_twice() {
         let (state, browser, _) = signed_in();
         let (nonce, _) = open_session(&state).await;
-        let _ = claim(State(state.clone()), headers_for(&browser), axum::Json(json!({ "nonce": nonce })))
-            .await
-            .unwrap();
+        let _ = claim(
+            State(state.clone()),
+            headers_for(&browser),
+            axum::Json(json!({ "nonce": nonce })),
+        )
+        .await
+        .unwrap();
 
-        let first = poll(State(state.clone()), Path(nonce.clone())).await.unwrap().0;
+        let first = poll(State(state.clone()), Path(nonce.clone()))
+            .await
+            .unwrap()
+            .0;
         assert_eq!(first["status"], "ready");
         let second = poll(State(state.clone()), Path(nonce)).await.unwrap().0;
         assert_eq!(second["status"], "expired");
@@ -275,9 +322,13 @@ mod tests {
     async fn claiming_twice_is_a_conflict() {
         let (state, browser, _) = signed_in();
         let (nonce, _) = open_session(&state).await;
-        let _ = claim(State(state.clone()), headers_for(&browser), axum::Json(json!({ "nonce": nonce })))
-            .await
-            .unwrap();
+        let _ = claim(
+            State(state.clone()),
+            headers_for(&browser),
+            axum::Json(json!({ "nonce": nonce })),
+        )
+        .await
+        .unwrap();
 
         let again = claim(
             State(state.clone()),
@@ -302,7 +353,10 @@ mod tests {
             .unwrap();
         }
 
-        let polled = poll(State(state.clone()), Path(nonce.clone())).await.unwrap().0;
+        let polled = poll(State(state.clone()), Path(nonce.clone()))
+            .await
+            .unwrap()
+            .0;
         assert_eq!(polled["status"], "expired");
 
         let claimed = claim(
@@ -321,9 +375,13 @@ mod tests {
         let (state, _, _) = signed_in();
         let (nonce, _) = open_session(&state).await;
 
-        let err = claim(State(state.clone()), HeaderMap::new(), axum::Json(json!({ "nonce": nonce })))
-            .await
-            .unwrap_err();
+        let err = claim(
+            State(state.clone()),
+            HeaderMap::new(),
+            axum::Json(json!({ "nonce": nonce })),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(err.0, StatusCode::UNAUTHORIZED);
     }
 
@@ -332,7 +390,10 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_nonce_looks_expired() {
         let (state, _, _) = signed_in();
-        let v = poll(State(state), Path("not-a-real-nonce".to_string())).await.unwrap().0;
+        let v = poll(State(state), Path("not-a-real-nonce".to_string()))
+            .await
+            .unwrap()
+            .0;
         assert_eq!(v["status"], "expired");
     }
 }

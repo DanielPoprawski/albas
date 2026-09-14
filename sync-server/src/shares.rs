@@ -1,7 +1,11 @@
 //! Self-service `/shares` routes: who the bearer account shares with and who
 //! shares with it. The admin counterpart (`set_share_db`) stays in `main.rs`.
 
-use axum::{extract::{Path, State}, http::{HeaderMap, StatusCode}, Json};
+use axum::{
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -33,10 +37,15 @@ pub(crate) async fn shares_get(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<SharesRes>, StatusCode> {
-    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let me = account_for(&guard, &headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let list = |sql: &str| -> Result<Vec<ShareInfo>, StatusCode> {
-        let mut stmt = guard.prepare(sql).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let mut stmt = guard
+            .prepare(sql)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         stmt.query_map([me], |r| {
             Ok(ShareInfo {
                 name: r.get(0)?,
@@ -85,13 +94,20 @@ fn set_share(
     calendar: bool,
     todos: bool,
 ) -> Result<Json<Value>, StatusCode> {
-    let mut guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let me = account_for(&guard, headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let tx = guard
         .transaction()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let grantee: Option<i64> = tx
-        .query_row("SELECT id FROM accounts WHERE name = ?1", [grantee_name], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM accounts WHERE name = ?1",
+            [grantee_name],
+            |r| r.get(0),
+        )
         .optional()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let Some(grantee) = grantee else {
@@ -116,8 +132,11 @@ fn set_share(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
     // Any grant change invalidates the grantee's shared snapshot.
-    tx.execute("UPDATE accounts SET grant_rev = grant_rev + 1 WHERE id = ?1", [grantee])
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    tx.execute(
+        "UPDATE accounts SET grant_rev = grant_rev + 1 WHERE id = ?1",
+        [grantee],
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true })))
 }

@@ -4,21 +4,19 @@ import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR, isHex, PALETTE_COMPACT } from '../../colors';
 import { Segmented } from '../ui/segmented';
 import { cn } from '@/lib/utils';
-import type { ThemeName } from '../../types';
+import type { ThemePref } from '../../types';
 import { Card } from './shared';
 
 /**
- * The themes this build offers: two, not the four `CLAUDE.md` § Theming lists.
- * `grey-high` and `grey-low` are dropped — the redesign never drew them and
- * nobody asked for them back. There is deliberately no "Auto (System)": a
- * theme here is a stored value that `applyTheme()` stamps onto <html>, and
- * "follow the OS" is a fifth state with no `data-theme` to write.
- *
- * `appearance.ts`'s `THEMES` / `readTheme()` now validate against these same two,
- * so a database still holding `grey-high`/`grey-low` fails that check and falls
- * back to the default rather than selecting an option that no longer paints.
+ * Follow the OS, or pin one of the two drawn themes (`:root` light,
+ * `[data-theme='dark']`). `grey-high` and `grey-low` are dropped — the
+ * redesign never drew them. `appearance.ts`'s `readThemePref()` validates
+ * against these same values, so a database still holding an old name falls
+ * back to the default (system) rather than selecting an option that no longer
+ * paints.
  */
-const THEME_OPTIONS: { value: ThemeName; label: string }[] = [
+const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
+  { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
@@ -31,7 +29,7 @@ const THEME_OPTIONS: { value: ThemeName; label: string }[] = [
  * No local state except the custom-colour input's own value.
  */
 export function AppearanceCard() {
-  const { theme, accent, font, fontSize, setSetting } = useApp();
+  const { themePref, accent, font, fontSize, setSetting } = useApp();
   const [custom, setCustom] = useState(accent || DEFAULT_COLOR);
   const fonts = Object.keys(FONT_STACKS) as FontChoice[];
   const sizes = Object.keys(FONT_SIZES) as FontSizeChoice[];
@@ -41,14 +39,19 @@ export function AppearanceCard() {
       <div className="setting-item">
         <div>
           <div className="setting-label">Theme</div>
-          <div className="setting-desc">Applies immediately and is remembered across launches.</div>
+          <div className="setting-desc">System follows the OS light/dark setting. Applies immediately.</div>
         </div>
-        <Segmented aria-label="Theme" options={THEME_OPTIONS} value={theme} onChange={(v) => setSetting('theme', v)} />
+        <Segmented
+          aria-label="Theme"
+          options={THEME_OPTIONS}
+          value={themePref}
+          onChange={(v) => setSetting('theme', v)}
+        />
       </div>
 
       <div className="setting-item items-start">
         <div>
-          <div className="setting-label">Accent colour</div>
+          <div className="setting-label">Accent color</div>
           <div className="setting-desc">
             Buttons, highlights and the selected day. Hover and tint shades are derived from it.
           </div>
@@ -85,7 +88,7 @@ export function AppearanceCard() {
                 setCustom(e.target.value);
                 setSetting('accent', e.target.value);
               }}
-              aria-label="Custom accent colour"
+              aria-label="Custom accent color"
               className="w-[1.5rem] h-[1.5rem] p-0 border border-line bg-transparent"
             />
             Custom

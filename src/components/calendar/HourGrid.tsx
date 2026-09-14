@@ -114,7 +114,7 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate,
           return (
             <div
               key={dateStr}
-              className="flex-1 relative border-l border-line"
+              className={`flex-1 relative border-l border-line ${isToday ? 'today-cell' : ''}`}
               onClick={(e) => {
                 onSelectDate?.(dateStr);
                 if (!onAddAt) return;

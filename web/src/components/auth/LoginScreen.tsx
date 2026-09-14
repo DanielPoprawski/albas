@@ -12,6 +12,7 @@ export function LoginScreen({
   onSignedIn,
   appSession,
   linked,
+  expired,
 }: {
   onNavigate: (screen: Screen) => void;
   onSignedIn: (session: Session) => void;
@@ -21,6 +22,8 @@ export function LoginScreen({
   /** Opened from a "link another device" QR by a camera app rather than by
    * the Albas app — the code can only be used from inside the app. */
   linked?: boolean;
+  /** This browser had a session stored, but the server no longer accepts it. */
+  expired?: boolean;
 }) {
   const [method, setMethod] = useState<Method>('password');
 
@@ -32,6 +35,12 @@ export function LoginScreen({
           <p className="auth-subtitle">Sign in to sync your schedule, habits and tasks</p>
           <p className="auth-methods-count">Password (+ 2FA if you set it up), or a passkey</p>
         </div>
+
+        {expired && (
+          <div className="passkey-note">
+            ⏳ Your previous session on this browser has expired or been signed out, so sign in again to continue.
+          </div>
+        )}
 
         {linked && (
           <div className="passkey-note">

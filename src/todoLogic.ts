@@ -109,6 +109,31 @@ export function nextDue(todo: Todo, todayStr: string): string | null {
 }
 
 /**
+ * The day a search hit for a to-do should land on: a once to-do's due day
+ * (null when undated); for a chore, its next due day; for a habit, the next
+ * day it's due from today, else the most recent past due day, else its
+ * anchor. Bounded scans — a habit due on some day of the week resolves in
+ * under seven steps, a monthly one in at most 31.
+ */
+export function nearestDueDate(todo: Todo, todayStr: string, firstDay: FirstDayOfWeek = 0): string | null {
+  const s = todo.schedule;
+  if (s.type === 'once') return todo.dueDate;
+  const chore = nextDue(todo, todayStr);
+  if (chore) return chore;
+  const anchor = anchorOf(todo);
+  for (let i = 0; i <= 366; i++) {
+    const day = addDays(todayStr, i);
+    if (day >= anchor && isDueOn(todo, day, firstDay)) return day;
+  }
+  for (let i = 1; i <= 366; i++) {
+    const day = addDays(todayStr, -i);
+    if (day < anchor) break;
+    if (isDueOn(todo, day, firstDay)) return day;
+  }
+  return anchor;
+}
+
+/**
  * Streak, counting back from today.
  * Day rules: consecutive due days completed (an unfinished today doesn't
  * break it; non-due days are skipped). Quota rules: consecutive weeks/months
@@ -148,6 +173,58 @@ export function streakOf(todo: Todo, firstDay: FirstDayOfWeek = 0): number {
     d.setDate(d.getDate() - 1);
   }
   return streak;
+}
+
+/** Every day in `[from, to]` (inclusive) on which the to-do is due, ascending. */
+export function dueDaysBetween(todo: Todo, from: string, to: string, firstDay: FirstDayOfWeek = 0): string[] {
+  const days: string[] = [];
+  if (from > to) return days;
+  for (let day = from; day <= to; day = addDays(day, 1)) {
+    if (isDueOn(todo, day, firstDay)) days.push(day);
+  }
+  return days;
+}
+
+/**
+ * Longest run of consecutive due days each completed, from the to-do's
+ * creation (or its earliest completion, whichever is earlier) to today.
+ * Same day-rule conventions as `streakOf`: non-due days are skipped and an
+ * unfinished today does not end a run. Quota rules count consecutive met
+ * periods, with the same grace for the current one.
+ */
+export function bestStreakOf(todo: Todo, firstDay: FirstDayOfWeek = 0): number {
+  const s = todo.schedule;
+  if (s.type === 'once') return 0;
+
+  const todayStr = fmt(new Date());
+  const completed = Object.entries(todo.completions)
+    .filter(([, v]) => v >= todo.target)
+    .map(([d]) => d);
+  const earliest = completed.reduce((a, b) => (b < a ? b : a), todo.createdAt);
+  const start = earliest < todayStr ? earliest : todayStr;
+
+  let best = 0;
+  let run = 0;
+
+  if (s.type === 'timesPer') {
+    const met = (anchor: string) => doneCountIn(todo, anchor, s.per, firstDay) >= Math.max(1, s.times);
+    let anchor = s.per === 'week' ? weekOf(parse(start), firstDay)[0] : start.slice(0, 8) + '01';
+    for (let i = 0; i < 1200 && anchor <= todayStr; i++) {
+      const next = s.per === 'week' ? addDays(anchor, 7) : addMonths(anchor, 1);
+      if (met(anchor)) run++;
+      else if (next <= todayStr) run = 0; // grace: the in-progress period doesn't break it
+      best = Math.max(best, run);
+      anchor = next;
+    }
+    return best;
+  }
+
+  for (const day of dueDaysBetween(todo, start, todayStr, firstDay)) {
+    if (isDoneOn(todo, day)) run++;
+    else if (day !== todayStr) run = 0;
+    best = Math.max(best, run);
+  }
+  return best;
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -196,8 +273,11 @@ export function statusLabel(todo: Todo, todayStr: string, firstDay: FirstDayOfWe
   return streak > 0 ? `${streak} day streak` : repeatLabel(s, firstDay);
 }
 
-/** Display label for the uncategorised group — its `TaskGroup.category` is `''`. */
-export const UNCATEGORIZED = 'Uncategorized';
+/**
+ * Display label for items with no category (`category === ''`). "General"
+ * rather than "Uncategorized": it is the neutral inbox, not an error state.
+ */
+export const GENERAL = 'General';
 
 /**
  * Sort key for a to-do's due moment. Undated to-dos sort last (there is no
@@ -225,6 +305,35 @@ export function byImportanceThenDue(a: Todo, b: Todo): number {
   if (a.important !== b.important) return a.important ? -1 : 1;
   const key = dueSortKey(a).localeCompare(dueSortKey(b));
   return key !== 0 ? key : a.name.localeCompare(b.name);
+}
+
+/**
+ * What the dashboard's task panel shows: every one-time to-do that needs
+ * attention today — undated (nothing to wait for), due today or overdue, or
+ * starred — plus anything finished *today* so a tick doesn't vanish under the
+ * pointer. A to-do completed on an earlier day is history and drops off.
+ */
+export function dashboardTasks(tasks: Todo[], todayStr: string): Todo[] {
+  return tasks.filter((t) => {
+    if (isRepeating(t)) return false;
+    const done = doneDate(t);
+    if (done) return done === todayStr;
+    return !t.dueDate || t.dueDate <= todayStr || t.important;
+  });
+}
+
+/**
+ * Dashboard order: starred first, then by due day (undated last), then the
+ * order they were added — `sort` is stable, so equal keys keep array order.
+ */
+export function byDashboardOrder(a: Todo, b: Todo): number {
+  if (a.important !== b.important) return a.important ? -1 : 1;
+  if (a.dueDate !== b.dueDate) {
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return a.dueDate < b.dueDate ? -1 : 1;
+  }
+  return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
 }
 
 export interface TaskGroup {

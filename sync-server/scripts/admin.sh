@@ -26,7 +26,7 @@
 # safe by construction.)
 set -euo pipefail
 
-DEPLOY_HOST=${ALBAS_DEPLOY_HOST:-daniel@ssh.danni-dev.com}
+DEPLOY_HOST=${ALBAS_DEPLOY_HOST:?set ALBAS_DEPLOY_HOST=user@host}
 # Where the compose files live on the host. The README's checkout layout is
 # ~/albas/sync-server; publish.sh still targets the older ~/albas-sync.
 DEPLOY_DIR=${ALBAS_DEPLOY_DIR:-albas/sync-server}

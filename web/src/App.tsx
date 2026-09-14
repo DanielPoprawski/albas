@@ -55,6 +55,9 @@ export function App() {
   // app. The nonce in it is useless to a browser (the session is already
   // claimed for the app that showed it), so only the fact is kept.
   const [linked] = useState<boolean>(() => paramFromHashOrQuery('linked') !== null);
+  // Set when `SignedIn` found the stored session dead on the server, so the
+  // login screen can say why it's being shown instead of the signed-in page.
+  const [expired, setExpired] = useState(false);
   // Present only right after `sync-server`'s Google callback redirects back
   // here (see `lib/api.ts`'s `claimGoogleTicket`) — a one-time pickup of the
   // session it minted, never the bearer token itself sitting in the URL.
@@ -119,13 +122,29 @@ export function App() {
           setSession(null);
           navigate('splash');
         }}
+        onSessionExpired={() => {
+          setSession(null);
+          setExpired(true);
+          navigate('login');
+        }}
       />
     );
   }
 
   switch (screen) {
     case 'login':
-      return <LoginScreen onNavigate={navigate} onSignedIn={setSession} appSession={appSession} linked={linked} />;
+      return (
+        <LoginScreen
+          onNavigate={navigate}
+          onSignedIn={(s) => {
+            setExpired(false);
+            setSession(s);
+          }}
+          appSession={appSession}
+          linked={linked}
+          expired={expired}
+        />
+      );
     case 'register':
       return <RegisterForm onNavigate={navigate} onSignedIn={setSession} appSession={appSession} />;
     case 'offline':

@@ -43,7 +43,11 @@ bun install
 bun run tauri dev
 ```
 
-The Hyprland/Wayland WebKit workarounds (`WEBKIT_DISABLE_DMABUF_RENDERER` etc.) are baked
+The NVIDIA/Wayland WebKit workaround (`__NV_DISABLE_EXPLICIT_SYNC=1` — works around a WebKitGTK/Hyprland
+explicit-sync mismatch that otherwise kills the window with Error 71, while keeping the fast DMA-BUF
+compositing path; `WEBKIT_DISABLE_DMABUF_RENDERER=1` also fixes the crash but forces a slow copy-based
+render path (~4x the UI-process CPU) and visibly jitters, `WEBKIT_DISABLE_COMPOSITING_MODE` forces
+software rendering at ~10 fps, `GDK_BACKEND=x11` blanks) is baked
 into the `tauri` script, so there is nothing to remember on Linux.
 
 ### Which command does what

@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Check, Circle, Minus, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { fmt, rotateWeek, weekOf } from '../../dates';
 import { isDoneOn, isDueOn, isRepeating, repeatLabel, statusLabel, valueOn } from '../../todoLogic';
 import { colorHex } from '../../colors';
+import InlineEditor from '../InlineEditor';
 import { RowActions } from './TodoTaskRow';
 import { SectionHeading } from '../ui/section-heading';
 import type { Todo } from '../../types';
@@ -10,15 +12,19 @@ import type { Todo } from '../../types';
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-/** Repeating to-do: name + status, then the week strip. */
+/** Repeating to-do: name + status, then the week strip. The name opens the inline editor. */
 function RepeatingRow({
   todo,
   onEdit,
   readOnly = false,
+  expanded = false,
+  onToggleExpand,
 }: {
   todo: Todo;
   onEdit: (t: Todo) => void;
   readOnly?: boolean;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
 }) {
   const { toggleTodo, setTodoValue, firstDayOfWeek } = useApp();
   const hex = colorHex(todo.colorKey);
@@ -39,19 +45,36 @@ function RepeatingRow({
   return (
     <div className="group">
       <div className="flex items-center gap-xs mb-xs">
-        <span
-          className="micro-label truncate"
-          // dynamic: the habit's own colour
-          style={{ color: hex }}
-          title={repeatLabel(todo.schedule, firstDayOfWeek)}
-        >
-          {todo.name}
-        </span>
+        {readOnly ? (
+          <span
+            className="micro-label truncate"
+            // dynamic: the habit's own colour
+            style={{ color: hex }}
+            title={repeatLabel(todo.schedule, firstDayOfWeek)}
+          >
+            {todo.name}
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={onToggleExpand}
+            className="micro-label truncate text-left min-w-0 hover:underline"
+            // dynamic: the habit's own colour
+            style={{ color: hex }}
+            title={repeatLabel(todo.schedule, firstDayOfWeek)}
+          >
+            {todo.name}
+          </button>
+        )}
         <span className="text-xs text-ink-muted ml-auto flex-shrink-0">
           {statusLabel(todo, todayStr, firstDayOfWeek)}
         </span>
         {!readOnly && <RowActions todo={todo} onEdit={onEdit} />}
       </div>
+      {expanded && !readOnly && (
+        <InlineEditor todo={todo} autoFocusTitle onAdvanced={() => onEdit(todo)} className="mb-xs" />
+      )}
       <div className="flex justify-between">
         {weekDates.map((date, i) => {
           const due = isDueOn(todo, date, firstDayOfWeek);
@@ -84,6 +107,9 @@ function RepeatingRow({
           return (
             <button
               key={date}
+              type="button"
+              aria-pressed={done}
+              aria-label={`${todo.name} on ${date}`}
               title={`${todo.name} – ${dayLabels[i]}${due ? '' : ' (not scheduled)'}`}
               disabled={isFuture || readOnly}
               onClick={readOnly ? undefined : () => handleCellClick(date)}
@@ -117,9 +143,12 @@ export default function HabitsSection({
   todos?: Todo[];
   readOnly?: boolean;
 }) {
-  const { todos: own } = useApp();
+  const { todos: own, hiddenCategoryIds } = useApp();
+  /** The one row whose inline editor is open. */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const habits = (override ?? own).filter(isRepeating);
+  // Hidden categories apply to our own habits only; a shared list's ids belong to its owner.
+  const habits = (override ?? own.filter((t) => !hiddenCategoryIds.has(t.category))).filter(isRepeating);
   if (habits.length === 0) return null;
 
   return (
@@ -127,7 +156,14 @@ export default function HabitsSection({
       {!override && <SectionHeading className="mb-md font-bold">Habits</SectionHeading>}
       <div className="space-y-md">
         {habits.map((todo) => (
-          <RepeatingRow key={todo.id} todo={todo} onEdit={onEdit} readOnly={readOnly} />
+          <RepeatingRow
+            key={todo.id}
+            todo={todo}
+            onEdit={onEdit}
+            readOnly={readOnly}
+            expanded={expandedId === todo.id}
+            onToggleExpand={() => setExpandedId((cur) => (cur === todo.id ? null : todo.id))}
+          />
         ))}
       </div>
     </div>

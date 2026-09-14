@@ -7,7 +7,6 @@ import { describeWhen, stripMatch, useNlDate } from '../../nlDate';
 import type { CalendarEvent, Recurrence } from '../../types';
 import {
   CheckboxRow,
-  ColorPicker,
   EditActions,
   inputClass,
   labelClass,
@@ -52,7 +51,6 @@ export default function EventForm({
   const [title, setTitle] = useState(edit?.title ?? '');
   const [description, setDescription] = useState(edit?.description ?? '');
   const [category, setCategory] = useState(edit?.category ?? '');
-  const [color, setColor] = useState(edit?.colorKey ?? DEFAULT_COLOR);
   const [allDay, setAllDay] = useState(edit?.allDay ?? false);
   const [startDate, setStartDate] = useState(initialDate);
   const [startTime, setStartTime] = useState(initialStartTime);
@@ -126,7 +124,7 @@ export default function EventForm({
     const fields = {
       title: title.trim(),
       description: description.trim(),
-      colorKey: color,
+      colorKey: edit?.colorKey ?? DEFAULT_COLOR,
       allDay,
       startDate,
       startTime: allDay ? null : startTime,
@@ -237,11 +235,6 @@ export default function EventForm({
       <div>
         <label className={labelClass}>Category</label>
         <Select options={categoryOptions} value={category} onChange={setCategory} />
-      </div>
-
-      <div>
-        <label className={labelClass}>Color</label>
-        <ColorPicker value={color} onChange={setColor} />
       </div>
 
       {/*

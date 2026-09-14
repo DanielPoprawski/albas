@@ -6,8 +6,11 @@
 //! WebView never contacts the server, so it needs no CORS.
 
 use crate::db::{self, Db};
-use crate::sync::{check_url, ACCOUNT_SETTING, DEFAULT_URL, META_GRANT_REV, META_SHARED_SEQ, URL_SETTING};
-use serde_json::{json, Value};
+use crate::sync::{
+    ACCOUNT_SETTING, DEFAULT_URL, META_GRANT_REV, META_PULL_SEQ, META_PUSH_AT, META_SHARED_SEQ,
+    URL_SETTING, check_url,
+};
+use serde_json::{Value, json};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
@@ -42,7 +45,9 @@ fn post_json(url: &str, token: Option<&str>, body: &Value) -> Result<Value, Stri
         req = req.set("Authorization", &format!("Bearer {t}"));
     }
     match req.send_json(body) {
-        Ok(r) => r.into_json().map_err(|e| format!("Bad response from server: {e}")),
+        Ok(r) => r
+            .into_json()
+            .map_err(|e| format!("Bad response from server: {e}")),
         Err(e) => Err(friendly(e)),
     }
 }
@@ -92,6 +97,29 @@ fn stored_base_and_token(db: &Db) -> Result<(String, String), String> {
     Ok((normalize_base(&url), token))
 }
 
+/// Forgets everything scoped to the account this device last synced: the
+/// shared cache and every watermark. Local data stays — it full-pushes to
+/// whichever account comes next. `account` is what `__sync_account` becomes
+/// (the new name on adoption, empty on sign-out).
+fn reset_session_rows(tx: &rusqlite::Connection, account: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM shared_rows", [])?;
+    for key in [META_PULL_SEQ, META_PUSH_AT, META_SHARED_SEQ, META_GRANT_REV] {
+        db::write_meta(tx, key, "0")?;
+    }
+    db::write_setting(tx, ACCOUNT_SETTING, account)
+}
+
+/// The local half of leaving an account: token and marker gone, session rows
+/// reset. Shared by sign-out, account deletion, and a `/sync` 401 (the server
+/// no longer knows the token). Never talks to the server.
+pub(crate) fn clear_session(db: &Db) -> Result<(), String> {
+    crate::token_store::clear(db)?;
+    let mut guard = db.0.lock().map_err(err)?;
+    let tx = guard.transaction().map_err(err)?;
+    reset_session_rows(&tx, "").map_err(err)?;
+    tx.commit().map_err(err)
+}
+
 /// Swaps this device onto an account in one transaction. Local data is
 /// untouched — it will full-push on the next sync — but every watermark
 /// resets, because they were scoped to whatever account this device synced
@@ -106,19 +134,38 @@ fn adopt_session(
     {
         let mut guard = db.0.lock().map_err(err)?;
         let tx = guard.transaction().map_err(err)?;
-        tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
-        for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
-            db::write_meta(&tx, key, "0").map_err(err)?;
-        }
+        reset_session_rows(&tx, name).map_err(err)?;
         db::write_setting(&tx, URL_SETTING, &format!("{base}/sync")).map_err(err)?;
-        db::write_setting(&tx, ACCOUNT_SETTING, name).map_err(err)?;
         tx.commit().map_err(err)?;
     }
     // Outside the transaction/lock above: `token_store::set` takes its own
     // lock on `db.0` (for the marker write on mobile, or just the marker on
     // desktop) and, on desktop, talks to the OS keyring — neither belongs
-    // inside a SQLite transaction.
-    crate::token_store::set(&db, token)
+    // inside a SQLite transaction. If storing the token fails (no Secret
+    // Service on a bare Linux box, say) the account name written above must
+    // not survive on its own, or the UI reads as signed in with no credential.
+    if let Err(e) = crate::token_store::set(&db, token) {
+        let _ = clear_session(&db);
+        return Err(format!("Signed in, but the token could not be stored on this device: {e}"));
+    }
+    Ok(())
+}
+
+/// Settings › Advanced: connect with a pasted bearer token (an operator-minted
+/// credential, or one copied from another device). Adopts it like any other
+/// sign-in; the first sync then proves it — a rejected token clears the
+/// session again via the 401 path in `sync.rs`.
+#[tauri::command]
+pub async fn sync_connect_token(app: tauri::AppHandle, url: String, token: String) -> Result<(), String> {
+    let base = normalize_base(&url);
+    check_url(&format!("{base}/sync"))?;
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return Err("Paste a token first.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || adopt_session(&app, &base, &token, ""))
+        .await
+        .map_err(err)?
 }
 
 #[tauri::command]
@@ -156,7 +203,9 @@ pub async fn shares_set(
         // names come back as `{"ok": false}` instead, so account-name
         // enumeration isn't observable from the HTTP status alone.
         let body: Value = match res {
-            Ok(r) => r.into_json().map_err(|e| format!("Bad response from server: {e}"))?,
+            Ok(r) => r
+                .into_json()
+                .map_err(|e| format!("Bad response from server: {e}"))?,
             Err(e) => return Err(friendly(e)),
         };
         if body.get("ok").and_then(|v| v.as_bool()) == Some(false) {
@@ -184,15 +233,7 @@ pub async fn sync_sign_out(app: tauri::AppHandle) -> Result<(), String> {
                 .timeout(Duration::from_secs(10))
                 .call();
         }
-        crate::token_store::clear(&db)?;
-        let mut guard = db.0.lock().map_err(err)?;
-        let tx = guard.transaction().map_err(err)?;
-        tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
-        for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
-            db::write_meta(&tx, key, "0").map_err(err)?;
-        }
-        db::write_setting(&tx, ACCOUNT_SETTING, "").map_err(err)?;
-        tx.commit().map_err(err)
+        clear_session(&db)
     })
     .await
     .map_err(err)?
@@ -218,16 +259,7 @@ pub async fn account_delete(app: tauri::AppHandle, password: String) -> Result<(
         if let Err(e) = res {
             return Err(friendly(e));
         }
-        let db = app.state::<Db>();
-        crate::token_store::clear(&db)?;
-        let mut guard = db.0.lock().map_err(err)?;
-        let tx = guard.transaction().map_err(err)?;
-        tx.execute("DELETE FROM shared_rows", []).map_err(err)?;
-        for key in ["sync_pull_seq", "sync_push_at", META_SHARED_SEQ, META_GRANT_REV] {
-            db::write_meta(&tx, key, "0").map_err(err)?;
-        }
-        db::write_setting(&tx, ACCOUNT_SETTING, "").map_err(err)?;
-        tx.commit().map_err(err)
+        clear_session(&app.state::<Db>())
     })
     .await
     .map_err(err)?
@@ -270,11 +302,26 @@ mod tests {
 
     #[test]
     fn base_normalisation_strips_sync_suffix_and_slashes() {
-        assert_eq!(normalize_base("https://s.example.com"), "https://s.example.com");
-        assert_eq!(normalize_base("https://s.example.com/"), "https://s.example.com");
-        assert_eq!(normalize_base("https://s.example.com/sync"), "https://s.example.com");
-        assert_eq!(normalize_base(" https://s.example.com/sync/ "), "https://s.example.com");
-        assert_eq!(normalize_base("http://localhost:8787/sync"), "http://localhost:8787");
+        assert_eq!(
+            normalize_base("https://s.example.com"),
+            "https://s.example.com"
+        );
+        assert_eq!(
+            normalize_base("https://s.example.com/"),
+            "https://s.example.com"
+        );
+        assert_eq!(
+            normalize_base("https://s.example.com/sync"),
+            "https://s.example.com"
+        );
+        assert_eq!(
+            normalize_base(" https://s.example.com/sync/ "),
+            "https://s.example.com"
+        );
+        assert_eq!(
+            normalize_base("http://localhost:8787/sync"),
+            "http://localhost:8787"
+        );
     }
 
     /// The real server puts the API under `/api`, because the same origin also
@@ -291,7 +338,10 @@ mod tests {
             "https://albas.danni-dev.com/api"
         );
         // What the shipped default already is, normalised to itself.
-        assert_eq!(normalize_base(crate::sync::DEFAULT_URL), "https://albas.danni-dev.com/api");
+        assert_eq!(
+            normalize_base(crate::sync::DEFAULT_URL),
+            "https://albas.danni-dev.com/api"
+        );
     }
 }
 
@@ -309,7 +359,10 @@ mod tests {
 /// `/api` prefix nginx strips before proxying. A self-hosted base without that
 /// prefix is returned unchanged.
 fn portal_base(base: &str) -> String {
-    base.strip_suffix("/api").unwrap_or(base).trim_end_matches('/').to_string()
+    base.strip_suffix("/api")
+        .unwrap_or(base)
+        .trim_end_matches('/')
+        .to_string()
 }
 
 fn get_json_unauth(url: &str) -> Result<Value, String> {
@@ -339,7 +392,9 @@ pub async fn app_signin_start(
             _ => "login",
         };
         let res = post_json(&format!("{base}/app-session"), None, &json!({}))?;
-        let nonce = res["nonce"].as_str().ok_or("Bad response from server: no nonce")?;
+        let nonce = res["nonce"]
+            .as_str()
+            .ok_or("Bad response from server: no nonce")?;
         let code = res["code"].as_str().unwrap_or("");
         // The nonce rides in the URL *fragment*: fragments are never sent in
         // an HTTP request (not to this server on the next navigation, not to
@@ -372,7 +427,9 @@ pub async fn app_signin_poll(app: tauri::AppHandle, nonce: String) -> Result<Val
         let res = get_json_unauth(&format!("{base}/app-session/{nonce}"))?;
         match res["status"].as_str().unwrap_or("") {
             "ready" => {
-                let token = res["token"].as_str().ok_or("Bad response from server: no token")?;
+                let token = res["token"]
+                    .as_str()
+                    .ok_or("Bad response from server: no token")?;
                 let name = res["account"].as_str().unwrap_or("");
                 adopt_session(&app, &base, token, name)?;
                 *app.state::<AuthFlow>().0.lock().map_err(err)? = None;
@@ -407,7 +464,11 @@ pub async fn app_signin_cancel(app: tauri::AppHandle) -> Result<(), String> {
 /// Resolves the base to sign in against: what the caller passed (the
 /// user-editable server field), else the shipped default.
 fn signin_base(url: &str) -> Result<String, String> {
-    let base = if url.trim().is_empty() { DEFAULT_URL.to_string() } else { url.to_string() };
+    let base = if url.trim().is_empty() {
+        DEFAULT_URL.to_string()
+    } else {
+        url.to_string()
+    };
     let base = normalize_base(&base);
     check_url(&base)?;
     Ok(base)
@@ -427,7 +488,9 @@ pub async fn account_register_password(
             None,
             &json!({ "name": name.trim(), "password": password }),
         )?;
-        let token = res["token"].as_str().ok_or("Bad response from server: no token")?;
+        let token = res["token"]
+            .as_str()
+            .ok_or("Bad response from server: no token")?;
         let account = res["name"].as_str().unwrap_or(name.trim());
         adopt_session(&app, &base, token, account)?;
         Ok(json!({ "status": "ready", "account": account }))
@@ -458,18 +521,25 @@ pub async fn account_login_password(
         if let Some(code) = code.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()) {
             body["code"] = Value::String(code);
         }
-        if let Some(rc) = recovery_code.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()) {
+        if let Some(rc) = recovery_code
+            .map(|c| c.trim().to_string())
+            .filter(|c| !c.is_empty())
+        {
             body["recovery_code"] = Value::String(rc);
         }
         let res = ureq::post(&format!("{base}/login/password"))
             .timeout(Duration::from_secs(30))
             .send_json(&body);
         let res = match res {
-            Ok(r) => r.into_json::<Value>().map_err(|e| format!("Bad response from server: {e}"))?,
+            Ok(r) => r
+                .into_json::<Value>()
+                .map_err(|e| format!("Bad response from server: {e}"))?,
             Err(ureq::Error::Status(428, _)) => return Ok(json!({ "status": "totp_required" })),
             Err(e) => return Err(friendly(e)),
         };
-        let token = res["token"].as_str().ok_or("Bad response from server: no token")?;
+        let token = res["token"]
+            .as_str()
+            .ok_or("Bad response from server: no token")?;
         let account = res["name"].as_str().unwrap_or(name.trim());
         adopt_session(&app, &base, token, account)?;
         Ok(json!({ "status": "ready", "account": account }))
@@ -516,7 +586,9 @@ pub async fn sync_api(
             Err(e) => return Err(friendly(e)),
         };
         let status = resp.status();
-        let text = resp.into_string().map_err(|e| format!("Bad response from server: {e}"))?;
+        let text = resp
+            .into_string()
+            .map_err(|e| format!("Bad response from server: {e}"))?;
         let body = serde_json::from_str::<Value>(&text)
             .unwrap_or_else(|_| json!({ "message": text.trim() }));
         Ok(json!({ "status": status, "body": body }))
@@ -566,7 +638,9 @@ pub async fn app_session_offer(app: tauri::AppHandle) -> Result<Value, String> {
             stored_base_and_token(&db)?
         };
         let created = post_json(&format!("{base}/app-session"), None, &json!({}))?;
-        let nonce = created["nonce"].as_str().ok_or("Bad response from server: no nonce")?;
+        let nonce = created["nonce"]
+            .as_str()
+            .ok_or("Bad response from server: no nonce")?;
         let claimed = post_json(
             &format!("{base}/app-session/claim"),
             Some(&token),
@@ -589,7 +663,11 @@ pub async fn app_session_offer(app: tauri::AppHandle) -> Result<Value, String> {
 /// scanned. After this, `app_signin_poll` works exactly as for a browser
 /// sign-in.
 #[tauri::command]
-pub async fn app_signin_attach(app: tauri::AppHandle, url: String, nonce: String) -> Result<Value, String> {
+pub async fn app_signin_attach(
+    app: tauri::AppHandle,
+    url: String,
+    nonce: String,
+) -> Result<Value, String> {
     let base = signin_base(&url)?;
     let nonce = nonce.trim().to_string();
     if nonce.is_empty() || !nonce.chars().all(|c| c.is_ascii_hexdigit()) {

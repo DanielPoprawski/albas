@@ -19,7 +19,10 @@ const MAX_FAILURES: i64 = 10;
 const LOCKOUT_MS: i64 = 15 * 60 * 1000;
 
 fn internal(e: impl std::fmt::Display) -> Rejection {
-    (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {e}"))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("Database error: {e}"),
+    )
 }
 
 /// `Err((423 Locked, _))` when this account/kind is currently locked out.
@@ -45,7 +48,11 @@ pub(crate) fn check(conn: &Connection, account_id: i64, kind: &str) -> Result<()
 
 /// Records one failure; locks the account/kind for 15 minutes on the 10th
 /// consecutive one (consecutive because any success calls `reset`).
-pub(crate) fn record_failure(conn: &Connection, account_id: i64, kind: &str) -> Result<(), Rejection> {
+pub(crate) fn record_failure(
+    conn: &Connection,
+    account_id: i64,
+    kind: &str,
+) -> Result<(), Rejection> {
     conn.execute(
         "INSERT INTO auth_failures (account_id, kind, count, locked_until) VALUES (?1, ?2, 1, 0)
          ON CONFLICT(account_id, kind) DO UPDATE SET count = count + 1",
@@ -92,12 +99,19 @@ mod tests {
     #[test]
     fn locks_after_ten_failures_and_clears_on_reset() {
         let c = mem();
-        c.execute("INSERT INTO accounts (name, created_at) VALUES ('a', 0)", []).unwrap();
+        c.execute(
+            "INSERT INTO accounts (name, created_at) VALUES ('a', 0)",
+            [],
+        )
+        .unwrap();
         let id = c.last_insert_rowid();
 
         for _ in 0..9 {
             record_failure(&c, id, "password").unwrap();
-            assert!(check(&c, id, "password").is_ok(), "not locked before the 10th failure");
+            assert!(
+                check(&c, id, "password").is_ok(),
+                "not locked before the 10th failure"
+            );
         }
         record_failure(&c, id, "password").unwrap();
         let err = check(&c, id, "password").unwrap_err();

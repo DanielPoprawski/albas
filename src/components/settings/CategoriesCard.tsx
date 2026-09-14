@@ -7,13 +7,9 @@ import { Button, IconButton } from '../ui/button';
 import { cn } from '@/lib/utils';
 import { ColorPicker, inputClass } from '../forms/shared';
 import type { Category, CategoryScope } from '../../types';
+import { moveCategory } from '../../categoryLogic';
+import { SCOPE_OPTIONS } from '../sidebar/CategoryMenu';
 import { Card } from './shared';
-
-const SCOPE_OPTIONS: { value: CategoryScope; label: string }[] = [
-  { value: 'calendar', label: 'Calendar' },
-  { value: 'tasks', label: 'Tasks' },
-  { value: 'habits', label: 'Habits' },
-];
 
 /**
  * User-managed, synced groupings for events/tasks/habits (Phase K). Rows are
@@ -34,12 +30,9 @@ export function CategoriesCard() {
   const sorted = [...categories].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
 
   function move(id: string, dir: -1 | 1) {
-    const idx = sorted.findIndex((c) => c.id === id);
-    const other = sorted[idx + dir];
-    if (idx === -1 || !other) return;
-    const a = sorted[idx];
-    updateCategory(a.id, { sort: other.sort });
-    updateCategory(other.id, { sort: a.sort });
+    const swap = moveCategory(sorted, id, dir);
+    if (!swap) return;
+    for (const { id: target, ...patch } of swap) updateCategory(target, patch);
   }
 
   function toggleScope(cat: Category, scope: CategoryScope) {
@@ -67,7 +60,7 @@ export function CategoriesCard() {
               <button
                 type="button"
                 onClick={() => setEditingColorId(editingColorId === cat.id ? null : cat.id)}
-                aria-label="Change colour"
+                aria-label="Change color"
                 title={colorHex(cat.colorKey)}
                 className="w-[1.375rem] h-[1.375rem] flex-shrink-0 border border-line transition-transform hover:scale-110"
                 // dynamic: the category's own colour
@@ -140,7 +133,7 @@ export function CategoriesCard() {
             <button
               type="button"
               onClick={() => setNewColorOpen((v) => !v)}
-              aria-label="Pick colour for new category"
+              aria-label="Pick color for new category"
               title={newColor}
               className="w-[1.375rem] h-[1.375rem] flex-shrink-0 border border-line transition-transform hover:scale-110"
               // dynamic: the colour picked for the new category

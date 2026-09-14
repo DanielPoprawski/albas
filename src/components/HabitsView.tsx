@@ -1,225 +1,44 @@
 import { useState } from 'react';
-import { Bell } from 'lucide-react';
 import QuickAddField from './QuickAddField';
-import SearchBar from './SearchBar';
+import SearchPalette from './search/SearchPalette';
 import { useApp } from '../context/AppContext';
-import { addDays, fmt } from '../dates';
-import { isRepeating, valueOn } from '../todoLogic';
-import { colorHex } from '../colors';
-import { Tag } from './ui/tag';
-import { cn } from '@/lib/utils';
-import type { Category, FirstDayOfWeek, Todo } from '../types';
-
-/** The month grid: this many week columns, the last one being this week. */
-const HISTORY_WEEKS = 5;
-
-interface HistoryCell {
-  dateStr: string;
-  done: boolean;
-  /** Days after today are shown but not clickable. */
-  future: boolean;
-}
-
-interface HabitData {
-  todo: Todo;
-  currentStreak: number;
-  bestStreak: number;
-  weeklyRate: number;
-  /** Past-to-today, one entry per calendar day of the month grid. */
-  history: number[];
-  cells: HistoryCell[];
-  doneToday: boolean;
-  reminderTime: string;
-}
-
-function computeStreaks(history: number[]): { current: number; best: number } {
-  let current = 0;
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i]) current++;
-    else break;
-  }
-  let best = 0,
-    run = 0;
-  for (const d of history) {
-    if (d) {
-      run++;
-      best = Math.max(best, run);
-    } else run = 0;
-  }
-  return { current, best };
-}
-
-/**
- * The past month as whole weeks: `HISTORY_WEEKS` columns aligned to the
- * user's week start, ending with the current week (so the last column runs
- * past today into greyed-out future days). Every cell keeps its date, because
- * the grid is clickable — any past day can be marked done from here.
- */
-function getHabitCells(todo: Todo, firstDayOfWeek: FirstDayOfWeek): HistoryCell[] {
-  const today = new Date();
-  const todayStr = fmt(today);
-  // Back to the start of this week, then HISTORY_WEEKS - 1 more weeks.
-  const offset = (today.getDay() - firstDayOfWeek + 7) % 7;
-  const start = addDays(todayStr, -offset - (HISTORY_WEEKS - 1) * 7);
-  const cells: HistoryCell[] = [];
-  for (let i = 0; i < HISTORY_WEEKS * 7; i++) {
-    const dateStr = addDays(start, i);
-    cells.push({ dateStr, done: !!todo.completions[dateStr], future: dateStr > todayStr });
-  }
-  return cells;
-}
-
-/** Falls back to a schedule-shaped label when the habit has no category. */
-function fallbackLabel(todo: Todo): string {
-  if (todo.schedule.type === 'once') return 'Task';
-  if (todo.schedule.type === 'every' && todo.schedule.fromDone) return 'Chore';
-  return 'Habit';
-}
-
-function HabitCard({ habit }: { habit: HabitData }) {
-  const { toggleTodo, setTodoValue, categoryById } = useApp();
-  const color = colorHex(habit.todo.colorKey);
-  const todo = habit.todo;
-  const category = categoryById(todo.category);
-
-  // Same semantics as the week strip on the dashboard (`todo/HabitsSection`):
-  // yes/no toggles, measurable counts up and wraps to 0 past the target.
-  function handleCellClick(dateStr: string) {
-    if (todo.kind === 'yesno') {
-      toggleTodo(todo.id, dateStr);
-    } else {
-      const v = valueOn(todo, dateStr);
-      setTodoValue(todo.id, dateStr, v >= todo.target ? 0 : v + 1);
-    }
-  }
-
-  return (
-    <div className="row-hover p-4.5 flex flex-col gap-3.5">
-      {/* Top row: color dot + name + cadence tag */}
-      <div className="flex items-center gap-2.5">
-        <div
-          className="w-[0.625rem] h-[0.625rem] flex-shrink-0"
-          // dynamic: the habit's own colour
-          style={{ background: color }}
-        />
-        <div className="font-heading text-base font-bold flex-1">{habit.todo.name}</div>
-        <Tag accent={category ? colorHex(category.colorKey) : color} className="font-heading flex-shrink-0">
-          {category?.name ?? fallbackLabel(todo)}
-        </Tag>
-      </div>
-
-      {/* Stats row */}
-      <div className="flex gap-5">
-        <div className="flex flex-col">
-          <span className="font-heading text-lg font-bold">{habit.currentStreak}</span>
-          <span className="text-xs text-[var(--t-ink-muted)]">Day streak</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="font-heading text-lg font-bold">{habit.bestStreak}</span>
-          <span className="text-xs text-[var(--t-ink-muted)]">Best streak</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="font-heading text-lg font-bold">{habit.weeklyRate}%</span>
-          <span className="text-xs text-[var(--t-ink-muted)]">This week</span>
-        </div>
-      </div>
-
-      {/* Reminder line */}
-      <div className="flex items-center gap-[0.375rem] text-xs text-[var(--t-ink-secondary)]">
-        <Bell size="0.8125rem" />
-        Reminder · {habit.reminderTime || 'No time set'}
-      </div>
-
-      {/* Past month. Explicit tracks both ways: with implicit `auto` columns
-          the grid's default `justify-content: stretch` spread the week
-          columns across the card while the rows stayed 0.5625rem, which is why the
-          horizontal gaps never matched the vertical ones. Columns are weeks,
-          rows are weekdays, every cell 1rem square with a 0.25rem gap. */}
-      <div
-        className="grid grid-flow-col grid-rows-[repeat(7,1rem)] gap-1 justify-start"
-        role="group"
-        aria-label={`${todo.name}, past month`}
-        // dynamic: one column per week of history
-        style={{ gridTemplateColumns: `repeat(${HISTORY_WEEKS}, 1rem)` }}
-      >
-        {habit.cells.map((cell) => {
-          const value = todo.kind === 'measurable' ? valueOn(todo, cell.dateStr) : 0;
-          const partial = !cell.done && value > 0;
-          return (
-            <button
-              key={cell.dateStr}
-              type="button"
-              disabled={cell.future}
-              onClick={() => handleCellClick(cell.dateStr)}
-              title={
-                cell.future
-                  ? cell.dateStr
-                  : `${cell.dateStr}${cell.done ? ' — done' : partial ? ` — ${value}/${todo.target}` : ''}`
-              }
-              aria-label={`${cell.dateStr}${cell.done ? ', done' : ''}`}
-              aria-pressed={cell.done}
-              className="w-4 h-4 p-0 box-border transition-transform enabled:hover:scale-125 disabled:cursor-default"
-              // dynamic: the habit's own colour
-              style={{
-                background: cell.done
-                  ? color
-                  : partial
-                    ? `${color}66`
-                    : cell.future
-                      ? 'transparent'
-                      : 'var(--t-subtle)',
-                border: `1px solid ${cell.done || partial ? color : 'var(--t-border)'}`,
-                opacity: cell.future ? 0.4 : 1,
-              }}
-            />
-          );
-        })}
-      </div>
-
-      {/* Done button */}
-      <button
-        onClick={() => toggleTodo(habit.todo.id, fmt(new Date()))}
-        className={`border border-[var(--t-accent)] px-3 py-2 text-sm font-bold transition-colors ${
-          habit.doneToday
-            ? 'bg-[var(--t-accent)] text-on-accent hover:bg-[var(--t-accent-hover)]'
-            : 'bg-surface text-[var(--t-accent)] hover:bg-[var(--t-accent-tint)]'
-        }`}
-      >
-        {habit.doneToday ? 'Completed today' : 'Mark as done'}
-      </button>
-    </div>
-  );
-}
+import { fmt } from '../dates';
+import { todoKey } from '../itemKeys';
+import { isRepeating } from '../todoLogic';
+import SelectionBar from './bulk/SelectionBar';
+import { useListSelection } from './bulk/useListSelection';
+import HabitDrawer from './habits/HabitDrawer';
+import HabitRow from './habits/HabitRow';
+import { buildHabitData } from './habits/habitModel';
+import { toSearchItems } from './search/searchItems';
 
 export default function HabitsView() {
-  const { todos, firstDayOfWeek, categoriesFor } = useApp();
+  const { todos, firstDayOfWeek, categoryById, hiddenCategoryIds } = useApp();
   const today = fmt(new Date());
-  const [filter, setFilter] = useState<string | null>(null);
-  const habitCategories = categoriesFor('habits');
 
-  // Filter to repeating todos (habits), then to the selected category chip
-  const habits: HabitData[] = todos
-    .filter((t) => isRepeating(t))
-    .filter((t) => filter === null || t.category === filter)
-    .map((todo) => {
-      const cells = getHabitCells(todo, firstDayOfWeek);
-      const history: number[] = cells.filter((c) => !c.future).map((c) => (c.done ? 1 : 0));
-      const { current, best } = computeStreaks(history);
-      const last7 = history.slice(-7);
-      const weeklyRate = Math.round((last7.reduce((a, b) => a + b, 0) / 7) * 100);
-      const doneToday = !!todo.completions[today];
+  // Repeating to-dos (habits), minus the categories the sidebar has hidden.
+  const shown = todos.filter((t) => isRepeating(t) && !hiddenCategoryIds.has(t.category));
+  const habits = shown.map((todo) => buildHabitData(todo, firstDayOfWeek, today));
 
-      return {
-        todo,
-        currentStreak: current,
-        bestStreak: best,
-        weeklyRate,
-        history,
-        cells,
-        doneToday,
-        reminderTime: todo.time || 'No time set',
-      };
-    });
+  const orderedKeys = shown.map(todoKey);
+  const generalKeys = shown.filter((t) => t.category === '').map(todoKey);
+  const selection = useListSelection(orderedKeys, generalKeys);
+  const selectedItems =
+    selection.selected.size === 0
+      ? []
+      : toSearchItems(
+          [],
+          [],
+          shown.filter((t) => selection.selected.has(todoKey(t))),
+          categoryById,
+          firstDayOfWeek,
+          today,
+        );
+
+  // One drawer open at a time; the first habit's, to begin with, so the page
+  // shows what a drawer holds without a click. `undefined` = never touched.
+  const [expanded, setExpanded] = useState<string | null | undefined>(undefined);
+  const expandedId = expanded === undefined ? (habits[0]?.todo.id ?? null) : expanded;
 
   return (
     // `flex-1 min-w-0` + a white ground: this is the design's `.main-column`,
@@ -227,50 +46,40 @@ export default function HabitsView() {
     // its content and let the page grey show through.
     <div className="flex-1 min-w-0 flex flex-col bg-surface overflow-hidden">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-[var(--t-border)]">
+      <div className="grid grid-cols-[auto_minmax(12.5rem,1fr)_auto] items-center gap-4 px-6 py-4 border-b border-[var(--t-border)]">
         <div className="flex flex-col gap-[2px]">
           <h1 className="font-heading text-lg font-bold text-[var(--t-ink)]">Habits</h1>
           <p className="text-sm text-[var(--t-ink-muted)]">Build consistency, one day at a time.</p>
         </div>
-        <SearchBar scope="habits" className="hidden md:block flex-shrink-0" />
+        <SearchPalette scope="habits" className="hidden md:flex w-full max-w-[35rem] justify-self-center" />
+        <span aria-hidden />
       </div>
 
       {/* Body - scrollable */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        {/* Filter chips — only worth showing once there's something to filter by. */}
-        {habitCategories.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Filter by category">
-            <button type="button" onClick={() => setFilter(null)}>
-              <Tag
-                solid={filter === null}
-                className={cn(
-                  'cursor-pointer transition-opacity',
-                  filter !== null && 'opacity-60 hover:opacity-100 bg-subtle text-ink-secondary',
-                )}
-              >
-                All
-              </Tag>
-            </button>
-            {habitCategories.map((c: Category) => (
-              <button key={c.id} type="button" onClick={() => setFilter(c.id)}>
-                <Tag
-                  accent={colorHex(c.colorKey)}
-                  solid={filter === c.id}
-                  className={`cursor-pointer transition-opacity ${filter === c.id ? '' : 'opacity-70 hover:opacity-100'}`}
-                >
-                  {c.name}
-                </Tag>
-              </button>
-            ))}
-          </div>
+      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+        {selection.selected.size > 0 && (
+          <SelectionBar items={selectedItems} scope="habits" selection={selection} className="mx-0 mb-0" />
         )}
 
-        <QuickAddField type="habit" defaultCategory={filter ?? undefined} className="mb-4" />
-
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(21.25rem,1fr))] gap-4">
-          {habits.map((h) => (
-            <HabitCard key={h.todo.id} habit={h} />
-          ))}
+        <div className="flex flex-col border border-line">
+          {habits.map((h) => {
+            const open = h.todo.id === expandedId;
+            return (
+              <div key={h.todo.id} className="border-b border-line">
+                <HabitRow
+                  habit={h}
+                  today={today}
+                  open={open}
+                  onToggleOpen={() => setExpanded(open ? null : h.todo.id)}
+                  selected={selection.isSelected(todoKey(h.todo))}
+                  onRowClick={(e) => selection.onRowClick(e, todoKey(h.todo))}
+                  onContextMenu={selection.onContextMenu}
+                />
+                {open && <HabitDrawer habit={h} />}
+              </div>
+            );
+          })}
+          <QuickAddField type="habit" variant="row" />
         </div>
       </div>
     </div>

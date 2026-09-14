@@ -14,17 +14,19 @@
       // truth, but reading it is async — this mirror avoids a flash of the
       // wrong palette.
       //
-      // The stored value is validated against the two themes that exist, and
-      // must stay in step with THEMES in src/context/AppContext.tsx. An
-      // install that last ran the four-theme build still has 'grey-high' or
-      // 'grey-low' in here; stamping one would set a data-theme no CSS block
-      // answers, so it is ignored and :root (light) paints instead — the same
-      // fallback readTheme() reaches a few milliseconds later.
+      // The stored value is the user's *preference* — 'light', 'dark', or
+      // 'system' (follow the OS) — mirrored by applyTheme() in
+      // src/appearance.ts; anything else (an install that last ran the
+      // four-theme build: 'grey-high'/'grey-low') is treated as 'system', the
+      // same fallback readThemePref() reaches a few milliseconds later.
       try {
         var t = localStorage.getItem('albas-theme');
-        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
         // Settings › Appearance, pre-derived by applyAppearance() in
-        // src/context/AppContext.tsx: custom properties for the accent and
+        // src/appearance.ts: custom properties for the accent and
         // font, plus the root font size. Same first-paint reasoning as above.
         var a = JSON.parse(localStorage.getItem('albas-appearance') || 'null');
         if (a && a.vars) {
@@ -34,7 +36,7 @@
           if (typeof a.fontSize === 'string') document.documentElement.style.fontSize = a.fontSize;
         }
         // Sidebar / right-panel widths (Phase L), pre-derived and clamped by
-        // applyLayout() in src/context/AppContext.tsx — same first-paint
+        // applyLayout() in src/appearance.ts — same first-paint
         // reasoning as the appearance mirror above, so a drag survives a
         // restart without the layout jumping once React mounts.
         var l = JSON.parse(localStorage.getItem('albas-layout') || 'null');

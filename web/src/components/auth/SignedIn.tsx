@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   addPasskey,
+  ApiError,
   claimAppSession,
   clearSession,
   confirmTotp,
@@ -15,6 +16,15 @@ import {
 } from '../../lib/api';
 import { webauthnSupported } from '../../lib/webauthn';
 import { Logo } from './Splash';
+
+/** A 401 from a session-backed read means the stored token is dead on the
+ * server (expired, revoked, or the account was recreated) — the only
+ * honest thing this page can do with it is forget it and ask for a fresh
+ * sign-in. Only *reads* are probed this way: `POST /totp/confirm` also
+ * answers 401 for a wrong code, and that must stay an inline error. */
+function isDeadSession(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
 
 type Handoff =
   | { kind: 'none' }
@@ -31,7 +41,7 @@ type TotpFlow =
   | { step: 'code'; secret: string; uri: string }
   | { step: 'recovery-codes'; codes: string[] };
 
-function TotpSection({ token }: { token: string }) {
+function TotpSection({ token, onSessionDead }: { token: string; onSessionDead: () => void }) {
   const [status, setStatus] = useState<TotpStatus | null>(null);
   const [flow, setFlow] = useState<TotpFlow>({ step: 'idle' });
   const [password, setPassword] = useState('');
@@ -42,7 +52,10 @@ function TotpSection({ token }: { token: string }) {
   const refresh = () => {
     getTotpStatus(token)
       .then(setStatus)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err) => {
+        if (isDeadSession(err)) return onSessionDead();
+        setError(err instanceof Error ? err.message : String(err));
+      });
   };
   useEffect(refresh, [token]);
 
@@ -195,11 +208,15 @@ export function SignedIn({
   session,
   appSession,
   onSignedOut,
+  onSessionExpired,
 }: {
   session: Session;
   /** The nonce the app is polling on, when this page was opened by the app. */
   appSession?: string | null;
   onSignedOut: () => void;
+  /** The stored session no longer works on the server; it has already been
+   * cleared from storage by the time this fires. */
+  onSessionExpired: () => void;
 }) {
   const [handoff, setHandoff] = useState<Handoff>(appSession ? { kind: 'claiming' } : { kind: 'none' });
   const [passkeys, setPasskeys] = useState<PasskeyInfo[] | null>(null);
@@ -207,10 +224,18 @@ export function SignedIn({
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const supported = webauthnSupported();
 
+  const sessionDead = () => {
+    clearSession();
+    onSessionExpired();
+  };
+
   const refreshPasskeys = () => {
     listPasskeys(session.token)
       .then(setPasskeys)
-      .catch((err) => setPasskeyError(String(err?.message ?? err)));
+      .catch((err) => {
+        if (isDeadSession(err)) return sessionDead();
+        setPasskeyError(String(err?.message ?? err));
+      });
   };
 
   useEffect(refreshPasskeys, [session.token]);
@@ -222,6 +247,7 @@ export function SignedIn({
       await addPasskey(session.token);
       refreshPasskeys();
     } catch (err) {
+      if (isDeadSession(err)) return sessionDead();
       setPasskeyError(err instanceof Error ? err.message : "Couldn't add a passkey.");
     } finally {
       setPasskeyBusy(false);
@@ -308,7 +334,7 @@ export function SignedIn({
         )}
         {passkeyError && <div className="form-error">{passkeyError}</div>}
 
-        <TotpSection token={session.token} />
+        <TotpSection token={session.token} onSessionDead={sessionDead} />
 
         <div className="form-actions">
           <button type="button" className="btn-secondary" onClick={logOut}>

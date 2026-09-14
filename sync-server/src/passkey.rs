@@ -28,7 +28,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use webauthn_rs::prelude::*;
 
-use crate::{mint_token, name_ok, now_ms, random_token, token_hash, AdminError, AppState, Signups, NAME_RULE};
+use crate::{
+    mint_token, name_ok, now_ms, random_token, token_hash, AdminError, AppState, Signups, NAME_RULE,
+};
 
 const REG_TTL_MS: i64 = 5 * 60 * 1000;
 const AUTH_TTL_MS: i64 = 5 * 60 * 1000;
@@ -67,7 +69,14 @@ impl Pending {
         let mut m = self.regs.lock().unwrap();
         let now = now_ms();
         m.retain(|_, v| v.expires_at > now);
-        m.insert(id, PendingReg { info, state, expires_at: now + REG_TTL_MS });
+        m.insert(
+            id,
+            PendingReg {
+                info,
+                state,
+                expires_at: now + REG_TTL_MS,
+            },
+        );
     }
     fn take_reg(&self, id: &str) -> Option<(RegInfo, PasskeyRegistration)> {
         let mut m = self.regs.lock().unwrap();
@@ -79,7 +88,13 @@ impl Pending {
         let mut m = self.auths.lock().unwrap();
         let now = now_ms();
         m.retain(|_, v| v.expires_at > now);
-        m.insert(id, PendingAuth { state, expires_at: now + AUTH_TTL_MS });
+        m.insert(
+            id,
+            PendingAuth {
+                state,
+                expires_at: now + AUTH_TTL_MS,
+            },
+        );
     }
     fn take_auth(&self, id: &str) -> Option<DiscoverableAuthentication> {
         let mut m = self.auths.lock().unwrap();
@@ -94,7 +109,9 @@ impl Pending {
 /// allows the `android:apk-key-hash:…` origin that Android's Credential
 /// Manager asserts instead of an https origin. Unset origin = passkeys off.
 pub(crate) fn build_webauthn() -> Result<Option<Webauthn>, String> {
-    let Some(origin) = std::env::var("ALBAS_SYNC_ORIGIN").ok().filter(|s| !s.trim().is_empty())
+    let Some(origin) = std::env::var("ALBAS_SYNC_ORIGIN")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
     else {
         return Ok(None);
     };
@@ -106,14 +123,18 @@ pub(crate) fn build_webauthn() -> Result<Option<Webauthn>, String> {
     let mut builder = WebauthnBuilder::new(&rp_id, &url)
         .map_err(|e| format!("ALBAS_SYNC_ORIGIN rejected: {e:?}"))?
         .rp_name("Albas");
-    if let Some(android) =
-        std::env::var("ALBAS_SYNC_ANDROID_ORIGIN").ok().filter(|s| !s.trim().is_empty())
+    if let Some(android) = std::env::var("ALBAS_SYNC_ANDROID_ORIGIN")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
     {
         let au = Url::parse(android.trim())
             .map_err(|e| format!("ALBAS_SYNC_ANDROID_ORIGIN invalid: {e}"))?;
         builder = builder.append_allowed_origin(&au);
     }
-    builder.build().map(Some).map_err(|e| format!("webauthn setup failed: {e:?}"))
+    builder
+        .build()
+        .map(Some)
+        .map_err(|e| format!("webauthn setup failed: {e:?}"))
 }
 
 fn webauthn_of(state: &AppState) -> Result<&Webauthn, Rejection> {
@@ -155,7 +176,10 @@ pub(crate) fn resolve_registration(
                 return Err((StatusCode::NOT_FOUND, "Unknown invite code.".into()));
             };
             if used_at.is_some() {
-                return Err((StatusCode::GONE, "This invite has already been used.".into()));
+                return Err((
+                    StatusCode::GONE,
+                    "This invite has already been used.".into(),
+                ));
             }
             if expires_at < now_ms() {
                 return Err((StatusCode::GONE, "This invite has expired.".into()));
@@ -178,7 +202,9 @@ pub(crate) fn resolve_registration(
     }
 
     let existing: Option<i64> = conn
-        .query_row("SELECT id FROM accounts WHERE name = ?1", [&name], |r| r.get(0))
+        .query_row("SELECT id FROM accounts WHERE name = ?1", [&name], |r| {
+            r.get(0)
+        })
         .optional()
         .map_err(internal)?;
 
@@ -186,9 +212,11 @@ pub(crate) fn resolve_registration(
         // Attaching a passkey to an existing account demands an invite pinned
         // to that exact name — otherwise open signup would let anyone claim it.
         Some(id) => match &invite {
-            Some((invite_id, Some(pinned))) if *pinned == name => {
-                Ok(RegInfo { name, invite_id: Some(*invite_id), account_id: Some(id) })
-            }
+            Some((invite_id, Some(pinned))) if *pinned == name => Ok(RegInfo {
+                name,
+                invite_id: Some(*invite_id),
+                account_id: Some(id),
+            }),
             _ => Err((StatusCode::CONFLICT, "That account name is taken.".into())),
         },
         None => {
@@ -198,7 +226,11 @@ pub(crate) fn resolve_registration(
                     "Registration on this server requires an invite.".into(),
                 ));
             }
-            Ok(RegInfo { name, invite_id: invite.map(|(id, _)| id), account_id: None })
+            Ok(RegInfo {
+                name,
+                invite_id: invite.map(|(id, _)| id),
+                account_id: None,
+            })
         }
     }
 }
@@ -226,7 +258,10 @@ pub(crate) fn complete_registration(
             )
             .map_err(internal)?;
         if burned == 0 {
-            return Err((StatusCode::GONE, "This invite has already been used.".into()));
+            return Err((
+                StatusCode::GONE,
+                "This invite has already been used.".into(),
+            ));
         }
     }
     let account_id = match info.account_id {
@@ -302,7 +337,12 @@ pub(crate) async fn register_finish(
     ))?;
     let passkey = webauthn
         .finish_passkey_registration(&req.credential, &reg_state)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, format!("registration rejected: {e:?}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::UNAUTHORIZED,
+                format!("registration rejected: {e:?}"),
+            )
+        })?;
     let cred_id_hex = crate::to_hex(passkey.cred_id().as_ref());
     let passkey_json = serde_json::to_string(&passkey).map_err(internal)?;
     let label = req.label.as_deref().unwrap_or("passkey");
@@ -328,7 +368,11 @@ fn unauthorized() -> Rejection {
 fn signed_in(conn: &Connection, headers: &HeaderMap) -> Result<(i64, String), Rejection> {
     let account_id = crate::account_for(conn, headers).ok_or_else(unauthorized)?;
     let name: String = conn
-        .query_row("SELECT name FROM accounts WHERE id = ?1", [account_id], |r| r.get(0))
+        .query_row(
+            "SELECT name FROM accounts WHERE id = ?1",
+            [account_id],
+            |r| r.get(0),
+        )
         .optional()
         .map_err(internal)?
         .ok_or_else(unauthorized)?;
@@ -343,7 +387,10 @@ fn signed_in(conn: &Connection, headers: &HeaderMap) -> Result<(i64, String), Re
 /// A row whose JSON no longer parses is skipped rather than fatal: excluding
 /// is a convenience, and failing the whole ceremony over one unreadable row
 /// would lock the user out of adding a key at all.
-fn existing_credentials(conn: &Connection, account_id: i64) -> Result<Vec<CredentialID>, Rejection> {
+fn existing_credentials(
+    conn: &Connection,
+    account_id: i64,
+) -> Result<Vec<CredentialID>, Rejection> {
     let mut stmt = conn
         .prepare("SELECT passkey_json FROM passkeys WHERE account_id = ?1")
         .map_err(internal)?;
@@ -369,7 +416,11 @@ pub(crate) async fn add_passkey_start(
         let (account_id, name) = signed_in(&guard, &headers)?;
         let existing = existing_credentials(&guard, account_id)?;
         (
-            RegInfo { name, invite_id: None, account_id: Some(account_id) },
+            RegInfo {
+                name,
+                invite_id: None,
+                account_id: Some(account_id),
+            },
             (!existing.is_empty()).then_some(existing),
         )
     };
@@ -410,7 +461,12 @@ pub(crate) async fn add_passkey_finish(
     ))?;
     let passkey = webauthn
         .finish_passkey_registration(&req.credential, &reg_state)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, format!("registration rejected: {e:?}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::UNAUTHORIZED,
+                format!("registration rejected: {e:?}"),
+            )
+        })?;
     let cred_id_hex = crate::to_hex(passkey.cred_id().as_ref());
     let passkey_json = serde_json::to_string(&passkey).map_err(internal)?;
 
@@ -422,7 +478,10 @@ pub(crate) async fn add_passkey_finish(
     let (name, token) =
         complete_registration(&mut guard, &info, &cred_id_hex, &passkey_json, "passkey")?;
     guard
-        .execute("DELETE FROM tokens WHERE token_hash = ?1", [token_hash(&token)])
+        .execute(
+            "DELETE FROM tokens WHERE token_hash = ?1",
+            [token_hash(&token)],
+        )
         .map_err(internal)?;
     Ok(Json(json!({ "name": name, "credId": cred_id_hex })))
 }
@@ -446,7 +505,11 @@ pub(crate) async fn list_passkeys(
         .map_err(internal)?;
     let rows = stmt
         .query_map([account_id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
         })
         .map_err(internal)?
         .collect::<rusqlite::Result<Vec<(String, i64, Option<String>)>>>()
@@ -499,7 +562,12 @@ pub(crate) async fn login_finish(
     ))?;
     let (_, cred_id) = webauthn
         .identify_discoverable_authentication(&req.credential)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, format!("credential rejected: {e:?}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::UNAUTHORIZED,
+                format!("credential rejected: {e:?}"),
+            )
+        })?;
     let cred_id_hex = crate::to_hex(cred_id);
 
     let mut guard = state.conn.lock().map_err(internal)?;
@@ -530,7 +598,10 @@ pub(crate) async fn login_finish(
     if passkey.update_credential(&result) == Some(true) {
         tx.execute(
             "UPDATE passkeys SET passkey_json = ?1 WHERE id = ?2",
-            params![serde_json::to_string(&passkey).map_err(internal)?, passkey_row],
+            params![
+                serde_json::to_string(&passkey).map_err(internal)?,
+                passkey_row
+            ],
         )
         .map_err(internal)?;
     }
@@ -548,7 +619,10 @@ pub(crate) async fn login_finish(
 /// Kept for those two cases but not getting further admin support: there is
 /// no list/revoke command. Product direction is open signup only — see
 /// `main.rs`'s module doc comment and root `CLAUDE.md`.
-pub(crate) fn create_invite_db(conn: &Connection, name: Option<&str>) -> Result<(String, i64), AdminError> {
+pub(crate) fn create_invite_db(
+    conn: &Connection,
+    name: Option<&str>,
+) -> Result<(String, i64), AdminError> {
     let name = match name.map(str::trim) {
         Some(n) if !n.is_empty() => {
             if !name_ok(n) {
@@ -593,7 +667,11 @@ mod tests {
     }
 
     fn add_account(c: &Connection, name: &str) -> i64 {
-        c.execute("INSERT INTO accounts (name, created_at) VALUES (?1, 0)", [name]).unwrap();
+        c.execute(
+            "INSERT INTO accounts (name, created_at) VALUES (?1, 0)",
+            [name],
+        )
+        .unwrap();
         c.last_insert_rowid()
     }
 
@@ -647,9 +725,17 @@ mod tests {
         assert_eq!(err.0, StatusCode::CONFLICT);
 
         add_invite(&c, "owner-invite", Some("owner"), far_future());
-        let info = resolve_registration(&c, Signups::Open, Some("owner-invite"), "ignored").unwrap();
-        assert_eq!(info.account_id, Some(owner), "pinned invite attaches to the account");
-        assert_eq!(info.name, "owner", "the invite's name wins over the requested one");
+        let info =
+            resolve_registration(&c, Signups::Open, Some("owner-invite"), "ignored").unwrap();
+        assert_eq!(
+            info.account_id,
+            Some(owner),
+            "pinned invite attaches to the account"
+        );
+        assert_eq!(
+            info.name, "owner",
+            "the invite's name wins over the requested one"
+        );
     }
 
     #[test]
@@ -660,7 +746,8 @@ mod tests {
         assert_eq!(err.0, StatusCode::GONE);
 
         let id = add_invite(&c, "used-invite", None, far_future());
-        c.execute("UPDATE invites SET used_at = 1 WHERE id = ?1", [id]).unwrap();
+        c.execute("UPDATE invites SET used_at = 1 WHERE id = ?1", [id])
+            .unwrap();
         let err = resolve_registration(&c, Signups::Open, Some("used-invite"), "x").unwrap_err();
         assert_eq!(err.0, StatusCode::GONE);
 
@@ -674,27 +761,48 @@ mod tests {
     fn complete_registration_burns_the_invite_once() {
         let mut c = mem();
         let invite_id = add_invite(&c, "one-shot", None, far_future());
-        let info =
-            RegInfo { name: "sarah".into(), invite_id: Some(invite_id), account_id: None };
+        let info = RegInfo {
+            name: "sarah".into(),
+            invite_id: Some(invite_id),
+            account_id: None,
+        };
 
         let (name, token) =
             complete_registration(&mut c, &info, "cred-1", "{}", "passkey").unwrap();
         assert_eq!(name, "sarah");
         assert!(!token.is_empty());
-        let account: i64 =
-            c.query_row("SELECT id FROM accounts WHERE name = 'sarah'", [], |r| r.get(0)).unwrap();
+        let account: i64 = c
+            .query_row("SELECT id FROM accounts WHERE name = 'sarah'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         let stored: i64 = c
-            .query_row("SELECT account_id FROM passkeys WHERE cred_id = 'cred-1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT account_id FROM passkeys WHERE cred_id = 'cred-1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(stored, account);
 
-        let info2 =
-            RegInfo { name: "eve".into(), invite_id: Some(invite_id), account_id: None };
+        let info2 = RegInfo {
+            name: "eve".into(),
+            invite_id: Some(invite_id),
+            account_id: None,
+        };
         let err = complete_registration(&mut c, &info2, "cred-2", "{}", "passkey").unwrap_err();
         assert_eq!(err.0, StatusCode::GONE);
-        let n: i64 =
-            c.query_row("SELECT COUNT(*) FROM accounts WHERE name = 'eve'", [], |r| r.get(0)).unwrap();
-        assert_eq!(n, 0, "a burned invite must not leave a half-created account");
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM accounts WHERE name = 'eve'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            n, 0,
+            "a burned invite must not leave a half-created account"
+        );
     }
 
     #[test]
@@ -702,14 +810,23 @@ mod tests {
         let mut c = mem();
         let owner = add_account(&c, "owner");
         let invite_id = add_invite(&c, "owner-invite", Some("owner"), far_future());
-        let info =
-            RegInfo { name: "owner".into(), invite_id: Some(invite_id), account_id: Some(owner) };
+        let info = RegInfo {
+            name: "owner".into(),
+            invite_id: Some(invite_id),
+            account_id: Some(owner),
+        };
         complete_registration(&mut c, &info, "cred-o", "{}", "security-key").unwrap();
         let stored: i64 = c
-            .query_row("SELECT account_id FROM passkeys WHERE cred_id = 'cred-o'", [], |r| r.get(0))
+            .query_row(
+                "SELECT account_id FROM passkeys WHERE cred_id = 'cred-o'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(stored, owner);
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
+        let n: i64 = c
+            .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(n, 1, "attach must not create a second account");
     }
 
@@ -719,15 +836,23 @@ mod tests {
     fn self_service_attach_needs_no_invite() {
         let mut c = mem();
         let owner = add_account(&c, "owner");
-        let info = RegInfo { name: "owner".into(), invite_id: None, account_id: Some(owner) };
+        let info = RegInfo {
+            name: "owner".into(),
+            invite_id: None,
+            account_id: Some(owner),
+        };
         complete_registration(&mut c, &info, "cred-self", "{}", "passkey").unwrap();
         let stored: i64 = c
-            .query_row("SELECT account_id FROM passkeys WHERE cred_id = 'cred-self'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT account_id FROM passkeys WHERE cred_id = 'cred-self'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(stored, owner);
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
+        let n: i64 = c
+            .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(n, 1);
     }
 
@@ -742,12 +867,18 @@ mod tests {
         let c = mem();
         let owner = add_account(&c, "owner");
         let token = mint_token(&c, owner, "device").unwrap();
-        assert_eq!(signed_in(&c, &headers_for(&token)).unwrap(), (owner, "owner".to_string()));
+        assert_eq!(
+            signed_in(&c, &headers_for(&token)).unwrap(),
+            (owner, "owner".to_string())
+        );
         assert_eq!(
             signed_in(&c, &headers_for("not-a-token")).unwrap_err().0,
             StatusCode::UNAUTHORIZED
         );
-        assert_eq!(signed_in(&c, &HeaderMap::new()).unwrap_err().0, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            signed_in(&c, &HeaderMap::new()).unwrap_err().0,
+            StatusCode::UNAUTHORIZED
+        );
     }
 
     /// `exclude_credentials` is a convenience, so an unreadable stored blob is
@@ -776,7 +907,11 @@ mod tests {
     fn name_race_on_create_is_a_conflict() {
         let mut c = mem();
         add_account(&c, "sarah");
-        let info = RegInfo { name: "sarah".into(), invite_id: None, account_id: None };
+        let info = RegInfo {
+            name: "sarah".into(),
+            invite_id: None,
+            account_id: None,
+        };
         let err = complete_registration(&mut c, &info, "cred-x", "{}", "passkey").unwrap_err();
         assert_eq!(err.0, StatusCode::CONFLICT);
     }

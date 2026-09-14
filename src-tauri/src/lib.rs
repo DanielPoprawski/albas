@@ -42,6 +42,19 @@ pub fn run() {
             let conn = db::open(&dir.join("albas.db"))?;
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(account::AuthFlow::default());
+            // wry doesn't turn this on for WebKitGTK, so mouse-wheel scrolling
+            // defaults to jumping by discrete steps instead of interpolating —
+            // felt as jittery, "chunky" scrolling everywhere in the app.
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                use webkit2gtk::WebViewExt;
+                let _ = window.with_webview(|webview| {
+                    if let Some(settings) = webview.inner().settings() {
+                        use webkit2gtk::SettingsExt;
+                        settings.set_enable_smooth_scrolling(true);
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -53,6 +66,8 @@ pub fn run() {
             db::set_completion,
             db::save_event,
             db::delete_event,
+            db::delete_all_events,
+            db::delete_all_todos,
             db::save_period,
             db::delete_period,
             db::import_legacy,
@@ -75,6 +90,7 @@ pub fn run() {
             account::shares_list,
             account::shares_set,
             account::sync_sign_out,
+            account::sync_connect_token,
             account::account_delete,
             account::account_export,
             fetch_ics,

@@ -132,7 +132,13 @@ export type BrowserSignInState =
 
 /** Matches the server's five-minute TTL in `app_session.rs`. */
 const TIMEOUT_MS = 5 * 60 * 1000;
-const INTERVAL_MS = 1000;
+/**
+ * Polling cadence. The server (and nginx in front of it) budget the
+ * app-session routes at 30/min per IP with a burst of 30: a full five-minute
+ * wait at this interval spends 100 polls against an allowance of 180, so a
+ * sign-in never rate-limits itself. Every second did, after twenty seconds.
+ */
+const INTERVAL_MS = 3000;
 
 export function useBrowserSignIn() {
   const [state, setState] = useState<BrowserSignInState>({ kind: 'idle' });
@@ -163,12 +169,17 @@ export function useBrowserSignIn() {
     (nonce: string) => {
       const deadline = Date.now() + TIMEOUT_MS;
       stopPolling();
+      // One poll at a time: a slow request must not overlap the next tick, or
+      // two `ready` answers could each run `finishSignIn`.
+      let inFlight = false;
       timer.current = setInterval(async () => {
+        if (inFlight) return;
         if (Date.now() > deadline) {
           stopPolling();
           setState({ kind: 'error', message: 'That sign-in timed out. Try again.' });
           return;
         }
+        inFlight = true;
         try {
           const res = await ipc.appSigninPoll(nonce);
           if (res.status === 'ready') {
@@ -183,6 +194,8 @@ export function useBrowserSignIn() {
           // A dropped network shouldn't end the attempt: the browser half may
           // still be in progress, and the deadline above bounds the retries.
           console.warn('sign-in poll failed:', err);
+        } finally {
+          inFlight = false;
         }
       }, INTERVAL_MS);
     },

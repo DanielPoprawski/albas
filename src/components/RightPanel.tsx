@@ -1,10 +1,13 @@
-import { useRef } from 'react';
+import { StarButton } from './ui/star';
+import { useRef, useState } from 'react';
 import { LAYOUT_LIMITS, clampRem } from '../appearance';
 import { useApp } from '../context/AppContext';
+import AddModal from './AddModal';
+import InlineEditor from './InlineEditor';
 import QuickAddField from './QuickAddField';
 import ResizeHandle from './ResizeHandle';
-import { fmt, weekOf } from '../dates';
-import { groupTasks, isDoneOn, UNCATEGORIZED } from '../todoLogic';
+import { fmt, shortDate, weekOf } from '../dates';
+import { byDashboardOrder, dashboardTasks, groupTasks, isDoneOn, isRepeating } from '../todoLogic';
 import type { Todo } from '../types';
 import { accentOf, colorHex } from '../colors';
 import { Card } from './ui/card';
@@ -18,14 +21,28 @@ import { cn } from '@/lib/utils';
  * weekly checkboxes and today's tasks.
  */
 export default function RightPanel() {
-  const { todos, firstDayOfWeek, toggleTodo, updateTodo, getSetting, setSetting, categoriesFor, categoryById } =
-    useApp();
+  const {
+    todos,
+    firstDayOfWeek,
+    toggleTodo,
+    updateTodo,
+    getSetting,
+    setSetting,
+    categoriesFor,
+    categoryById,
+    hiddenCategoryIds,
+  } = useApp();
+  /** The one row (habit card or task) whose inline editor is open. */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** The "Advanced…" path out of an inline editor. */
+  const [editing, setEditing] = useState<Todo | null>(null);
+  const toggleExpanded = (id: string) => setExpandedId((cur) => (cur === id ? null : id));
 
   // Drag state for the panel's own resize handle. Held in a ref, not React
   // state — a pixel-by-pixel setState would re-render this whole panel on
   // every pointermove. The var is written straight onto <html> during the
   // drag; `setSetting` (which persists and re-derives `applyLayout`) only
-  // runs once, on pointer up.
+  // runs once, when the handle reports the drag ended.
   const dragRem = useRef<number | null>(null);
 
   function commitRightWidth() {
@@ -38,9 +55,6 @@ export default function RightPanel() {
     if (dragRem.current === null) {
       const stored = parseFloat(getSetting('__layout_right_w') ?? '');
       dragRem.current = Number.isFinite(stored) ? stored : LAYOUT_LIMITS.right.def;
-      // Fires once the drag ends, wherever the pointer is released — the
-      // handle itself only reports deltas, not a drag-end.
-      window.addEventListener('pointerup', commitRightWidth, { once: true });
     }
     const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
     // The handle sits on the panel's *left* edge, so dragging left (a
@@ -58,24 +72,37 @@ export default function RightPanel() {
   // Get today's date
   const today = fmt(new Date());
 
-  // Separate habits and tasks
-  const habits = todos.filter((t) => t.schedule && t.schedule.type !== 'once');
-  const tasks = todos.filter((t) => !t.schedule || t.schedule.type === 'once');
+  // Habits and tasks, minus the categories the sidebar has hidden
+  const visible = todos.filter((t) => !hiddenCategoryIds.has(t.category));
+  const habits = visible.filter(isRepeating);
 
   // Get this week's dates (7 days)
   const weekDateStrs = weekOf(new Date(), firstDayOfWeek);
 
-  // Get today's tasks, grouped by category (uncategorised first, then the
-  // user's Settings order) so the dashboard reads the same way the To-Do
-  // view does.
-  const todayTasks = tasks.filter((t) => t.dueDate === today);
+  // The task panel: undated, due-today, overdue and starred to-dos (see
+  // `dashboardTasks`). Uncategorised ones form the top "Tasks" list — that's
+  // where a quick-add lands, so it must never be buried — and each category
+  // gets its own list below, all in dashboard order.
+  const shown = dashboardTasks(visible, today);
   const taskOrder = categoriesFor('tasks').map((c) => c.id);
-  const todayGroups = groupTasks(todayTasks, taskOrder);
+  const groups = groupTasks(shown, taskOrder).map((g) => ({ ...g, todos: g.todos.sort(byDashboardOrder) }));
+  const topTasks = groups.find((g) => g.category === '')?.todos ?? [];
+  const categoryGroups = groups.filter((g) => g.category !== '');
 
   // Helper to check if a habit was done on a specific date
   const wasHabitDone = (habit: Todo, dateStr: string): boolean => {
     return isDoneOn(habit, dateStr);
   };
+
+  const taskRowProps = (task: Todo) => ({
+    task,
+    today,
+    onToggle: toggleTodo,
+    onStar: updateTodo,
+    expanded: expandedId === task.id,
+    onToggleExpand: () => toggleExpanded(task.id),
+    onAdvanced: () => setEditing(task),
+  });
 
   // A habit draws in the colour the user picked for it — `accentOf(colorHex(…))`,
   // the same pair `HabitsView` uses. This used to cycle a fixed palette by list
@@ -87,7 +114,13 @@ export default function RightPanel() {
       {/* Sits on the panel's left edge, as a sibling flex item in
           `.shell-content` — not absolutely positioned over the panel — so its
           own 0.5rem is genuinely reserved (see MonthViewDesktop's RESERVED). */}
-      <ResizeHandle side="left" onDelta={handleRightDelta} onReset={handleRightReset} ariaLabel="Resize right panel" />
+      <ResizeHandle
+        side="left"
+        onDelta={handleRightDelta}
+        onEnd={commitRightWidth}
+        onReset={handleRightReset}
+        ariaLabel="Resize right panel"
+      />
       <aside className="flex-none h-full w-[var(--layout-right-w,20rem)] border-l border-line bg-surface flex flex-col px-4 py-4 overflow-y-auto scrollbar-hide">
         {/* Habits Section */}
         <div className="mb-4">
@@ -101,20 +134,27 @@ export default function RightPanel() {
 
               return (
                 <Card key={habit.id} className="p-2.5">
-                  <div
-                    className="text-xs font-semibold uppercase tracking-[0.5px] mb-[0.375rem]"
+                  <button
+                    type="button"
+                    aria-expanded={expandedId === habit.id}
+                    onClick={() => toggleExpanded(habit.id)}
+                    className="block w-full text-left truncate text-xs font-semibold uppercase tracking-[0.5px] mb-[0.375rem] hover:underline"
                     // dynamic: the habit's own colour
                     style={{ color: color.hex }}
                   >
                     {habit.name}
-                  </div>
+                  </button>
+
+                  {expandedId === habit.id && (
+                    <InlineEditor todo={habit} autoFocusTitle onAdvanced={() => setEditing(habit)} className="mb-2" />
+                  )}
 
                   <div className="flex gap-[0.25rem]">
                     {weekDateStrs.map((dateStr) => (
-                      <div
+                      <button
                         key={dateStr}
-                        role="checkbox"
-                        aria-checked={wasHabitDone(habit, dateStr)}
+                        type="button"
+                        aria-pressed={wasHabitDone(habit, dateStr)}
                         aria-label={`${habit.name} on ${dateStr}`}
                         onClick={() => toggleTodo(habit.id, dateStr)}
                         className={cn(
@@ -131,7 +171,7 @@ export default function RightPanel() {
                         }
                       >
                         {wasHabitDone(habit, dateStr) ? '✓' : ''}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </Card>
@@ -142,69 +182,32 @@ export default function RightPanel() {
           </div>
         </div>
 
-        {/* Today's Tasks Section, grouped by category */}
+        {/* Tasks: the uncategorised list first, then one list per category */}
         <div>
           <SectionHeading className="text-sm font-bold tracking-[0.5px] text-[var(--t-cat-purple-ink)] mb-2">
-            Today's Tasks
+            Tasks
           </SectionHeading>
 
           <div className="space-y-md">
-            {todayGroups.map(({ category, todos: rows }) => {
+            <div className="space-y-xs">
+              {topTasks.map((task) => (
+                <TaskRow key={task.id} {...taskRowProps(task)} />
+              ))}
+            </div>
+            {categoryGroups.map(({ category, todos: rows }) => {
               const cat = categoryById(category);
               return (
-                <div key={category || UNCATEGORIZED} className="space-y-xs">
+                <div key={category} className="space-y-xs">
                   <SectionHeading
                     className="text-xs mb-1"
                     // dynamic: the category's own colour
                     style={cat ? { color: accentOf(colorHex(cat.colorKey)).hex } : undefined}
                   >
-                    {cat?.name ?? UNCATEGORIZED}
+                    {cat?.name ?? category}
                   </SectionHeading>
-                  {rows
-                    .slice()
-                    .sort((a, b) => (a.important === b.important ? 0 : a.important ? -1 : 1))
-                    .map((task) => {
-                      // `completions` is a Record<date, value>, never an array —
-                      // done-ness comes from the shared helper so it matches
-                      // every other surface.
-                      const isDone = isDoneOn(task, today);
-                      return (
-                        <div key={task.id} className="row-hover p-xs flex gap-2 cursor-pointer items-start">
-                          <div
-                            role="button"
-                            aria-label={task.important ? 'Unstar task' : 'Star task'}
-                            onClick={() => updateTodo(task.id, { important: !task.important })}
-                            className="text-2xl cursor-pointer flex-shrink-0 mt-[-0.375rem]"
-                          >
-                            {task.important ? '★' : '☆'}
-                          </div>
-
-                          <div
-                            role="checkbox"
-                            aria-checked={isDone}
-                            aria-label={task.name}
-                            onClick={() => toggleTodo(task.id, today)}
-                            className={cn(
-                              'w-5 h-5 border flex items-center justify-center flex-shrink-0 mt-[0.375rem] cursor-pointer text-xs',
-                              isDone
-                                ? 'bg-accent border-accent text-on-accent'
-                                : 'bg-surface border-line text-transparent',
-                            )}
-                          >
-                            {isDone ? '✓' : ''}
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-                            <div className={cn('text-sm font-medium text-ink', isDone && 'line-through opacity-60')}>
-                              {task.name}
-                            </div>
-                            <div className="text-xs text-ink-muted mt-[2px]">
-                              {task.dueDate === today ? 'Today' : task.dueDate ? 'Due ' + task.dueDate : 'No due date'}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  {rows.map((task) => (
+                    <TaskRow key={task.id} {...taskRowProps(task)} />
+                  ))}
                 </div>
               );
             })}
@@ -214,6 +217,80 @@ export default function RightPanel() {
           </div>
         </div>
       </aside>
+      {editing && <AddModal editTodo={editing} onClose={() => setEditing(null)} />}
     </>
+  );
+}
+
+/** When a to-do is wanted, relative to today: overdue reads in the danger colour. */
+function dueLine(task: Todo, today: string): { text: string; late: boolean } {
+  if (!task.dueDate) return { text: 'No due date', late: false };
+  if (task.dueDate === today) return { text: 'Today', late: false };
+  if (task.dueDate < today) return { text: `Overdue · ${shortDate(task.dueDate)}`, late: true };
+  return { text: `Due ${shortDate(task.dueDate)}`, late: false };
+}
+
+function TaskRow({
+  task,
+  today,
+  onToggle,
+  onStar,
+  expanded,
+  onToggleExpand,
+  onAdvanced,
+}: {
+  task: Todo;
+  today: string;
+  onToggle: (id: string, date: string) => void;
+  onStar: (id: string, patch: Partial<Omit<Todo, 'id' | 'completions'>>) => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onAdvanced: () => void;
+}) {
+  // `completions` is a Record<date, value>, never an array — done-ness comes
+  // from the shared helper so it matches every other surface.
+  const isDone = isDoneOn(task, today);
+  const due = dueLine(task, today);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      onClick={onToggleExpand}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onToggleExpand();
+        }
+      }}
+      className="row-hover p-xs flex flex-wrap gap-2 cursor-pointer items-start"
+    >
+      <StarButton important={task.important} onToggle={() => onStar(task.id, { important: !task.important })} />
+
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={isDone}
+        aria-label={isDone ? `Mark "${task.name}" not done` : `Mark "${task.name}" done`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle(task.id, today);
+        }}
+        className={cn(
+          'w-5 h-5 border flex items-center justify-center flex-shrink-0 mt-[0.375rem] cursor-pointer text-xs',
+          isDone ? 'bg-accent border-accent text-on-accent' : 'bg-surface border-line text-transparent',
+        )}
+      >
+        {isDone ? '✓' : ''}
+      </button>
+
+      <div className="flex-1 min-w-0">
+        <div className={cn('text-sm font-medium text-ink', isDone && 'line-through opacity-60')}>{task.name}</div>
+        <div className={cn('text-xs mt-[2px]', due.late && !isDone ? 'text-danger' : 'text-ink-muted')}>{due.text}</div>
+      </div>
+
+      {expanded && <InlineEditor todo={task} autoFocusTitle onAdvanced={onAdvanced} className="basis-full pt-1" />}
+    </div>
   );
 }

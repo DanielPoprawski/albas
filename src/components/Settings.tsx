@@ -8,6 +8,7 @@ import { DEFAULT_SYNC_URL, syncEndpoint } from '../syncServer';
 import { AccountSigninCard, ProfileCard, SessionCard, SessionsCard } from './settings/AccountCards';
 import { AppearanceCard } from './settings/AppearanceCard';
 import { CategoriesCard } from './settings/CategoriesCard';
+import { DangerZoneCard } from './settings/DangerZoneCard';
 import { ImportCard, SharingCard } from './settings/IntegrationsCards';
 import { AboutCard, PreferencesCard, ShortcutsCard } from './settings/misc';
 import type { SyncState } from './settings/shared';
@@ -119,10 +120,13 @@ export default function Settings() {
   async function connectManually() {
     setSyncState({ kind: 'busy', what: 'Saving' });
     try {
-      setSetting('__sync_url', syncEndpoint(normalizeSyncUrl(url)));
-      setSetting('__sync_token', token.trim());
-      setSetting('__sync_account', '');
+      // Rust owns the token (keyring on desktop) and the signed-in marker;
+      // `set_setting` refuses both keys, so this goes through the same
+      // adoption path as every other sign-in. React learns of the marker on
+      // the reload below.
+      await ipc.syncConnectToken(syncEndpoint(normalizeSyncUrl(url)), token);
       setSetting('__welcome_done', '1');
+      await reloadFromStore();
       await refreshStatus();
       setSyncState({ kind: 'idle' });
       await sync();
@@ -158,7 +162,6 @@ export default function Settings() {
           onConnect={connectManually}
           status={status}
           syncToken={syncToken}
-          onAccountDeleted={afterLeavingAccount}
         />
 
         {status?.configured && <SessionsCard status={status} syncToken={syncToken} />}
@@ -176,6 +179,8 @@ export default function Settings() {
         <SharingCard />
 
         <AboutCard />
+
+        <DangerZoneCard onAccountDeleted={afterLeavingAccount} />
       </div>
     </div>
   );

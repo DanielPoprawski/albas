@@ -34,3 +34,9 @@ tauri-plugin-barcode-scanner = "2"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
+# To reach past PlatformWebview::inner() and flip a WebKitSettings flag (see
+# lib.rs run()). Pinned to the same "2.0" line wry already locks so it reuses
+# that resolved version instead of pulling in a second copy of the crate.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2.0"
+

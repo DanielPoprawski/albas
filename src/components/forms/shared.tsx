@@ -1,7 +1,8 @@
 import { useId, useRef, type MutableRefObject } from 'react';
 import { Trash2 } from 'lucide-react';
-import { colorHex, GREY_RAMP, PALETTE, PALETTE_COMPACT, PALETTE_ROWS } from '../../colors';
+import { CATEGORY_PALETTE, colorHex, PALETTE } from '../../colors';
 import { useIsMobile } from '../../useMedia';
+import { cn } from '@/lib/utils';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Segmented } from '../ui/segmented';
@@ -68,11 +69,9 @@ export function Select<T extends string>({
 }
 
 /**
- * Colour picker. Two shapes for two amounts of room:
- *  - phone: a single row of seven hues plus the wheel, because a second row
- *    pushes the rest of the form off screen;
- *  - desktop: a 12x4 grid — three shade rows, then black→white, with the wheel
- *    occupying the last cell so the grid stays rectangular.
+ * Colour picker: the 12 category hues plus the wheel. On a phone the same
+ * thirteen cells wrap onto two rows of seven, since a 13-wide row is too
+ * tight to tap; on desktop they sit in one row.
  *
  * The wheel opens the OS colour picker via a hidden `input[type=color]`, so any
  * hex is reachable; the swatches are just the fast path.
@@ -102,7 +101,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (hex
   const wheel = (
     <button
       type="button"
-      title="Custom colour"
+      title="Custom color"
       onClick={() => customRef.current?.click()}
       className={`aspect-square rounded-full relative transition-all ${
         isCustom ? 'ring-2 ring-ink/70 scale-110' : 'opacity-90 hover:opacity-100 hover:scale-110'
@@ -130,20 +129,9 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (hex
     />
   );
 
-  if (isMobile) {
-    return (
-      <div className="grid grid-cols-8 gap-xs items-center">
-        {PALETTE_COMPACT.map(swatch)}
-        {wheel}
-        {hidden}
-      </div>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-12 gap-1 items-center max-w-[22rem]">
-      {PALETTE_ROWS.flat().map(swatch)}
-      {GREY_RAMP.map(swatch)}
+    <div className={cn('grid items-center', isMobile ? 'grid-cols-7 gap-xs' : 'grid-cols-13 gap-1 max-w-[22rem]')}>
+      {CATEGORY_PALETTE.map(swatch)}
       {wheel}
       {hidden}
     </div>

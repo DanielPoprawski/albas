@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { CalendarDays, CalendarRange, CalendarClock, ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { addDays, fmt, parse } from '../../dates';
+import { fmt } from '../../dates';
+import { goToday as navToday, stepPeriod, syncMonth } from '../../calendarNav';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
+import { IconButton } from '../ui/button';
 import type { CalendarMode } from '../../types';
 
 const MODES: { value: CalendarMode; label: string; Icon: LucideIcon; hint: string }[] = [
@@ -35,8 +37,8 @@ function ModeButtons({
             key={value}
             onClick={() => onPick(value)}
             aria-pressed={mode === value}
-            className={`px-md py-xs rounded font-semibold text-label-md transition-colors ${
-              mode === value ? 'bg-primary text-on-primary' : 'text-ink-muted hover:text-ink hover:bg-line-strong'
+            className={`px-md py-xs rounded font-semibold text-meta transition-colors ${
+              mode === value ? 'bg-accent text-on-accent' : 'text-ink-muted hover:text-ink hover:bg-line-strong'
             }`}
           >
             {label}
@@ -45,7 +47,7 @@ function ModeButtons({
       </div>
       <button
         onClick={onToday}
-        className="px-md py-xs rounded-lg font-semibold text-label-md text-ink-muted bg-subtle-strong hover:text-ink hover:bg-line-strong transition-colors"
+        className="px-md py-xs rounded-lg font-semibold text-meta text-ink-muted bg-subtle-strong hover:text-ink hover:bg-line-strong transition-colors"
       >
         Today
       </button>
@@ -96,7 +98,7 @@ export function ModeModal({
           aria-describedby={undefined}
           className="block rounded-2xl p-md w-full max-w-[min(22rem,calc(100%-2rem))] border-line shadow-2xl"
         >
-          <DialogTitle className="text-headline-lg-mobile font-title font-normal text-ink mb-md">View</DialogTitle>
+          <DialogTitle className="text-h1 font-title font-normal text-ink mb-md">View</DialogTitle>
 
           <div className="space-y-xs">
             {MODES.map(({ value, label, Icon, hint }) => (
@@ -107,10 +109,10 @@ export function ModeModal({
                   setOpen(false);
                 }}
                 className={`w-full flex items-center gap-sm p-sm rounded-lg border text-left transition-colors ${
-                  mode === value ? 'border-primary bg-subtle-strong' : 'border-line hover:bg-subtle-strong'
+                  mode === value ? 'border-accent bg-subtle-strong' : 'border-line hover:bg-subtle-strong'
                 }`}
               >
-                <Icon size="1.25rem" className={mode === value ? 'text-primary' : 'text-ink-muted'} />
+                <Icon size="1.25rem" className={mode === value ? 'text-accent' : 'text-ink-muted'} />
                 <span className="min-w-0">
                   <span className="block text-body-sm font-semibold text-ink">{label}</span>
                   <span className="block text-xs text-ink-muted">{hint}</span>
@@ -124,7 +126,7 @@ export function ModeModal({
               onToday();
               setOpen(false);
             }}
-            className="mt-md w-full px-md py-sm bg-primary text-on-primary rounded-lg font-semibold text-body-sm active:scale-95 transition-transform"
+            className="mt-md w-full px-md py-sm bg-accent text-on-accent rounded-lg font-semibold text-body-sm active:scale-95 transition-transform"
           >
             Jump to today
           </button>
@@ -151,46 +153,34 @@ export default function CalendarNav({ compact = false }: { compact?: boolean }) 
   // week/day navigation anchors on the selected date
   const anchor = selectedDate ?? todayStr;
 
-  function syncMonth(dateStr: string) {
-    const d = parse(dateStr);
-    setCurrentMonth((m) =>
-      m.getFullYear() === d.getFullYear() && m.getMonth() === d.getMonth()
-        ? m
-        : new Date(d.getFullYear(), d.getMonth(), 1),
-    );
-  }
+  const nav = { setCurrentMonth, setSelectedDate };
 
   function step(dir: 1 | -1) {
-    if (calendarMode === 'month') {
-      setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() + dir, 1));
-      return;
-    }
-    const next = addDays(anchor, dir * (calendarMode === 'week' ? 7 : 1));
-    setSelectedDate(next);
-    syncMonth(next);
+    stepPeriod(nav, calendarMode, anchor, dir);
   }
 
   function goToday() {
-    const now = new Date();
-    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-    setSelectedDate(todayStr);
+    navToday(nav);
   }
 
   function switchMode(mode: CalendarMode) {
     setCalendarMode(mode);
-    if (mode !== 'month') syncMonth(anchor);
+    if (mode !== 'month') syncMonth(nav, anchor);
   }
 
   // compact trades icon size for tap area — 1.25rem glyphs, but the button still
   // carries padding so the target isn't a 1.25rem square on a touchscreen
-  const arrowClass = 'p-xs hover:bg-line-strong rounded transition-colors text-ink-muted hover:text-ink';
-
   const arrow = (dir: 1 | -1) => {
     const Icon = dir === 1 ? ChevronRight : ChevronLeft;
     return (
-      <button onClick={() => step(dir)} aria-label={dir === 1 ? 'Next' : 'Previous'} className={arrowClass}>
-        <Icon size={compact ? 20 : 18} />
-      </button>
+      <IconButton
+        variant="accent2"
+        onClick={() => step(dir)}
+        aria-label={dir === 1 ? 'Next' : 'Previous'}
+        className={compact ? 'size-auto p-xs' : undefined}
+      >
+        <Icon size={compact ? '1.25rem' : '1.125rem'} />
+      </IconButton>
     );
   };
 

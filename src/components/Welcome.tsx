@@ -18,7 +18,7 @@ type Screen = 'splash' | 'signin' | 'register' | 'offline';
  * with another device (`auth/CrossDevice.tsx`).
  */
 export default function Welcome() {
-  const { setSetting } = useApp();
+  const { setSetting, seedDemoIfEmpty } = useApp();
   const browser = useBrowserSignIn();
   const password = usePasswordSignIn();
   const [screen, setScreen] = useState<Screen>('splash');
@@ -31,6 +31,9 @@ export default function Welcome() {
 
   const handleUseOffline = () => {
     setSetting('__welcome_done', '1');
+    // The starter to-dos are only ever written here: seeding on load would
+    // hand them to whichever account a sign-in from this screen picks.
+    seedDemoIfEmpty();
   };
 
   const busy = browser.state.kind === 'starting' || browser.state.kind === 'waiting' || password.state.kind === 'busy';

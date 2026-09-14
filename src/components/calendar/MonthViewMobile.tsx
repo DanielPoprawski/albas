@@ -104,15 +104,15 @@ export default function MonthViewMobile({ weeks, onEditEvent, onEditTodo, onDayC
                     key={cell.dateStr}
                     className={`relative flex flex-col cursor-pointer border-r border-b border-line transition-colors hover:bg-accent-tint px-px py-0.5 overflow-hidden ${
                       !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : ''
-                    } ${cell.isSelected && !cell.isToday && !cell.background ? 'bg-primary/10' : ''}`}
+                    } ${cell.isSelected && !cell.isToday && !cell.background ? 'bg-primary/10' : ''} ${
+                      cell.isToday ? 'today-cell' : ''
+                    }`}
                     // dynamic: a long span washes its cells in its own colour
                     style={{ background: cell.background }}
                     onClick={() => onDayClick(cell.dateStr)}
                   >
                     <PeriodCorners cell={cell} />
 
-                    {/* Today gets no marker of its own — it reads as the first
-                        day that isn't struck through. */}
                     <span
                       className={`text-xs px-0.5 ${
                         !cell.isCurrentMonth

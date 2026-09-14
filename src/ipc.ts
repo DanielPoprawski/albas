@@ -92,6 +92,16 @@ export function deleteEvent(id: string): Promise<void> {
   return invoke('delete_event', { id });
 }
 
+/** Settings › Danger zone. Tombstones every live event (and legacy period) in one transaction. */
+export function deleteAllEvents(): Promise<void> {
+  return invoke('delete_all_events');
+}
+
+/** Settings › Danger zone. Tombstones every live task or every live habit (with its completions). */
+export function deleteAllTodos(kind: 'task' | 'habit'): Promise<void> {
+  return invoke('delete_all_todos', { kind });
+}
+
 /** Legacy-conversion writes only. */
 /** Legacy-conversion writes only. */
 export function deletePeriod(id: string): Promise<void> {
@@ -241,6 +251,14 @@ export function syncSignOut(): Promise<void> {
   return invoke('sync_sign_out');
 }
 
+/**
+ * Settings › Advanced: adopt a pasted bearer token for `url` (a server base or
+ * `/sync` endpoint). Rust stores the secret; the WebView never sees it again.
+ */
+export function syncConnectToken(url: string, token: string): Promise<void> {
+  return invoke('sync_connect_token', { url, token });
+}
+
 /** Deletes the signed-in account server-side and clears local session state. */
 export function accountDelete(password: string): Promise<void> {
   return invoke('account_delete', { password });
@@ -276,6 +294,28 @@ export function appSessionClaim(nonce: string): Promise<AppSessionApproval> {
 
 export function appSessionOffer(): Promise<AppSessionOffer> {
   return invoke('app_session_offer');
+}
+
+// ---------------------------------------------------------------------------
+// window lifecycle
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs `handler` when the OS asks the main window to close. Calling
+ * `e.preventDefault()` keeps it open — the caller then flushes/syncs and ends
+ * with `destroyWindow()`. Resolves to the unlisten function.
+ */
+export async function onCloseRequested(
+  handler: (e: { preventDefault(): void }) => void | Promise<void>,
+): Promise<() => void> {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  return getCurrentWindow().onCloseRequested(handler);
+}
+
+/** Closes the main window without re-firing the close-requested event. */
+export async function destroyWindow(): Promise<void> {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  await getCurrentWindow().destroy();
 }
 
 // ---------------------------------------------------------------------------

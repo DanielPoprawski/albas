@@ -66,7 +66,9 @@ export default function WeekView() {
             <button
               key={dateStr}
               onClick={() => setSelectedDate(dateStr)}
-              className={`flex-1 py-sm flex flex-col items-center gap-0.5 cursor-pointer ${isPast ? 'bg-past-cell' : ''}`}
+              className={`flex-1 py-sm flex flex-col items-center gap-0.5 cursor-pointer ${isPast ? 'bg-past-cell' : ''} ${
+                isToday ? 'today-cell' : ''
+              }`}
             >
               <span className={`text-xs font-bold tracking-wider ${isWeekend ? 'text-ink' : 'text-ink-muted'}`}>
                 {dayLabels[i]}

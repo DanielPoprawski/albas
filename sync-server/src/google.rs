@@ -206,7 +206,8 @@ impl Pending {
         let mut m = self.flows.lock().unwrap();
         let now = now_ms();
         m.retain(|_, v| v.expires_at > now);
-        m.remove(state).map(|f| (f.app_session_nonce, f.code_verifier))
+        m.remove(state)
+            .map(|f| (f.app_session_nonce, f.code_verifier))
     }
 
     fn new_ticket(&self, name: String, token: String) -> String {
@@ -268,12 +269,15 @@ fn oauth_cookie(value: &str, max_age_secs: i64) -> String {
 }
 
 fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
-    headers.get(COOKIE).and_then(|v| v.to_str().ok()).and_then(|raw| {
-        raw.split(';').find_map(|pair| {
-            let (k, v) = pair.trim().split_once('=')?;
-            (k == name).then_some(v)
+    headers
+        .get(COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|raw| {
+            raw.split(';').find_map(|pair| {
+                let (k, v) = pair.trim().split_once('=')?;
+                (k == name).then_some(v)
+            })
         })
-    })
 }
 
 /// `GET /auth/google/start`. Redirects the browser to Google and sets the
@@ -334,24 +338,36 @@ pub(crate) async fn callback(
     let cfg = google_of(&state)?;
 
     if let Some(err) = q.error {
-        return Err(generic_callback_error(format_args!("Google reported: {err}")));
+        return Err(generic_callback_error(format_args!(
+            "Google reported: {err}"
+        )));
     }
-    let code = q.code.ok_or_else(|| generic_callback_error("no code in callback query"))?;
-    let oauth_state = q.state.ok_or_else(|| generic_callback_error("no state in callback query"))?;
+    let code = q
+        .code
+        .ok_or_else(|| generic_callback_error("no code in callback query"))?;
+    let oauth_state = q
+        .state
+        .ok_or_else(|| generic_callback_error("no state in callback query"))?;
 
     // The cookie set in `start` must match the query's state — this is what
     // ties the callback to the same browser that began the flow (see the
     // `OAUTH_COOKIE` doc comment). Checked *before* consuming the flow, so a
     // mismatched or missing cookie never burns a legitimate pending flow.
     if cookie_value(&headers, OAUTH_COOKIE) != Some(oauth_state.as_str()) {
-        return Err(generic_callback_error("oauth cookie missing or did not match the state query param"));
+        return Err(generic_callback_error(
+            "oauth cookie missing or did not match the state query param",
+        ));
     }
 
     // Single-use and TTL'd: a replayed or stale callback must not be honoured.
     let (app_session_nonce, code_verifier) = state
         .google_pending
         .take_flow(&oauth_state)
-        .ok_or_else(|| generic_callback_error("state not found in the pending-flow map (expired, replayed, or bogus)"))?;
+        .ok_or_else(|| {
+            generic_callback_error(
+                "state not found in the pending-flow map (expired, replayed, or bogus)",
+            )
+        })?;
 
     let email = exchange_code(cfg, &code, &code_verifier).await?;
 
@@ -373,7 +389,10 @@ pub(crate) async fn callback(
         redirect.push_str(&format!("#app_session={}", urlencoding::encode(&nonce)));
     }
     let mut out_headers = HeaderMap::new();
-    out_headers.insert(SET_COOKIE, oauth_cookie("", 0).parse().map_err(internal_err)?);
+    out_headers.insert(
+        SET_COOKIE,
+        oauth_cookie("", 0).parse().map_err(internal_err)?,
+    );
     Ok((out_headers, Redirect::to(&redirect)))
 }
 
@@ -399,7 +418,11 @@ pub(crate) async fn session(
 /// the id_token's signature locally: the code was already single-use and tied
 /// to our own `redirect_uri`, so trusting whatever Google's own endpoint hands
 /// back for that access token needs no separate JWKS/signature machinery.
-async fn exchange_code(cfg: &GoogleConfig, code: &str, code_verifier: &str) -> Result<String, Rejection> {
+async fn exchange_code(
+    cfg: &GoogleConfig,
+    code: &str,
+    code_verifier: &str,
+) -> Result<String, Rejection> {
     let client = reqwest::Client::new();
 
     let token_res = client
@@ -414,16 +437,19 @@ async fn exchange_code(cfg: &GoogleConfig, code: &str, code_verifier: &str) -> R
         ])
         .send()
         .await
-        .map_err(|e| generic_callback_error(format_args!("could not reach Google's token endpoint: {e}")))?;
+        .map_err(|e| {
+            generic_callback_error(format_args!("could not reach Google's token endpoint: {e}"))
+        })?;
 
     if !token_res.status().is_success() {
         let body = token_res.text().await.unwrap_or_default();
-        return Err(generic_callback_error(format_args!("Google rejected the token exchange: {body}")));
+        return Err(generic_callback_error(format_args!(
+            "Google rejected the token exchange: {body}"
+        )));
     }
-    let token_json: Value = token_res
-        .json()
-        .await
-        .map_err(|e| generic_callback_error(format_args!("Google's token response was unreadable: {e}")))?;
+    let token_json: Value = token_res.json().await.map_err(|e| {
+        generic_callback_error(format_args!("Google's token response was unreadable: {e}"))
+    })?;
     let access_token = token_json
         .get("access_token")
         .and_then(|v| v.as_str())
@@ -434,14 +460,19 @@ async fn exchange_code(cfg: &GoogleConfig, code: &str, code_verifier: &str) -> R
         .bearer_auth(access_token)
         .send()
         .await
-        .map_err(|e| generic_callback_error(format_args!("could not fetch the Google profile: {e}")))?;
+        .map_err(|e| {
+            generic_callback_error(format_args!("could not fetch the Google profile: {e}"))
+        })?;
     if !userinfo_res.status().is_success() {
-        return Err(generic_callback_error("Google refused the userinfo request"));
+        return Err(generic_callback_error(
+            "Google refused the userinfo request",
+        ));
     }
-    let profile: Value = userinfo_res
-        .json()
-        .await
-        .map_err(|e| generic_callback_error(format_args!("Google's profile response was unreadable: {e}")))?;
+    let profile: Value = userinfo_res.json().await.map_err(|e| {
+        generic_callback_error(format_args!(
+            "Google's profile response was unreadable: {e}"
+        ))
+    })?;
 
     let email = profile
         .get("email")
@@ -504,9 +535,11 @@ fn find_or_create_account(conn: &Connection, email: &str) -> Result<(i64, String
 
     let candidate = candidate_name(email);
     let existing: Option<i64> = conn
-        .query_row("SELECT id FROM accounts WHERE name = ?1", [&candidate], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT id FROM accounts WHERE name = ?1",
+            [&candidate],
+            |r| r.get(0),
+        )
         .optional()
         .map_err(internal_err)?;
 
@@ -646,32 +679,68 @@ mod tests {
             ..Arc::try_unwrap(state).ok().unwrap()
         });
 
-        let (headers, redirect) =
-            start(State(state.clone()), Query(StartQuery { app_session: None })).await.unwrap();
-        let set_cookie = headers.get(SET_COOKIE).unwrap().to_str().unwrap().to_string();
-        let cookie_state = set_cookie.split(';').next().unwrap().split_once('=').unwrap().1.to_string();
+        let (headers, redirect) = start(
+            State(state.clone()),
+            Query(StartQuery { app_session: None }),
+        )
+        .await
+        .unwrap();
+        let set_cookie = headers
+            .get(SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        let cookie_state = set_cookie
+            .split(';')
+            .next()
+            .unwrap()
+            .split_once('=')
+            .unwrap()
+            .1
+            .to_string();
         let _ = redirect;
 
         // No cookie at all.
         let err = callback(
             State(state.clone()),
             HeaderMap::new(),
-            Query(CallbackQuery { code: Some("x".into()), state: Some(cookie_state.clone()), error: None }),
+            Query(CallbackQuery {
+                code: Some("x".into()),
+                state: Some(cookie_state.clone()),
+                error: None,
+            }),
         )
         .await
         .unwrap_err();
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
 
         // Cookie present but for a different (also-real) flow's state.
-        let (other_headers, _) =
-            start(State(state.clone()), Query(StartQuery { app_session: None })).await.unwrap();
-        let other_cookie = other_headers.get(SET_COOKIE).unwrap().to_str().unwrap().to_string();
+        let (other_headers, _) = start(
+            State(state.clone()),
+            Query(StartQuery { app_session: None }),
+        )
+        .await
+        .unwrap();
+        let other_cookie = other_headers
+            .get(SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         let mut mismatched = HeaderMap::new();
-        mismatched.insert(COOKIE, other_cookie.split(';').next().unwrap().parse().unwrap());
+        mismatched.insert(
+            COOKIE,
+            other_cookie.split(';').next().unwrap().parse().unwrap(),
+        );
         let err = callback(
             State(state.clone()),
             mismatched,
-            Query(CallbackQuery { code: Some("x".into()), state: Some(cookie_state.clone()), error: None }),
+            Query(CallbackQuery {
+                code: Some("x".into()),
+                state: Some(cookie_state.clone()),
+                error: None,
+            }),
         )
         .await
         .unwrap_err();
@@ -681,22 +750,36 @@ mod tests {
         // flow (single-use) — verified without going on to the real network
         // call `exchange_code` would make, by checking the flow can't be
         // taken a second time.
-        assert!(cookie_value(
-            &{
-                let mut h = HeaderMap::new();
-                h.insert(COOKIE, set_cookie.split(';').next().unwrap().parse().unwrap());
-                h
-            },
-            OAUTH_COOKIE
-        ) == Some(cookie_state.as_str()));
-        assert!(state.google_pending.take_flow(&cookie_state).is_some(), "flow must still be pending");
-        assert!(state.google_pending.take_flow(&cookie_state).is_none(), "take_flow is single-use");
+        assert!(
+            cookie_value(
+                &{
+                    let mut h = HeaderMap::new();
+                    h.insert(
+                        COOKIE,
+                        set_cookie.split(';').next().unwrap().parse().unwrap(),
+                    );
+                    h
+                },
+                OAUTH_COOKIE
+            ) == Some(cookie_state.as_str())
+        );
+        assert!(
+            state.google_pending.take_flow(&cookie_state).is_some(),
+            "flow must still be pending"
+        );
+        assert!(
+            state.google_pending.take_flow(&cookie_state).is_none(),
+            "take_flow is single-use"
+        );
     }
 
     #[test]
     fn cookie_value_parses_one_of_several_cookies() {
         let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, "foo=bar; albas_oauth=the-state; other=1".parse().unwrap());
+        headers.insert(
+            COOKIE,
+            "foo=bar; albas_oauth=the-state; other=1".parse().unwrap(),
+        );
         assert_eq!(cookie_value(&headers, OAUTH_COOKIE), Some("the-state"));
         assert_eq!(cookie_value(&headers, "missing"), None);
     }

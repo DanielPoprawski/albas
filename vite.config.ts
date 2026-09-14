@@ -20,6 +20,21 @@ export default defineConfig(async () => ({
 
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
 
+  // The bundle is served from disk inside the WebView, so chunk size has no
+  // load-time cost; splitting the vendor libs out only keeps Vite's 500 kB
+  // warning quiet and makes the app chunk diff smaller between releases.
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "radix-ui"],
+          dates: ["date-fns", "chrono-node", "rrule"],
+          icons: ["lucide-react"],
+        },
+      },
+    },
+  },
+
   // must mirror the `paths` entry in tsconfig.json (__dirname doesn't exist
   // here — this config is ESM, since package.json sets "type": "module")
   resolve: {

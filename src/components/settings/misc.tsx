@@ -38,12 +38,12 @@ export function PreferencesCard() {
 
 /* ── Shortcuts ───────────────────────────────────────────────────────────*/
 
-const SHORTCUT_GROUPS: ShortcutGroup[] = ['Navigation', 'Create', 'Search'];
+const SHORTCUT_GROUPS: ShortcutGroup[] = ['Navigation', 'Calendar', 'Create', 'Search'];
 
 /**
  * A reference card, not a settings surface — `shortcuts.ts#SHORTCUTS` is the
  * only place a binding is defined, this just renders it grouped. `Ctrl`
- * prints as `⌘` on Mac (`formatKeys`).
+ * prints through `formatKeys` (Ctrl on every platform).
  */
 export function ShortcutsCard() {
   return (

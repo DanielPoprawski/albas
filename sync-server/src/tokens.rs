@@ -1,6 +1,10 @@
 //! Self-service bearer-token routes (Settings -> Sessions).
 
-use axum::{extract::{Path, State}, http::{HeaderMap, StatusCode}, Json};
+use axum::{
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use rusqlite::params;
 use serde::Serialize;
 use std::sync::Arc;
@@ -24,7 +28,10 @@ pub(crate) async fn tokens_list(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<SelfTokenInfo>>, StatusCode> {
-    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let account_id = account_for(&guard, &headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let current_hash = bearer(&headers).map(token_hash).unwrap_or_default();
     let mut stmt = guard
@@ -58,10 +65,16 @@ pub(crate) async fn tokens_delete_current(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<StatusCode, StatusCode> {
-    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let token = bearer(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let n = guard
-        .execute("DELETE FROM tokens WHERE token_hash = ?1", [token_hash(token)])
+        .execute(
+            "DELETE FROM tokens WHERE token_hash = ?1",
+            [token_hash(token)],
+        )
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     if n == 0 {
         return Err(StatusCode::UNAUTHORIZED);
@@ -76,7 +89,10 @@ pub(crate) async fn tokens_delete_one(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, StatusCode> {
-    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let account_id = account_for(&guard, &headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let n = guard
         .execute(
@@ -96,7 +112,10 @@ pub(crate) async fn tokens_delete_others(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<StatusCode, StatusCode> {
-    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let account_id = account_for(&guard, &headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let token = bearer(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
     guard

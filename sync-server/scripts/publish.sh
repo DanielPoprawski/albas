@@ -10,7 +10,8 @@
 # that prompt is expected. Pass --build-only to skip the deploy.
 set -euo pipefail
 
-DEPLOY_HOST=daniel@ssh.danni-dev.com
+# user@host of the deploy target; kept out of the repo. Same variable admin.sh reads.
+DEPLOY_HOST=${ALBAS_DEPLOY_HOST:-}
 DEPLOY=1
 [[ "${1:-}" == "--build-only" ]] && DEPLOY=0
 
@@ -58,6 +59,7 @@ echo "Building public site"
 # passkey prompts once rather than per command.
 SSH_OPTS=(-o ControlMaster=auto -o "ControlPath=$HOME/.ssh/albas-publish-%r@%h" -o ControlPersist=120)
 
+[[ -n "$DEPLOY_HOST" ]] || { echo "set ALBAS_DEPLOY_HOST=user@host (or pass --build-only)" >&2; exit 1; }
 echo "Deploying to $DEPLOY_HOST (SSH may prompt for your passkey)"
 rsync -az --delete -e "ssh ${SSH_OPTS[*]}" ../web/dist/ "$DEPLOY_HOST:albas-sync/web/"
 

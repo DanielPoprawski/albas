@@ -22,9 +22,10 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use crate::{
-    clear_password_db, clear_totp_db, create_account_db, db_path, delete_account_db, delete_passkey_db,
-    env_token, init_db, label_passkey_db, list_accounts_db, list_shares_db, passkey, rename_account_db,
-    revoke_token_db, set_share_db, AccountDetail, AdminError, AdminShare,
+    clear_password_db, clear_totp_db, create_account_db, db_path, delete_account_db,
+    delete_passkey_db, env_token, init_db, label_passkey_db, list_accounts_db, list_shares_db,
+    passkey, rename_account_db, revoke_token_db, set_share_db, AccountDetail, AdminError,
+    AdminShare,
 };
 
 #[derive(Parser)]
@@ -88,7 +89,11 @@ enum AccountCmd {
 #[derive(Subcommand)]
 enum PasskeyCmd {
     /// Set a passkey's label; omit the label to clear it
-    Label { account: String, id: i64, label: Option<String> },
+    Label {
+        account: String,
+        id: i64,
+        label: Option<String>,
+    },
     /// Delete a passkey (refused when it is the account's only way in)
     Delete { account: String, id: i64 },
 }
@@ -144,11 +149,16 @@ enum InviteCmd {
 /// `admin` word. Exit codes: 0 ok, 1 the operation failed (message on
 /// stderr), 2 usage error (clap's convention).
 pub(crate) fn run(args: impl Iterator<Item = String>) -> ExitCode {
-    let cli = match Cli::try_parse_from(std::iter::once("albas-sync admin".to_string()).chain(args)) {
+    let cli = match Cli::try_parse_from(std::iter::once("albas-sync admin".to_string()).chain(args))
+    {
         Ok(cli) => cli,
         Err(e) => {
             let _ = e.print();
-            return if e.use_stderr() { ExitCode::from(2) } else { ExitCode::SUCCESS };
+            return if e.use_stderr() {
+                ExitCode::from(2)
+            } else {
+                ExitCode::SUCCESS
+            };
         }
     };
     if let Cmd::Health = cli.cmd {
@@ -167,8 +177,10 @@ fn open_db() -> Result<Connection, String> {
     let path = db_path();
     let mut conn = Connection::open(&path).map_err(|e| format!("cannot open {path}: {e}"))?;
     // The server may hold a write lock for a moment; wait rather than fail.
-    conn.busy_timeout(Duration::from_secs(5)).map_err(|e| e.to_string())?;
-    conn.pragma_update(None, "journal_mode", "WAL").map_err(|e| e.to_string())?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|e| e.to_string())?;
     // Same boot path as the server, so the CLI works on a fresh volume before
     // the server has ever run — and `ALBAS_SYNC_TOKEN`, when set, keeps owning
     // the `owner` account's env token exactly as a server start would.
@@ -177,7 +189,10 @@ fn open_db() -> Result<Connection, String> {
 }
 
 /// One transaction per write, so a failure leaves the database as it was.
-fn write<T>(conn: &mut Connection, f: impl FnOnce(&Connection) -> Result<T, AdminError>) -> Result<T, String> {
+fn write<T>(
+    conn: &mut Connection,
+    f: impl FnOnce(&Connection) -> Result<T, AdminError>,
+) -> Result<T, String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let out = f(&tx).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
@@ -189,7 +204,10 @@ fn execute(conn: &mut Connection, cmd: Cmd) -> Result<(), String> {
         Cmd::Account(AccountCmd::List(JsonFlag { json })) => {
             let accounts = list_accounts_db(conn).map_err(|e| e.to_string())?;
             if json {
-                println!("{}", serde_json::to_string_pretty(&accounts).map_err(|e| e.to_string())?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&accounts).map_err(|e| e.to_string())?
+                );
             } else if accounts.is_empty() {
                 println!("no accounts");
             } else {
@@ -213,7 +231,9 @@ fn execute(conn: &mut Connection, cmd: Cmd) -> Result<(), String> {
             println!("deleted account '{name}' and its rows, tokens, passkeys and shares");
         }
         Cmd::Passkey(PasskeyCmd::Label { account, id, label }) => {
-            write(conn, |c| label_passkey_db(c, &account, id, label.as_deref()))?;
+            write(conn, |c| {
+                label_passkey_db(c, &account, id, label.as_deref())
+            })?;
             match label.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
                 Some(l) => println!("labelled passkey {id} of '{account}' as '{l}'"),
                 None => println!("cleared the label of passkey {id} of '{account}'"),
@@ -225,7 +245,9 @@ fn execute(conn: &mut Connection, cmd: Cmd) -> Result<(), String> {
         }
         Cmd::Token(TokenCmd::Revoke { account, id }) => {
             write(conn, |c| revoke_token_db(c, &account, id))?;
-            println!("revoked token {id} of '{account}'; that device is signed out on its next sync");
+            println!(
+                "revoked token {id} of '{account}'; that device is signed out on its next sync"
+            );
         }
         Cmd::Password(PasswordCmd::Clear { account }) => {
             write(conn, |c| clear_password_db(c, &account))?;
@@ -238,7 +260,10 @@ fn execute(conn: &mut Connection, cmd: Cmd) -> Result<(), String> {
         Cmd::Share(ShareCmd::List(JsonFlag { json })) => {
             let shares = list_shares_db(conn).map_err(|e| e.to_string())?;
             if json {
-                println!("{}", serde_json::to_string_pretty(&shares).map_err(|e| e.to_string())?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&shares).map_err(|e| e.to_string())?
+                );
             } else if shares.is_empty() {
                 println!("no shares");
             } else {
@@ -247,10 +272,18 @@ fn execute(conn: &mut Connection, cmd: Cmd) -> Result<(), String> {
                 }
             }
         }
-        Cmd::Share(ShareCmd::Set { owner, grantee, calendar, todos }) => {
+        Cmd::Share(ShareCmd::Set {
+            owner,
+            grantee,
+            calendar,
+            todos,
+        }) => {
             write(conn, |c| set_share_db(c, &owner, &grantee, calendar, todos))?;
             if calendar || todos {
-                println!("'{grantee}' now reads '{owner}': {}", scopes(calendar, todos));
+                println!(
+                    "'{grantee}' now reads '{owner}': {}",
+                    scopes(calendar, todos)
+                );
             } else {
                 println!("no scope flags given: removed the share from '{owner}' to '{grantee}'");
             }
@@ -260,7 +293,8 @@ fn execute(conn: &mut Connection, cmd: Cmd) -> Result<(), String> {
             println!("removed the share from '{owner}' to '{grantee}'");
         }
         Cmd::Invite(InviteCmd::Create { name }) => {
-            let (code, expires_at) = write(conn, |c| passkey::create_invite_db(c, name.as_deref()))?;
+            let (code, expires_at) =
+                write(conn, |c| passkey::create_invite_db(c, name.as_deref()))?;
             match name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
                 Some(n) => println!("invite for existing account '{n}' (adds a passkey to it)"),
                 None => println!("signup invite (creates a new account)"),
@@ -286,7 +320,12 @@ fn print_account(a: &AccountDetail) {
         a.grant_rev,
     );
     for t in &a.tokens {
-        println!("  token    {:<6} {:<24} created {}", t.id, t.label, fmt_ts(t.created_at));
+        println!(
+            "  token    {:<6} {:<24} created {}",
+            t.id,
+            t.label,
+            fmt_ts(t.created_at)
+        );
     }
     for p in &a.passkeys {
         // Same derived name the console used when no label was set.
@@ -298,12 +337,23 @@ fn print_account(a: &AccountDetail) {
                 &derived
             }
         };
-        println!("  passkey  {:<6} {:<24} created {}  cred {}", p.id, label, fmt_ts(p.created_at), p.cred_id);
+        println!(
+            "  passkey  {:<6} {:<24} created {}  cred {}",
+            p.id,
+            label,
+            fmt_ts(p.created_at),
+            p.cred_id
+        );
     }
 }
 
 fn print_share(s: &AdminShare) {
-    println!("{} -> {}  {}", s.owner_name, s.grantee_name, scopes(s.calendar, s.todos));
+    println!(
+        "{} -> {}  {}",
+        s.owner_name,
+        s.grantee_name,
+        scopes(s.calendar, s.todos)
+    );
 }
 
 fn scopes(calendar: bool, todos: bool) -> String {
@@ -345,7 +395,10 @@ pub(crate) fn health() -> ExitCode {
 }
 
 fn health_port() -> u16 {
-    if let Some(p) = std::env::var("ALBAS_SYNC_PORT").ok().and_then(|p| p.trim().parse().ok()) {
+    if let Some(p) = std::env::var("ALBAS_SYNC_PORT")
+        .ok()
+        .and_then(|p| p.trim().parse().ok())
+    {
         return p;
     }
     std::env::var("ALBAS_SYNC_ADDR")
@@ -361,7 +414,8 @@ fn port_of(addr: &str) -> Option<u16> {
 fn probe(port: u16) -> Result<(), String> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let timeout = Duration::from_secs(3);
-    let mut s = TcpStream::connect_timeout(&addr, timeout).map_err(|e| format!("connect {addr}: {e}"))?;
+    let mut s =
+        TcpStream::connect_timeout(&addr, timeout).map_err(|e| format!("connect {addr}: {e}"))?;
     let _ = s.set_read_timeout(Some(timeout));
     let _ = s.set_write_timeout(Some(timeout));
     s.write_all(b"GET /health HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n")
@@ -392,14 +446,32 @@ mod tests {
     fn share_set_parses_scope_flags() {
         let cli = Cli::try_parse_from(["x", "share", "set", "alice", "bob", "--calendar"]).unwrap();
         match cli.cmd {
-            Cmd::Share(ShareCmd::Set { owner, grantee, calendar, todos }) => {
-                assert_eq!((owner.as_str(), grantee.as_str(), calendar, todos), ("alice", "bob", true, false));
+            Cmd::Share(ShareCmd::Set {
+                owner,
+                grantee,
+                calendar,
+                todos,
+            }) => {
+                assert_eq!(
+                    (owner.as_str(), grantee.as_str(), calendar, todos),
+                    ("alice", "bob", true, false)
+                );
             }
             _ => panic!("wrong command"),
         }
         let cli = Cli::try_parse_from(["x", "passkey", "label", "alice", "7"]).unwrap();
-        assert!(matches!(cli.cmd, Cmd::Passkey(PasskeyCmd::Label { id: 7, label: None, .. })));
-        assert!(Cli::try_parse_from(["x", "account", "create"]).is_err(), "name is required");
+        assert!(matches!(
+            cli.cmd,
+            Cmd::Passkey(PasskeyCmd::Label {
+                id: 7,
+                label: None,
+                ..
+            })
+        ));
+        assert!(
+            Cli::try_parse_from(["x", "account", "create"]).is_err(),
+            "name is required"
+        );
     }
 
     #[test]

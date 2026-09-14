@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FIELD_ROW } from './catalog';
 
@@ -36,31 +36,34 @@ export function FieldRow({
   );
 }
 
-/** A square colour swatch; the selected one carries an ink outline. */
-export function Swatch({
-  hex,
-  selected,
-  onClick,
-  className,
+/**
+ * A collapsible group of optional fields: a full-width caps header with a
+ * chevron, children only mounted while expanded.
+ */
+export function SectionGroup({
+  title,
+  expanded,
+  onToggle,
+  children,
 }: {
-  hex: string;
-  selected: boolean;
-  onClick: () => void;
-  className?: string;
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
 }) {
+  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
-    <button
-      type="button"
-      aria-label={hex}
-      aria-pressed={selected}
-      onClick={onClick}
-      className={cn(
-        'shrink-0 border-0 cursor-pointer outline-2 outline-offset-2 transition-[outline-color]',
-        selected ? 'outline-ink' : 'outline-transparent',
-        className,
-      )}
-      // dynamic: the swatch is the colour it offers
-      style={{ background: hex }}
-    />
+    <div className="border-t border-line">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="micro-label flex w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent py-2.5 text-left transition-colors hover:text-ink"
+      >
+        <Chevron size="0.75rem" strokeWidth={3} />
+        {title}
+      </button>
+      {expanded && <div className="flex flex-col gap-[0.875rem] pb-3">{children}</div>}
+    </div>
   );
 }

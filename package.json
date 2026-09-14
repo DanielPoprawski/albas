@@ -15,7 +15,7 @@
     "app:desktop": "bun run tauri build --no-bundle && install -Dm755 src-tauri/target/release/albas ~/.local/bin/albas",
     "clean": "rm -rf src-tauri/target/debug src-tauri/target/x86_64-linux-android src-tauri/target/i686-linux-android src-tauri/target/armv7-linux-androideabi src-tauri/gen/android/app/build sync-server/target",
     "app:android": "adb kill-server; bun run tauri android build --apk --target aarch64 && adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk && adb shell am start -n dev.daniel_p.albas/dev.daniel_p.albas.MainActivity",
-    "tauri": "WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 tauri"
+    "tauri": "__NV_DISABLE_EXPLICIT_SYNC=1 tauri"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.0.15",

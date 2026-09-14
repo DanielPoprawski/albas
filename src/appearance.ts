@@ -1,32 +1,41 @@
 import { deriveAccent, isHex } from './colors';
-import type { ThemeName } from './types';
+import type { ThemeName, ThemePref } from './types';
 
 /**
  * The themes that exist. Two, not the four CLAUDE.md § Theming lists: the
  * redesign draws `:root` (light) and `[data-theme='dark']` only, and
  * `grey-high`/`grey-low` are gone for good.
  *
- * A stored value that isn't one of these — an install that last ran a
- * four-theme build — falls through to the default rather than stamping an
- * attribute nothing responds to. The default is **light**, because the
- * redesign is a light-first design; it used to be dark.
+ * A stored value that isn't one of these (or `system`) — an install that last
+ * ran a four-theme build — falls through to the default rather than stamping
+ * an attribute nothing responds to. The default is **system**: follow the OS.
  */
 const THEMES: ThemeName[] = ['light', 'dark'];
 
-export function readTheme(settings: Record<string, string>): ThemeName {
-  const t = settings.theme as ThemeName | undefined;
-  return t && THEMES.includes(t) ? t : 'light';
+export const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)';
+
+export function readThemePref(settings: Record<string, string>): ThemePref {
+  const t = settings.theme as ThemePref | undefined;
+  return t === 'system' || (t && THEMES.includes(t)) ? t : 'system';
+}
+
+/** The theme to actually paint: a fixed choice as-is, `system` per the OS. */
+export function resolveTheme(pref: ThemePref, systemDark: boolean): ThemeName {
+  if (pref === 'system') return systemDark ? 'dark' : 'light';
+  return pref;
 }
 
 /**
- * Themes are also mirrored to localStorage by `applyTheme` so the inline script
- * in index.html can paint the right colours before React mounts. SQLite stays
- * the source of truth; the mirror is only a first-paint cache.
+ * Stamps the resolved theme onto <html>. The *preference* (not the resolved
+ * value) is also mirrored to localStorage so the inline script in index.html
+ * can paint the right colours before React mounts — for `system` it asks
+ * `matchMedia` itself. SQLite stays the source of truth; the mirror is only a
+ * first-paint cache.
  */
-export function applyTheme(theme: ThemeName): void {
+export function applyTheme(theme: ThemeName, pref: ThemePref): void {
   document.documentElement.dataset.theme = theme;
   try {
-    localStorage.setItem('albas-theme', theme);
+    localStorage.setItem('albas-theme', pref);
   } catch {
     // private mode / quota — the theme still applies for this session
   }

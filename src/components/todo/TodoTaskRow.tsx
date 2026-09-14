@@ -1,15 +1,26 @@
-import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { StarButton } from '../ui/star';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
-import { isDone, UNCATEGORIZED } from '../../todoLogic';
+import { isDone, GENERAL } from '../../todoLogic';
 import { colorHex } from '../../colors';
 import type { Todo } from '../../types';
+import InlineEditor from '../InlineEditor';
+import type { RowClickResult } from '../bulk/useListSelection';
 
 interface TodoTaskRowProps {
   task: Todo;
+  /** The "Advanced…" path: the full modal. */
   onEdit: (task: Todo) => void;
   done?: boolean;
+  /** Whether the inline editor is open under this row (one at a time, owned by the list). */
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  selected?: boolean;
+  /** Ctrl/Shift selection; a `'plain'` result means the click should expand instead. */
+  onRowClick?: (e: React.MouseEvent) => RowClickResult;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 function getDueDateLabel(task: Todo): string {
@@ -28,15 +39,23 @@ function getDueDateLabel(task: Todo): string {
   return `${month} ${day}`;
 }
 
-export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskRowProps) {
+export default function TodoTaskRow({
+  task,
+  onEdit,
+  done: forceDone,
+  expanded = false,
+  onToggleExpand,
+  selected = false,
+  onRowClick,
+  onContextMenu,
+}: TodoTaskRowProps) {
   const { toggleTodo, updateTodo, categoryById } = useApp();
   const done = forceDone || isDone(task);
   const hex = colorHex(task.colorKey);
   const todayStr = fmt(new Date());
   const dueLabel = getDueDateLabel(task);
   const category = categoryById(task.category);
-  const categoryName = category?.name ?? UNCATEGORIZED;
-  const categoryColor = category ? colorHex(category.colorKey) : 'var(--t-cat-purple)';
+  const categoryName = category?.name ?? GENERAL;
 
   const handleToggleDone = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -46,27 +65,47 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
     }
   };
 
-  const handleToggleImportant = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    updateTodo(task.id, { important: !task.important });
+  const handleToggleImportant = () => updateTodo(task.id, { important: !task.important });
+
+  // A plain click (no Ctrl/Shift) opens the inline editor; the modifiers
+  // belong to the list's selection and never expand.
+  const handleClick = (e: React.MouseEvent) => {
+    const result = onRowClick ? onRowClick(e) : 'plain';
+    if (result === 'plain') onToggleExpand?.();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onToggleExpand?.();
+    }
   };
 
   return (
     <div
-      onClick={() => onEdit(task)}
-      className={`group row-hover flex items-center gap-2.5 px-3 py-2.5 cursor-pointer ${done ? 'opacity-55' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      data-selected={selected || undefined}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      onContextMenu={onContextMenu}
+      className={cn(
+        'group row-hover flex flex-wrap items-center gap-2.5 px-3 py-2.5 cursor-pointer',
+        done && 'opacity-55',
+        selected && 'bg-accent-tint',
+      )}
     >
       {/* Star (Importance) */}
-      <button
-        onClick={handleToggleImportant}
-        className={cn('flex-shrink-0 text-lg transition-colors', task.important ? 'text-cat-amber' : 'text-line')}
-        title={task.important ? 'Unmark important' : 'Mark important'}
-      >
-        {task.important ? '★' : '☆'}
-      </button>
+      <StarButton important={task.important} onToggle={handleToggleImportant} />
 
       {/* Checkbox */}
-      <div
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={done}
+        aria-label={done ? `Mark "${task.name}" not done` : `Mark "${task.name}" done`}
         onClick={handleToggleDone}
         className="w-[1.125rem] h-[1.125rem] flex-shrink-0 border border-line-strong flex items-center justify-center cursor-pointer transition-all"
         // dynamic: the to-do's own colour
@@ -76,7 +115,7 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
         }}
       >
         {done && <Check size="0.6875rem" strokeWidth={3} className="text-on-accent" />}
-      </div>
+      </button>
 
       {/* Title & Meta */}
       <div className="flex-1 min-w-0">
@@ -90,8 +129,8 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
         <div className="flex items-center gap-1.5 mt-0.5">
           <span
             className="w-[0.4375rem] h-[0.4375rem] flex-shrink-0"
-            // dynamic: the category's own colour
-            style={{ backgroundColor: categoryColor }}
+            // dynamic: the category's colour (neutral for General)
+            style={{ backgroundColor: hex }}
           />
           <span className="text-meta text-ink-muted">
             {categoryName}
@@ -99,6 +138,11 @@ export default function TodoTaskRow({ task, onEdit, done: forceDone }: TodoTaskR
           </span>
         </div>
       </div>
+
+      {/* The light editor, under the row; the modal stays the "Advanced" path. */}
+      {expanded && (
+        <InlineEditor todo={task} autoFocusTitle onAdvanced={() => onEdit(task)} className="basis-full pt-1" />
+      )}
     </div>
   );
 }

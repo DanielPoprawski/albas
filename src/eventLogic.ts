@@ -30,6 +30,37 @@ export interface Occurrence {
   key: string;
 }
 
+/** The rrule for a recurring event. Monthly on the 31st skips months without one — rrule's own rule. */
+function ruleFor(event: CalendarEvent, rec: Exclude<Recurrence, { type: 'none' }>): RRule {
+  return new RRule({
+    freq: FREQ[rec.type],
+    interval: Math.max(1, rec.interval),
+    dtstart: floatingDate(event.startDate),
+    until: rec.until ? floatingDate(rec.until) : null,
+  });
+}
+
+/**
+ * The occurrence a search hit should land on: the next one from today
+ * (an instance already under way today counts), else the last one that
+ * happened (a finished series), else the series start. Exdates are skipped.
+ */
+export function nearestOccurrence(event: CalendarEvent, todayStr: string): string {
+  const rec = event.recurrence;
+  if (rec.type === 'none') return event.startDate;
+  const rule = ruleFor(event, rec);
+  const exdates = new Set(rec.exdates ?? []);
+  const duration = Math.max(0, diffDays(event.startDate, event.endDate));
+
+  let d = rule.after(floatingDate(addDays(todayStr, -duration)), true);
+  while (d && exdates.has(fromFloating(d))) d = rule.after(d, false);
+  if (d) return fromFloating(d);
+
+  let p = rule.before(floatingDate(todayStr), false);
+  while (p && exdates.has(fromFloating(p))) p = rule.before(p, false);
+  return p ? fromFloating(p) : event.startDate;
+}
+
 function occurrence(event: CalendarEvent, startDate: string, durationDays: number): Occurrence {
   return {
     event,
@@ -58,14 +89,7 @@ export function expandEvents(events: CalendarEvent[], rangeStart: string, rangeE
       continue;
     }
 
-    // Monthly on the 31st skips months without one — rrule's own rule, which
-    // matches what the calendar has always shown.
-    const rule = new RRule({
-      freq: FREQ[rec.type],
-      interval: Math.max(1, rec.interval),
-      dtstart: floatingDate(event.startDate),
-      until: rec.until ? floatingDate(rec.until) : null,
-    });
+    const rule = ruleFor(event, rec);
     // An occurrence that started up to `duration` days before the range still overlaps it.
     const exdates = rec.exdates ?? [];
     for (const d of rule.between(floatingDate(addDays(rangeStart, -duration)), floatingDate(rangeEnd), true)) {

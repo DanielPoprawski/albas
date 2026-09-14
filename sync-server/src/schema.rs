@@ -23,7 +23,12 @@ pub(crate) fn table_columns(conn: &Connection, table: &str) -> Result<Vec<String
 /// declared in `SCHEMA` for fresh databases and backfilled here for old ones.
 /// The definition must carry a default or be nullable; SQLite cannot add a
 /// NOT NULL column without one.
-pub(crate) fn ensure_column(conn: &Connection, table: &str, column: &str, def: &str) -> Result<(), String> {
+pub(crate) fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    def: &str,
+) -> Result<(), String> {
     if table_columns(conn, table)?.iter().any(|n| n == column) {
         return Ok(());
     }
@@ -64,7 +69,8 @@ pub(crate) fn init_db(conn: &mut Connection, owner_token: Option<&str>) -> Resul
             [owner_id],
         )
         .map_err(|e| e.to_string())?;
-        tx.execute_batch("DROP TABLE rows_v1;").map_err(|e| e.to_string())?;
+        tx.execute_batch("DROP TABLE rows_v1;")
+            .map_err(|e| e.to_string())?;
     } else if legacy_v2 {
         // token_hash is UNIQUE, which SQLite can't DROP COLUMN away — rebuild
         // the table instead, keeping ids so rows.account_id stays valid.
@@ -105,7 +111,12 @@ pub(crate) fn init_db(conn: &mut Connection, owner_token: Option<&str>) -> Resul
     ensure_column(&tx, "accounts", "grant_rev", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&tx, "accounts", "password_hash", "TEXT")?;
     ensure_column(&tx, "accounts", "totp_secret", "TEXT")?;
-    ensure_column(&tx, "accounts", "totp_confirmed", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(
+        &tx,
+        "accounts",
+        "totp_confirmed",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     ensure_column(&tx, "accounts", "google_email", "TEXT")?;
     ensure_column(&tx, "passkeys", "label", "TEXT")?;
     tx.commit().map_err(|e| e.to_string())
@@ -134,8 +145,9 @@ fn upsert_owner(conn: &Connection, token: &str) -> rusqlite::Result<i64> {
          ON CONFLICT(name) DO NOTHING",
         params![OWNER, now_ms()],
     )?;
-    let id: i64 =
-        conn.query_row("SELECT id FROM accounts WHERE name = ?1", [OWNER], |r| r.get(0))?;
+    let id: i64 = conn.query_row("SELECT id FROM accounts WHERE name = ?1", [OWNER], |r| {
+        r.get(0)
+    })?;
     let h = token_hash(token);
     // A pre-tokens-table migration may have imported this same credential with
     // label 'migrated'; claim it as the env token instead of duplicating it.

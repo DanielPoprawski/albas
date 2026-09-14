@@ -87,12 +87,24 @@
      Was the app's third literal "fill" shade before the legacy vocabulary
      migration; kept as its own token since it isn't equal to any other. */
   --t-subtle-strong: #e9ebee;
+  /* Half a step: the hover/open wash of a list row and the ground of the
+     drawer or panel that opens from it (Habits rows, the search palette).
+     Lighter than --t-subtle so a row can still show `bg-subtle` chips. */
+  --t-surface-hover: #fafafb;
 
   /* Accent */
   --t-accent: #a855f7;
   --t-accent-hover: #9333ea;
   --t-accent-deep: #7e22ce;
   --t-accent-tint: #faf5ff;
+  /* Secondary accent: the accent pulled toward the ink. Structural chrome
+     (resize dividers, month arrows, the search glyph and its key badge)
+     that should read as "ours" without competing with the accent proper. */
+  --t-accent-2: color-mix(in srgb, var(--t-accent) 55%, var(--t-ink));
+  --t-on-accent-2: #ffffff;
+  /* The importance star: amber fill, darker amber outline. */
+  --t-star: var(--t-cat-amber);
+  --t-star-line: var(--t-cat-amber-ink);
 
   /* Text */
   --t-ink: #1a202c;
@@ -198,6 +210,9 @@
   --t-shadow-pop: 0 2px 0.5rem rgb(15 23 42 / 0.08);
   /* The glow under the splash's primary button — follows a custom accent. */
   --t-shadow-accent: 0 0.25rem 1rem color-mix(in srgb, var(--t-accent) 30%, transparent);
+  /* A soft accent hairline (a hovered search bar, a notice's top rule).
+     Mixed from the accent so a custom accent colour carries it along. */
+  --t-accent-line: color-mix(in srgb, var(--t-accent) 45%, var(--t-surface));
 
   /* shadcn's components read --radius directly, not through @theme. */
   --radius: 0;
@@ -244,6 +259,7 @@
   --t-border-subtle: #23262d;
   --t-icon-idle: #525862;
   --t-subtle: #1e2127;
+  --t-surface-hover: #1b1e24;
 
   /* Accent. Nudged lighter than the light theme's #a855f7 so it clears text
      contrast against a dark card, while staying the same purple.
@@ -256,6 +272,12 @@
   /* The selected/hover wash behind accent text. Light's #faf5ff is a white
      tinted purple; this is the page tinted purple by the same small amount. */
   --t-accent-tint: #241a33;
+  /* On dark the ink is light, so mixing toward it would wash the accent out;
+     mix toward the surface instead for a deeper, still-purple chrome. */
+  --t-accent-2: color-mix(in srgb, var(--t-accent) 70%, var(--t-surface));
+  --t-on-accent-2: #ffffff;
+  --t-star: var(--t-cat-amber);
+  --t-star-line: var(--t-cat-amber-ink);
 
   /* Text. Slightly off-white rather than #fff — full white on a near-black
      surface haloes at 11–0.8125rem, which is most of this app's type. */
@@ -370,11 +392,17 @@
   --color-line-strong: var(--t-border-strong);
   --color-subtle: var(--t-subtle);
   --color-subtle-strong: var(--t-subtle-strong);
+  --color-surface-hover: var(--t-surface-hover);
+  --color-accent-line: var(--t-accent-line);
 
   --color-accent: var(--t-accent);
   --color-accent-hover: var(--t-accent-hover);
   --color-accent-deep: var(--t-accent-deep);
   --color-accent-tint: var(--t-accent-tint);
+  --color-accent-2: var(--t-accent-2);
+  --color-on-accent-2: var(--t-on-accent-2);
+  --color-star: var(--t-star);
+  --color-star-line: var(--t-star-line);
 
   --color-ink: var(--t-ink);
   --color-ink-secondary: var(--t-ink-secondary);
@@ -506,6 +534,10 @@
 }
 
 @theme {
+  /* The one desktop density step between phone (`md`, 768px) and full
+     width: below 1100px the Habits rows drop their stats and tags. */
+  --breakpoint-wide: 68.75rem;
+
   /* Named spacing aliases (`px-sm`, `gap-xs`, `mb-md`) used alongside
      Tailwind's numeric scale. */
   --spacing-xs: 0.25rem;
@@ -559,6 +591,13 @@
    0.5px at this font size, so this is a pure consolidation, no visual delta. */
 @utility micro-label {
   @apply text-xs font-bold uppercase tracking-wider text-ink-muted;
+}
+
+/* Today's cell or column in every calendar view: a 2px accent ring drawn
+   inside the box so it never disturbs the grid's hairlines. px on purpose —
+   it's a hairline, and 2px stays 2px at every text size. */
+@utility today-cell {
+  box-shadow: inset 0 0 0 2px var(--t-accent);
 }
 
 /* The Card surface: white ground, hairline border. */
@@ -691,11 +730,13 @@
     -webkit-appearance: none;
   }
 
-  /* Search-match highlight (`Highlighted.tsx`) — the accent tint, not a
-     literal yellow, so it reads as "this app's" rather than a browser default. */
+  /* Search-match highlight (`Highlighted.tsx`) — the accent tint and deep
+     purple, not a literal yellow, so it reads as "this app's" rather than a
+     browser default. Bold, because a fuzzy match scatters single letters. */
   mark {
     background: var(--t-selection);
-    color: inherit;
+    color: var(--t-selection-ink);
+    font-weight: 700;
   }
 
   body {
@@ -917,5 +958,18 @@ html.qr-scanning #root {
     opacity: 1;
     transform: none;
     max-height: 15rem;
+  }
+}
+
+/* The search palette opening: a short drop-in from just above its resting
+   place, eased out so it settles rather than bounces. */
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.375rem) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }

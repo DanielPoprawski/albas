@@ -39,3 +39,6 @@ src-tauri/gen/android/keystore.properties
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Design handoff mockups (reference only, never shipped)
+design_handoff_*/

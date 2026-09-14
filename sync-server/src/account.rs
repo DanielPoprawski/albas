@@ -1,11 +1,15 @@
 //! Self-service account deletion and export.
 
-use axum::{extract::State, http::{HeaderMap, StatusCode}, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use crate::{account_for, password, AppState, Change};
+use crate::{account_for, delete_account_rows, password, AppState, Change};
 
 #[derive(Deserialize)]
 pub(crate) struct DeleteAccountReq {
@@ -24,29 +28,16 @@ pub(crate) async fn self_delete_account(
         .conn
         .lock()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let account_id = account_for(&guard, &headers)
-        .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized".into()))?;
+    let account_id =
+        account_for(&guard, &headers).ok_or((StatusCode::UNAUTHORIZED, "Unauthorized".into()))?;
     password::verify_account_password(&guard, account_id, &body.password)?;
     let tx = guard
         .transaction()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let steps = [
-        "UPDATE accounts SET grant_rev = grant_rev + 1
-         WHERE id IN (SELECT grantee_id FROM shares WHERE owner_id = ?1)",
-        "DELETE FROM shares WHERE owner_id = ?1 OR grantee_id = ?1",
-        "DELETE FROM rows WHERE account_id = ?1",
-        "DELETE FROM tokens WHERE account_id = ?1",
-        "DELETE FROM passkeys WHERE account_id = ?1",
-        "DELETE FROM auth_failures WHERE account_id = ?1",
-        "DELETE FROM totp_used WHERE account_id = ?1",
-        "DELETE FROM recovery_codes WHERE account_id = ?1",
-        "DELETE FROM accounts WHERE id = ?1",
-    ];
-    for sql in steps {
-        tx.execute(sql, [account_id])
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    }
-    tx.commit().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    delete_account_rows(&tx, account_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    tx.commit()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -58,7 +49,10 @@ pub(crate) async fn account_export(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, StatusCode> {
-    let guard = state.conn.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let guard = state
+        .conn
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let account_id = account_for(&guard, &headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let (name, created_at): (String, i64) = guard
         .query_row(
@@ -82,6 +76,7 @@ pub(crate) async fn account_export(
                     .unwrap_or(serde_json::Value::Null),
                 updated_at: r.get(3)?,
                 deleted: r.get::<_, i64>(4)? != 0,
+                seq: 0,
             })
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())

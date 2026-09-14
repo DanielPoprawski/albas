@@ -65,7 +65,10 @@ use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tower_governor::{governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer};
+use tower_governor::{
+    errors::GovernorError, governor::GovernorConfigBuilder, key_extractor::KeyExtractor,
+    GovernorLayer,
+};
 
 pub(crate) use schema::init_db;
 
@@ -93,11 +96,15 @@ CREATE TABLE IF NOT EXISTS accounts (
   google_email   TEXT
 );
 CREATE TABLE IF NOT EXISTS tokens (
-  id         INTEGER PRIMARY KEY,
-  account_id INTEGER NOT NULL REFERENCES accounts(id),
-  token_hash TEXT    NOT NULL UNIQUE,
-  label      TEXT    NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL
+  id           INTEGER PRIMARY KEY,
+  account_id   INTEGER NOT NULL REFERENCES accounts(id),
+  token_hash   TEXT    NOT NULL UNIQUE,
+  label        TEXT    NOT NULL DEFAULT '',
+  created_at   INTEGER NOT NULL,
+  -- Sliding 90-day expiry (see `account_for`). Databases from before these
+  -- columns get them from `ensure_token_columns`, backfilled to 0 = expired.
+  expires_at   INTEGER NOT NULL DEFAULT 0,
+  last_used_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS passkeys (
   id           INTEGER PRIMARY KEY,
@@ -212,6 +219,11 @@ struct Change {
     payload: serde_json::Value,
     updated_at: i64,
     deleted: bool,
+    /// Server sequence number, set on rows a pull returns so a client can
+    /// resume just before one it could not apply. Ignored on a push (the
+    /// server assigns it), and absent from older clients' requests.
+    #[serde(default)]
+    seq: i64,
 }
 
 /// A row belonging to another account that shared it with this one.
@@ -294,7 +306,6 @@ pub(crate) struct AccountDetail {
     pub(crate) google_email: Option<String>,
 }
 
-
 fn main() -> std::process::ExitCode {
     // Subcommands run synchronously against the database file and never
     // start the server: `admin` is the operator CLI (see `admin.rs`), `health`
@@ -349,14 +360,18 @@ async fn serve() {
         Ok(other) => panic!("ALBAS_SYNC_SIGNUPS must be 'open' or 'invite', not '{other}'"),
     };
     let webauthn = passkey::build_webauthn().expect("failed to configure passkeys");
-    let assetlinks = std::env::var("ALBAS_SYNC_ASSETLINKS").ok().filter(|s| !s.trim().is_empty());
+    let assetlinks = std::env::var("ALBAS_SYNC_ASSETLINKS")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
     let google = google::GoogleConfig::from_env().expect("failed to configure Google sign-in");
 
     let mut conn = Connection::open(&db_path).expect("failed to open database");
-    conn.pragma_update(None, "journal_mode", "WAL").expect("WAL");
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .expect("WAL");
     // The admin CLI, `sqlite3` and Litestream share this file. Wait out a
     // short write lock instead of failing the request with SQLITE_BUSY.
-    conn.busy_timeout(Duration::from_secs(5)).expect("busy_timeout");
+    conn.busy_timeout(Duration::from_secs(5))
+        .expect("busy_timeout");
     init_db(&mut conn, owner_token.as_deref()).expect("failed to initialise database");
 
     let n_accounts: i64 = conn
@@ -384,27 +399,24 @@ async fn serve() {
     // unauthenticated caller can hammer: login/register (credential guessing
     // and account-name enumeration), TOTP (code guessing — the per-account
     // lockout in `lockout.rs` is the second, tighter layer under this one),
-    // and the app-session/Google handoffs (nonce/ticket guessing). `/sync`
-    // and the rest need no IP limit — they already require a valid bearer
-    // token, which is the actual scarce resource there.
+    // and the Google handoff (ticket guessing). `/sync` and the rest need no
+    // IP limit — they already require a valid bearer token, which is the
+    // actual scarce resource there.
     //
-    // `SmartIpKeyExtractor` reads X-Forwarded-For / X-Real-IP / Forwarded (in
-    // that order) and falls back to the TCP peer address — nginx sits in
-    // front of every deployment and sets X-Real-IP (see nginx/tls.conf), so
-    // this keys on the real client, not the proxy, in production, while still
-    // working (via the peer fallback) against a bare `cargo run`.
-    let governor_conf = Arc::new(
-        GovernorConfigBuilder::default()
-            .key_extractor(SmartIpKeyExtractor)
-            .per_second(6) // 1 token every 6s => 10/min sustained
-            .burst_size(20)
-            .finish()
-            .expect("valid governor config"),
-    );
-    // governor's per-key state never shrinks on its own; without this a
-    // long-running server accumulates one entry per distinct IP forever.
-    {
-        let limiter = governor_conf.limiter().clone();
+    // A per-IP limiter allowing one request every `seconds_per_token` seconds
+    // sustained, with `burst` in hand. Also starts the sweep that keeps its
+    // per-key table from growing by one entry per distinct IP forever. (A
+    // closure, not a fn: the config's concrete type is private to the crate.)
+    let governor = |seconds_per_token: u64, burst: u32| {
+        let conf = Arc::new(
+            GovernorConfigBuilder::default()
+                .key_extractor(RealIpKeyExtractor)
+                .per_second(seconds_per_token)
+                .burst_size(burst)
+                .finish()
+                .expect("valid governor config"),
+        );
+        let limiter = conf.limiter().clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(300));
             loop {
@@ -412,7 +424,17 @@ async fn serve() {
                 limiter.retain_recent();
             }
         });
-    }
+        conf
+    };
+    // 10/min sustained with a burst of 20 — mirrored by nginx's `auth` zone.
+    let auth_limit = governor(6, 20);
+    // The app-session handoff is polled by design (`useBrowserSignIn` asks
+    // every few seconds for up to five minutes), so it gets its own, looser
+    // bucket: sharing the auth one let a single pending sign-in drain the
+    // budget the browser on the same IP needed for `/login/password`. The
+    // nonce is 256 random bits, so the looser limit costs nothing against
+    // guessing. Mirrored by nginx's `poll` zone.
+    let poll_limit = governor(2, 30);
 
     let rate_limited = Router::new()
         .route("/register/start", post(passkey::register_start))
@@ -424,21 +446,34 @@ async fn serve() {
         .route("/totp", get(totp::totp_status).delete(totp::disable_totp))
         .route("/totp/enroll", post(totp::enroll_start))
         .route("/totp/confirm", post(totp::enroll_confirm))
-        .route("/app-session", post(app_session::create))
-        .route("/app-session/claim", post(app_session::claim))
-        .route("/app-session/:nonce", get(app_session::poll))
         .route("/auth/google/start", get(google::start))
         .route("/auth/google/callback", get(google::callback))
         .route("/auth/google/session/:ticket", get(google::session))
-        .layer(GovernorLayer { config: governor_conf });
+        .layer(GovernorLayer { config: auth_limit });
+    let polled = Router::new()
+        .route("/app-session", post(app_session::create))
+        .route("/app-session/claim", post(app_session::claim))
+        .route("/app-session/:nonce", get(app_session::poll))
+        .layer(GovernorLayer { config: poll_limit });
 
     let app = Router::new()
         .merge(rate_limited)
+        .merge(polled)
+        // axum's `Json` extractor stops at 2 MB by default. A device's first
+        // push after sign-in is its whole history in one request, so match
+        // nginx's `client_max_body_size` instead of 413-ing that device forever.
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
         .route("/health", get(|| async { "ok" }))
         .route("/sync", post(sync::sync))
         .route("/shares", get(shares::shares_get))
-        .route("/shares/:name", put(shares::shares_put).delete(shares::shares_delete))
-        .route("/tokens", get(tokens::tokens_list).delete(tokens::tokens_delete_others))
+        .route(
+            "/shares/:name",
+            put(shares::shares_put).delete(shares::shares_delete),
+        )
+        .route(
+            "/tokens",
+            get(tokens::tokens_list).delete(tokens::tokens_delete_others),
+        )
         .route("/tokens/current", delete(tokens::tokens_delete_current))
         .route("/tokens/:id", delete(tokens::tokens_delete_one))
         .route("/account", delete(account::self_delete_account))
@@ -465,6 +500,39 @@ async fn serve() {
     )
     .await
     .expect("serve");
+}
+
+/// Largest request body accepted, in bytes. Keep equal to
+/// `client_max_body_size` in nginx/tls.conf — whichever is smaller wins.
+const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
+
+/// Rate-limit key: the client IP as nginx reports it in `X-Real-IP` (which
+/// it *sets*, overwriting anything the client sent — see nginx/tls.conf),
+/// falling back to the TCP peer for a bare `cargo run`. Deliberately not
+/// tower_governor's `SmartIpKeyExtractor`: that prefers the *first*
+/// `X-Forwarded-For` entry, and nginx appends to whatever XFF the client
+/// already carried, so a request with a made-up XFF got a fresh bucket every
+/// time. The trade-off is that a client talking to the server directly,
+/// with no proxy in front, can spoof `X-Real-IP` — the README makes the TLS
+/// proxy mandatory for exactly this kind of reason.
+#[derive(Clone)]
+struct RealIpKeyExtractor;
+
+impl KeyExtractor for RealIpKeyExtractor {
+    type Key = std::net::IpAddr;
+
+    fn extract<T>(&self, req: &axum::http::Request<T>) -> Result<Self::Key, GovernorError> {
+        req.headers()
+            .get("x-real-ip")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse().ok())
+            .or_else(|| {
+                req.extensions()
+                    .get::<axum::extract::ConnectInfo<SocketAddr>>()
+                    .map(|c| c.0.ip())
+            })
+            .ok_or(GovernorError::UnableToExtractKey)
+    }
 }
 
 /// Reads a token env var, treating empty as unset and refusing weak values.
@@ -501,16 +569,25 @@ pub(crate) fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-
 /// Mints a fresh bearer token for an account and stores its hash. Starts with
 /// the full 90-day sliding window (see `account_for`, which extends it).
-pub(crate) fn mint_token(conn: &Connection, account_id: i64, label: &str) -> rusqlite::Result<String> {
+pub(crate) fn mint_token(
+    conn: &Connection,
+    account_id: i64,
+    label: &str,
+) -> rusqlite::Result<String> {
     let token = random_token();
     let now = now_ms();
     conn.execute(
         "INSERT INTO tokens (account_id, token_hash, label, created_at, expires_at, last_used_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?4)",
-        params![account_id, token_hash(&token), label, now, now + TOKEN_TTL_MS],
+        params![
+            account_id,
+            token_hash(&token),
+            label,
+            now,
+            now + TOKEN_TTL_MS
+        ],
     )?;
     Ok(token)
 }
@@ -594,15 +671,19 @@ pub(crate) const NAME_RULE: &str = "account names are 1-64 characters: letters, 
 
 /// Resolves an account name, `NotFound` when there is no such account.
 pub(crate) fn account_id(conn: &Connection, name: &str) -> Result<i64, AdminError> {
-    conn.query_row("SELECT id FROM accounts WHERE name = ?1", [name], |r| r.get(0))
-        .optional()?
-        .ok_or(AdminError::NotFound)
+    conn.query_row("SELECT id FROM accounts WHERE name = ?1", [name], |r| {
+        r.get(0)
+    })
+    .optional()?
+    .ok_or(AdminError::NotFound)
 }
-
 
 /// Creates a token-only account and mints its first bearer token, returned in
 /// plaintext exactly once — only the hash is stored (`mint_token`).
-pub(crate) fn create_account_db(conn: &Connection, name: &str) -> Result<(i64, String), AdminError> {
+pub(crate) fn create_account_db(
+    conn: &Connection,
+    name: &str,
+) -> Result<(i64, String), AdminError> {
     let name = name.trim();
     if !name_ok(name) {
         return Err(AdminError::Invalid(NAME_RULE));
@@ -613,7 +694,9 @@ pub(crate) fn create_account_db(conn: &Connection, name: &str) -> Result<(i64, S
     ) {
         Ok(_) => {}
         Err(e) if is_unique_violation(&e) => {
-            return Err(AdminError::Conflict("an account with that name already exists"))
+            return Err(AdminError::Conflict(
+                "an account with that name already exists",
+            ))
         }
         Err(e) => return Err(e.into()),
     }
@@ -625,7 +708,9 @@ pub(crate) fn create_account_db(conn: &Connection, name: &str) -> Result<(i64, S
 pub(crate) fn name_ok(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Every account with its tokens, passkeys and row count inline. One query
@@ -639,7 +724,15 @@ pub(crate) fn list_accounts_db(conn: &Connection) -> Result<Vec<AccountDetail>, 
     #[allow(clippy::type_complexity)]
     let accounts: Vec<(i64, String, i64, i64, bool, bool, Option<String>)> = stmt
         .query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
         })?
         .collect::<rusqlite::Result<_>>()?;
 
@@ -663,8 +756,11 @@ pub(crate) fn list_accounts_db(conn: &Connection) -> Result<Vec<AccountDetail>, 
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        let row_count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM rows WHERE account_id = ?1", [id], |r| r.get(0))?;
+        let row_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM rows WHERE account_id = ?1",
+            [id],
+            |r| r.get(0),
+        )?;
         out.push(AccountDetail {
             id,
             name,
@@ -688,6 +784,16 @@ pub(crate) fn list_accounts_db(conn: &Connection) -> Result<Vec<AccountDetail>, 
 /// that identify them are deleted.
 pub(crate) fn delete_account_db(conn: &Connection, name: &str) -> Result<(), AdminError> {
     let id = account_id(conn, name)?;
+    delete_account_rows(conn, id)?;
+    Ok(())
+}
+
+/// The one list of everything anchored to an account, shared by the admin
+/// CLI and self-service deletion (`account.rs`). Nothing may be left behind:
+/// `accounts.id` is a plain INTEGER PRIMARY KEY, so a later account can reuse
+/// the number and would inherit any lockout counters, spent TOTP steps,
+/// recovery codes or claimed sign-in sessions still keyed on it.
+pub(crate) fn delete_account_rows(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     let steps = [
         // Whoever was *receiving* shares from this account must rebuild.
         "UPDATE accounts SET grant_rev = grant_rev + 1
@@ -696,6 +802,10 @@ pub(crate) fn delete_account_db(conn: &Connection, name: &str) -> Result<(), Adm
         "DELETE FROM rows WHERE account_id = ?1",
         "DELETE FROM tokens WHERE account_id = ?1",
         "DELETE FROM passkeys WHERE account_id = ?1",
+        "DELETE FROM auth_failures WHERE account_id = ?1",
+        "DELETE FROM totp_used WHERE account_id = ?1",
+        "DELETE FROM recovery_codes WHERE account_id = ?1",
+        "DELETE FROM app_sessions WHERE account_id = ?1",
         "DELETE FROM accounts WHERE id = ?1",
     ];
     for sql in steps {
@@ -708,22 +818,33 @@ pub(crate) fn delete_account_db(conn: &Connection, name: &str) -> Result<(), Adm
 /// account by name at boot, so renaming it away would leave `ALBAS_SYNC_TOKEN`
 /// recreating an empty `owner`, and renaming onto the name would hand the env
 /// token's identity to another account.
-pub(crate) fn rename_account_db(conn: &Connection, name: &str, new_name: &str) -> Result<(), AdminError> {
+pub(crate) fn rename_account_db(
+    conn: &Connection,
+    name: &str,
+    new_name: &str,
+) -> Result<(), AdminError> {
     let new_name = new_name.trim();
     if !name_ok(new_name) {
         return Err(AdminError::Invalid(NAME_RULE));
     }
     if name == OWNER || new_name == OWNER {
-        return Err(AdminError::Conflict("the 'owner' account cannot be renamed to or from"));
+        return Err(AdminError::Conflict(
+            "the 'owner' account cannot be renamed to or from",
+        ));
     }
     let id = account_id(conn, name)?;
     if new_name == name {
         return Ok(());
     }
-    match conn.execute("UPDATE accounts SET name = ?1 WHERE id = ?2", params![new_name, id]) {
+    match conn.execute(
+        "UPDATE accounts SET name = ?1 WHERE id = ?2",
+        params![new_name, id],
+    ) {
         Ok(_) => {}
         Err(e) if is_unique_violation(&e) => {
-            return Err(AdminError::Conflict("an account with that name already exists"))
+            return Err(AdminError::Conflict(
+                "an account with that name already exists",
+            ))
         }
         Err(e) => return Err(e.into()),
     }
@@ -742,7 +863,11 @@ pub(crate) fn rename_account_db(conn: &Connection, name: &str, new_name: &str) -
 /// Google link: nothing can mint a token for an *existing* account, so that
 /// account would be unrecoverable. Deleting the whole account is the escape
 /// hatch when that is really meant.
-pub(crate) fn delete_passkey_db(conn: &Connection, name: &str, passkey_id: i64) -> Result<(), AdminError> {
+pub(crate) fn delete_passkey_db(
+    conn: &Connection,
+    name: &str,
+    passkey_id: i64,
+) -> Result<(), AdminError> {
     let account = account_id(conn, name)?;
     let exists: Option<i64> = conn
         .query_row(
@@ -798,7 +923,11 @@ pub(crate) fn label_passkey_db(
 
 /// Revokes one token — the remote "sign that device out". The device's local
 /// data is untouched; its next `/sync` just gets a 401.
-pub(crate) fn revoke_token_db(conn: &Connection, name: &str, token_id: i64) -> Result<(), AdminError> {
+pub(crate) fn revoke_token_db(
+    conn: &Connection,
+    name: &str,
+    token_id: i64,
+) -> Result<(), AdminError> {
     let n = conn.execute(
         "DELETE FROM tokens WHERE id = ?1 AND account_id = (SELECT id FROM accounts WHERE name = ?2)",
         params![token_id, name],
@@ -833,7 +962,10 @@ pub(crate) fn clear_password_db(conn: &Connection, name: &str) -> Result<(), Adm
             "the password is the account's only credential; a passkey or Google link must remain",
         ));
     }
-    conn.execute("UPDATE accounts SET password_hash = NULL WHERE id = ?1", [id])?;
+    conn.execute(
+        "UPDATE accounts SET password_hash = NULL WHERE id = ?1",
+        [id],
+    )?;
     Ok(())
 }
 
@@ -850,7 +982,6 @@ pub(crate) fn clear_totp_db(conn: &Connection, name: &str) -> Result<(), AdminEr
     }
     Ok(())
 }
-
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -916,7 +1047,10 @@ pub(crate) fn set_share_db(
             params![owner, grantee, calendar as i64, todos as i64],
         )?;
     }
-    conn.execute("UPDATE accounts SET grant_rev = grant_rev + 1 WHERE id = ?1", [grantee])?;
+    conn.execute(
+        "UPDATE accounts SET grant_rev = grant_rev + 1 WHERE id = ?1",
+        [grantee],
+    )?;
     Ok(())
 }
 

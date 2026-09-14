@@ -71,6 +71,9 @@ export interface Persistence {
   setCompletion(todoId: string, date: string, value: number): void;
   saveEvent(e: CalendarEvent): void;
   deleteEvent(id: string): void;
+  /** Settings › Danger zone wipes — one write each, so a wipe syncs as one batch of tombstones. */
+  deleteAllEvents(): void;
+  deleteAllTodos(kind: 'task' | 'habit'): void;
   saveCategory(c: Category): void;
   deleteCategory(id: string): void;
   setSetting(key: string, value: string): void;
@@ -79,6 +82,8 @@ export interface Persistence {
   deletePeriod(id: string): void;
   /** Tauri only: one-time import of legacy localStorage data. No-op in browser. */
   importLegacy(tasks: LegacyTask[], todos: Todo[]): Promise<void>;
+  /** Resolves once every write queued so far has reached the store. */
+  flush(): Promise<void>;
 }
 
 export function inTauri(): boolean {
@@ -146,11 +151,14 @@ function makeTauriPersistence(): Persistence {
     setCompletion: (todoId, date, value) => enqueue('set_completion', () => ipc.setCompletion(todoId, date, value)),
     saveEvent: (e) => enqueue('save_event', () => ipc.saveEvent(e)),
     deleteEvent: (id) => enqueue('delete_event', () => ipc.deleteEvent(id)),
+    deleteAllEvents: () => enqueue('delete_all_events', () => ipc.deleteAllEvents()),
+    deleteAllTodos: (kind) => enqueue('delete_all_todos', () => ipc.deleteAllTodos(kind)),
     saveCategory: (c) => enqueue('save_category', () => ipc.saveCategory(categoryToRow(c))),
     deleteCategory: (id) => enqueue('delete_category', () => ipc.deleteCategory(id)),
     setSetting: (key, value) => enqueue('set_setting', () => ipc.setSetting(key, value)),
     deleteTask: (id) => enqueue('delete_task', () => ipc.deleteTask(id)),
     deletePeriod: (id) => enqueue('delete_period', () => ipc.deletePeriod(id)),
+    flush: () => queue.then(() => undefined),
     async importLegacy(tasks, todos) {
       await ipc.importLegacy(tasks, todos);
     },
@@ -245,6 +253,14 @@ function makeLocalPersistence(): Persistence {
       state.events = state.events.filter((e) => e.id !== id);
       flush();
     },
+    deleteAllEvents() {
+      state.events = [];
+      flush();
+    },
+    deleteAllTodos(kind) {
+      state.todos = state.todos.filter((t) => (t.schedule.type === 'once') !== (kind === 'task'));
+      flush();
+    },
     saveCategory(c) {
       state.categories = upsert(state.categories, c);
       flush();
@@ -266,6 +282,7 @@ function makeLocalPersistence(): Persistence {
       flush();
     },
     async importLegacy() {},
+    async flush() {},
   };
 }
 
