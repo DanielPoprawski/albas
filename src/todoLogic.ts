@@ -1,4 +1,5 @@
 import { addDays, addMonths, diffDays, fmt, monthsBetween, parse, rotateWeek, shortDate, weekOf, hhmm } from './dates';
+import { shortTime } from './eventLogic';
 import type { FirstDayOfWeek, Repeat, Todo } from './types';
 
 export function isRepeating(todo: Todo): boolean {
@@ -298,6 +299,40 @@ export function isOverdue(todo: Todo, now: Date = new Date()): boolean {
   const todayStr = fmt(now);
   if (todo.dueDate !== todayStr) return todo.dueDate < todayStr;
   return todo.time != null && todo.time < hhmm(now);
+}
+
+/**
+ * The day a checkbox click on a one-time to-do logs to. Done → the day it was
+ * logged on, so the click actually clears it; not done → today, whatever the
+ * due day was. Logging on the due day would backdate an overdue tick and
+ * drop the row from the dashboard under the pointer (`dashboardTasks` keeps
+ * only today's completions in view). Every task surface uses this one rule.
+ */
+export function completionDay(todo: Todo, todayStr: string): string {
+  return doneDate(todo) ?? todayStr;
+}
+
+export interface DueLabel {
+  text: string;
+  /** `isOverdue` — the one state that gets colour. */
+  late: boolean;
+}
+
+/**
+ * When a to-do is due, in the smallest form that still reads: "Today",
+ * "Tomorrow" or a short date; a bare time when it's today; date and time for a
+ * dated to-do with a time; null when there is nothing to say.
+ */
+export function dueLabel(todo: Todo, todayStr: string): DueLabel | null {
+  if (!todo.dueDate && !todo.time) return null;
+  const time = todo.time ? shortTime(todo.time) : '';
+  let day = '';
+  if (todo.dueDate) {
+    if (todo.dueDate === todayStr) day = time ? '' : 'Today';
+    else if (todo.dueDate === addDays(todayStr, 1)) day = 'Tomorrow';
+    else day = shortDate(todo.dueDate);
+  }
+  return { text: [day, time].filter(Boolean).join(' '), late: isOverdue(todo) };
 }
 
 /** Starred first, then by due moment, then by name so the order is stable. */

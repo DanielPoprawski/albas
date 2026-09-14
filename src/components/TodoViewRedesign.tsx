@@ -4,8 +4,8 @@ import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { fmt } from '../dates';
 import { todoKey } from '../itemKeys';
-import { GENERAL, isDone } from '../todoLogic';
-import TodoTaskRow from './todo/TodoTaskRow';
+import { byDashboardOrder, GENERAL, isDone } from '../todoLogic';
+import TaskRow from './todo/TaskRow';
 import AddModal from './AddModal';
 import QuickAddField from './QuickAddField';
 import SearchPalette from './search/SearchPalette';
@@ -22,27 +22,10 @@ const SECTION_COUNT = 'text-xs font-semibold normal-case';
 const SECTION_TOGGLE =
   'flex size-4 shrink-0 cursor-pointer items-center justify-center border border-current bg-transparent p-0 text-xs font-bold text-inherit';
 
-/** Sorting function: important first, then by due date, then by time added */
-function sortTasks(a: Todo, b: Todo): number {
-  // Important first
-  if (a.important !== b.important) {
-    return a.important ? -1 : 1;
-  }
-  // Then by due date
-  const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-  const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-  if (aDue !== bDue) {
-    return aDue - bDue;
-  }
-  // Then by time added (createdAt)
-  const aCreated = new Date(a.createdAt).getTime();
-  const bCreated = new Date(b.createdAt).getTime();
-  return aCreated - bCreated;
-}
-
 export default function TodoViewRedesign() {
   const { todos, categoriesFor, categoryById, firstDayOfWeek, hiddenCategoryIds: hiddenIds, showCompleted } = useApp();
   const categories = categoriesFor('tasks');
+  const today = fmt(new Date());
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [editingTodo, setEditingTodo] = useState<Todo | undefined>();
   /** The one row whose inline editor is open. */
@@ -63,12 +46,12 @@ export default function TodoViewRedesign() {
   const visibleActiveTasks = activeTasks.filter(isVisible);
 
   // Build sections
-  const allSectionTasks = visibleActiveTasks.slice().sort(sortTasks);
+  const allSectionTasks = visibleActiveTasks.slice().sort(byDashboardOrder);
 
   const categorySections = categories
     .filter((c) => !hiddenIds.has(c.id))
     .map((cat) => {
-      const catTasks = visibleActiveTasks.filter((t) => t.category === cat.id).sort(sortTasks);
+      const catTasks = visibleActiveTasks.filter((t) => t.category === cat.id).sort(byDashboardOrder);
       return {
         id: cat.id,
         name: cat.name,
@@ -81,11 +64,13 @@ export default function TodoViewRedesign() {
 
   // General: the uncategorised tasks get a section of their own, since no
   // category header would ever list them.
-  const generalTasks = hiddenIds.has('') ? [] : visibleActiveTasks.filter((t) => t.category === '').sort(sortTasks);
+  const generalTasks = hiddenIds.has('')
+    ? []
+    : visibleActiveTasks.filter((t) => t.category === '').sort(byDashboardOrder);
   const generalCollapsed = collapsedIds.has('');
 
   // Completed section (always last, gray header, optional)
-  const completedVisible = showCompleted ? completedTasks.filter(isVisible).sort(sortTasks) : [];
+  const completedVisible = showCompleted ? completedTasks.filter(isVisible).sort(byDashboardOrder) : [];
 
   // Selection runs over the rows in the order they are drawn, so a Shift
   // range reads top to bottom. A task drawn twice (All + its category) is
@@ -103,11 +88,13 @@ export default function TodoViewRedesign() {
           tasks.filter((t) => selection.selected.has(todoKey(t))),
           categoryById,
           firstDayOfWeek,
-          fmt(new Date()),
+          today,
         );
 
   const rowProps = (task: Todo) => ({
     task,
+    today,
+    showCategory: true,
     onEdit: () => setEditingTodo(task),
     expanded: expandedId === task.id,
     onToggleExpand: () => setExpandedId((cur) => (cur === task.id ? null : task.id)),
@@ -150,7 +137,7 @@ export default function TodoViewRedesign() {
               {/* All Tasks */}
               <div className="space-y-[0.375rem]">
                 {allSectionTasks.map((task) => (
-                  <TodoTaskRow key={task.id} {...rowProps(task)} />
+                  <TaskRow key={task.id} {...rowProps(task)} />
                 ))}
               </div>
             </div>
@@ -180,7 +167,7 @@ export default function TodoViewRedesign() {
               {!generalCollapsed && (
                 <div className="space-y-[0.375rem]">
                   {generalTasks.map((task) => (
-                    <TodoTaskRow key={task.id} {...rowProps(task)} />
+                    <TaskRow key={task.id} {...rowProps(task)} />
                   ))}
                 </div>
               )}
@@ -233,7 +220,7 @@ export default function TodoViewRedesign() {
               {!section.collapsed && (
                 <div className="space-y-[0.375rem]">
                   {section.tasks.map((task) => (
-                    <TodoTaskRow key={task.id} {...rowProps(task)} />
+                    <TaskRow key={task.id} {...rowProps(task)} />
                   ))}
                 </div>
               )}
@@ -255,7 +242,7 @@ export default function TodoViewRedesign() {
               {/* Completed Tasks */}
               <div className="space-y-[0.375rem] opacity-55">
                 {completedVisible.map((task) => (
-                  <TodoTaskRow key={task.id} {...rowProps(task)} done />
+                  <TaskRow key={task.id} {...rowProps(task)} />
                 ))}
               </div>
             </div>

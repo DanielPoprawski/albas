@@ -5,8 +5,8 @@ import { useApp } from '../../context/AppContext';
 import { repeatLabel } from '../../todoLogic';
 import type { RowClickResult } from '../bulk/useListSelection';
 import { Dot, Tag } from '../ui/tag';
-import HabitCell from './HabitCell';
-import { cycleCell, fallbackLabel, type HabitData, STRIP_DAYS, weekdayInitial } from './habitModel';
+import HabitStrip from './HabitStrip';
+import { fallbackLabel, type HabitData } from './habitModel';
 
 const STAT_LABELS: [keyof Pick<HabitData, 'currentStreak' | 'bestStreak' | 'weeklyRate'>, string, string][] = [
   ['currentStreak', 'Streak', ''],
@@ -38,11 +38,10 @@ export default function HabitRow({
   onRowClick?: (e: React.MouseEvent) => RowClickResult;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
-  const { toggleTodo, setTodoValue, categoryById, firstDayOfWeek } = useApp();
+  const { toggleTodo, categoryById, firstDayOfWeek } = useApp();
   const { todo } = habit;
   const color = colorHex(todo.colorKey);
   const category = categoryById(todo.category);
-  const onCell = (dateStr: string) => cycleCell(todo, dateStr, toggleTodo, setTodoValue);
 
   const handleClick = (e: React.MouseEvent) => {
     const result = onRowClick ? onRowClick(e) : 'plain';
@@ -113,47 +112,14 @@ export default function HabitRow({
         </div>
       </div>
 
-      <div
-        className="flex-1 min-w-0 flex flex-col items-start gap-1 max-md:basis-full max-md:order-last overflow-x-auto scrollbar-hide"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="grid gap-[0.1875rem]"
-          role="group"
-          aria-label={`${todo.name}, last ${STRIP_DAYS} days`}
-          // dynamic: one column per day of the strip
-          style={{ gridTemplateColumns: `repeat(${STRIP_DAYS}, 0.875rem)` }}
-        >
-          {habit.strip.map((cell) => (
-            <HabitCell
-              key={cell.dateStr}
-              cell={cell}
-              todo={todo}
-              color={color}
-              className="size-[0.875rem] enabled:hover:scale-120"
-              onClick={onCell}
-            />
-          ))}
-        </div>
-        <div
-          className="grid gap-[0.1875rem]"
-          aria-hidden
-          // dynamic: same columns as the strip above
-          style={{ gridTemplateColumns: `repeat(${STRIP_DAYS}, 0.875rem)` }}
-        >
-          {habit.strip.map((cell) => (
-            <span
-              key={cell.dateStr}
-              className={cn(
-                'text-[0.5625rem] leading-none uppercase text-center',
-                cell.dateStr === today ? 'text-accent font-bold' : 'text-ink-muted',
-              )}
-            >
-              {weekdayInitial(cell.dateStr)}
-            </span>
-          ))}
-        </div>
-      </div>
+      <HabitStrip
+        todo={todo}
+        cells={habit.strip}
+        color={color}
+        today={today}
+        cellClass="size-[0.875rem]"
+        className="flex-1 min-w-0 items-start max-md:basis-full max-md:order-last"
+      />
 
       <div className="flex gap-3.5 w-[11.875rem] shrink-0 max-wide:hidden">
         {STAT_LABELS.map(([key, label, suffix]) => (

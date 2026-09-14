@@ -42,17 +42,22 @@ export interface HabitData {
 export function getHabitCells(todo: Todo, firstDayOfWeek: FirstDayOfWeek, todayStr: string): HistoryCell[] {
   const offset = (parse(todayStr).getDay() - firstDayOfWeek + 7) % 7;
   const start = addDays(todayStr, -offset - (HISTORY_WEEKS - 1) * 7);
-  const cells: HistoryCell[] = [];
-  for (let i = 0; i < HISTORY_WEEKS * 7; i++) {
-    const dateStr = addDays(start, i);
-    cells.push({
-      dateStr,
-      done: isDoneOn(todo, dateStr),
-      due: isDueOn(todo, dateStr, firstDayOfWeek),
-      future: dateStr > todayStr,
-    });
-  }
-  return cells;
+  return cellsFor(
+    todo,
+    Array.from({ length: HISTORY_WEEKS * 7 }, (_, i) => addDays(start, i)),
+    firstDayOfWeek,
+    todayStr,
+  );
+}
+
+/** One cell per day of `dates`, in the given order — what every `HabitStrip` draws from. */
+export function cellsFor(todo: Todo, dates: string[], firstDayOfWeek: FirstDayOfWeek, todayStr: string): HistoryCell[] {
+  return dates.map((dateStr) => ({
+    dateStr,
+    done: isDoneOn(todo, dateStr),
+    due: isDueOn(todo, dateStr, firstDayOfWeek),
+    future: dateStr > todayStr,
+  }));
 }
 
 /** Done due days over due days, as a whole percentage; 0 when nothing was due. */
@@ -92,9 +97,9 @@ export function fallbackLabel(todo: Todo): string {
 }
 
 /**
- * What a click on a day cell means — the same semantics as the dashboard's
- * week strip (`todo/HabitsSection`): yes/no toggles, measurable counts up
- * and wraps to 0 past the target.
+ * What a click on a day cell means, on every surface (`HabitStrip` is the
+ * only caller): yes/no toggles, measurable counts up and wraps to 0 past the
+ * target.
  */
 export function cycleCell(
   todo: Todo,

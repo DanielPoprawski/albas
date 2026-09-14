@@ -2,70 +2,60 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StarButton } from '../ui/star';
 import { useApp } from '../../context/AppContext';
-import { fmt } from '../../dates';
-import { isDone, GENERAL } from '../../todoLogic';
+import { completionDay, dueLabel, GENERAL, isDone } from '../../todoLogic';
 import { colorHex } from '../../colors';
 import type { Todo } from '../../types';
 import InlineEditor from '../InlineEditor';
 import type { RowClickResult } from '../bulk/useListSelection';
 
-interface TodoTaskRowProps {
+interface TaskRowProps {
   task: Todo;
+  /** `fmt(new Date())`, computed once by the list rather than once per row. */
+  today: string;
   /** The "Advanced…" path: the full modal. */
   onEdit: (task: Todo) => void;
-  done?: boolean;
   /** Whether the inline editor is open under this row (one at a time, owned by the list). */
   expanded?: boolean;
   onToggleExpand?: () => void;
+  /**
+   * Category dot and name in the meta line. For a list that mixes categories
+   * (the To-Do page's "All"); a list already grouped by category leaves it off.
+   */
+  showCategory?: boolean;
+  /** The Edit · Delete pair at the row's end — the phone dashboard, which has no context menu. */
+  actions?: boolean;
   selected?: boolean;
   /** Ctrl/Shift selection; a `'plain'` result means the click should expand instead. */
   onRowClick?: (e: React.MouseEvent) => RowClickResult;
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** Row padding overrides for denser panels. */
+  className?: string;
 }
 
-function getDueDateLabel(task: Todo): string {
-  if (!task.dueDate) return '';
-
-  const today = fmt(new Date());
-  const tomorrow = fmt(new Date(Date.now() + 86400000));
-
-  if (task.dueDate === today) return 'Today';
-  if (task.dueDate === tomorrow) return 'Tomorrow';
-
-  // Format as "Aug 30" or similar
-  const date = new Date(task.dueDate + 'T00:00:00');
-  const month = date.toLocaleDateString('en-US', { month: 'short' });
-  const day = date.getDate();
-  return `${month} ${day}`;
-}
-
-export default function TodoTaskRow({
+/**
+ * One-time to-do, the same row on every surface: star, checkbox, name, then a
+ * meta line (category, due moment). The checkbox is the only thing that
+ * toggles done — on the day `completionDay` says — and the row itself opens
+ * the inline editor beneath it.
+ */
+export default function TaskRow({
   task,
+  today,
   onEdit,
-  done: forceDone,
   expanded = false,
   onToggleExpand,
+  showCategory = false,
+  actions = false,
   selected = false,
   onRowClick,
   onContextMenu,
-}: TodoTaskRowProps) {
+  className,
+}: TaskRowProps) {
   const { toggleTodo, updateTodo, categoryById } = useApp();
-  const done = forceDone || isDone(task);
+  const done = isDone(task);
   const hex = colorHex(task.colorKey);
-  const todayStr = fmt(new Date());
-  const dueLabel = getDueDateLabel(task);
-  const category = categoryById(task.category);
-  const categoryName = category?.name ?? GENERAL;
-
-  const handleToggleDone = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const toggleDate = done ? undefined : (task.dueDate ?? todayStr);
-    if (toggleDate) {
-      toggleTodo(task.id, toggleDate);
-    }
-  };
-
-  const handleToggleImportant = () => updateTodo(task.id, { important: !task.important });
+  const due = dueLabel(task, today);
+  const category = showCategory ? (categoryById(task.category)?.name ?? GENERAL) : null;
 
   // A plain click (no Ctrl/Shift) opens the inline editor; the modifiers
   // belong to the list's selection and never expand.
@@ -95,18 +85,20 @@ export default function TodoTaskRow({
         'group row-hover flex flex-wrap items-center gap-2.5 px-3 py-2.5 cursor-pointer',
         done && 'opacity-55',
         selected && 'bg-accent-tint',
+        className,
       )}
     >
-      {/* Star (Importance) */}
-      <StarButton important={task.important} onToggle={handleToggleImportant} />
+      <StarButton important={task.important} onToggle={() => updateTodo(task.id, { important: !task.important })} />
 
-      {/* Checkbox */}
       <button
         type="button"
         role="checkbox"
         aria-checked={done}
         aria-label={done ? `Mark "${task.name}" not done` : `Mark "${task.name}" done`}
-        onClick={handleToggleDone}
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleTodo(task.id, completionDay(task, today));
+        }}
         className="w-[1.125rem] h-[1.125rem] flex-shrink-0 border border-line-strong flex items-center justify-center cursor-pointer transition-all"
         // dynamic: the to-do's own colour
         style={{
@@ -117,27 +109,38 @@ export default function TodoTaskRow({
         {done && <Check size="0.6875rem" strokeWidth={3} className="text-on-accent" />}
       </button>
 
-      {/* Title & Meta */}
       <div className="flex-1 min-w-0">
         <p
-          className={`text-ui font-body truncate transition-all ${
-            done ? 'text-ink-muted line-through opacity-60' : 'text-ink'
-          }`}
+          className={cn('text-ui font-body truncate transition-all', done ? 'text-ink-muted line-through' : 'text-ink')}
         >
           {task.name}
         </p>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span
-            className="w-[0.4375rem] h-[0.4375rem] flex-shrink-0"
-            // dynamic: the category's colour (neutral for General)
-            style={{ backgroundColor: hex }}
-          />
-          <span className="text-meta text-ink-muted">
-            {categoryName}
-            {dueLabel && ` · ${dueLabel}`}
-          </span>
-        </div>
+        {(category || due) && (
+          <div className="flex items-center gap-1.5 mt-0.5 text-meta text-ink-muted">
+            {category && (
+              <>
+                <span
+                  className="w-[0.4375rem] h-[0.4375rem] flex-shrink-0"
+                  // dynamic: the category's colour (neutral for General)
+                  style={{ backgroundColor: hex }}
+                />
+                <span>{category}</span>
+              </>
+            )}
+            {category && due && <span>·</span>}
+            {due && (
+              <span
+                className={cn('tabular-nums', due.late && !done && 'font-bold text-danger')}
+                title={due.late && !done ? 'Overdue' : undefined}
+              >
+                {due.text}
+              </span>
+            )}
+          </div>
+        )}
       </div>
+
+      {actions && <RowActions todo={task} onEdit={onEdit} />}
 
       {/* The light editor, under the row; the modal stays the "Advanced" path. */}
       {expanded && (
@@ -165,6 +168,7 @@ export function RowActions({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => 
   return (
     <span className="flex items-center gap-xs flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           onEdit(todo);
@@ -175,6 +179,7 @@ export function RowActions({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => 
       </button>
       <span className="text-xs text-ink-muted select-none">·</span>
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           deleteTodo(todo.id);

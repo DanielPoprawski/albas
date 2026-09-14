@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { addDays, fmt } from '../../dates';
-import { doneDate, isDoneOn } from '../../todoLogic';
+import { doneDate, isDone, isDoneOn } from '../../todoLogic';
 import type { SearchItem } from '../search/types';
 
 /** A reminder preset: none, or minutes before (0 = at the time). To-dos only know on/off. */
@@ -114,8 +114,9 @@ export function useBulkActions(selectedItems: SearchItem[]) {
   );
 
   /**
-   * Mark every selected to-do done: a task on its due day (or today when it
-   * has none), a habit today. Already-done rows are left alone.
+   * Mark every selected to-do done today — a task logs on the day it was
+   * ticked, never backdated to its due day (`completionDay`), a habit on
+   * today's cell. Already-done rows are left alone.
    */
   const complete = useCallback(() => {
     const today = fmt(new Date());
@@ -123,9 +124,8 @@ export function useBulkActions(selectedItems: SearchItem[]) {
     for (const item of selectedItems) {
       if (item.kind === 'event') continue;
       const t = item.todo;
-      const date = item.kind === 'task' ? (t.dueDate ?? today) : today;
-      if (isDoneOn(t, date)) continue;
-      setTodoValue(t.id, date, t.target);
+      if (item.kind === 'task' ? isDone(t) : isDoneOn(t, today)) continue;
+      setTodoValue(t.id, today, t.target);
       n++;
     }
     setNotice(`Completed ${plural(n, 'to-do')}`);
