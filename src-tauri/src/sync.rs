@@ -40,8 +40,8 @@ pub(crate) const URL_SETTING: &str = "__sync_url";
 /// URL. A stored setting always wins, so pointing a device at a different
 /// server still works. Mirrors `DEFAULT_SYNC_URL` in `src/syncServer.ts`;
 /// note this form carries the `/sync` path, because `run` POSTs to it as-is.
-/// The API lives under `/api` because the same origin also serves the web
-/// console — nginx strips the prefix, so the routes here are unchanged.
+/// The API lives under `/api` because the same origin also serves the sign-in
+/// portal (`web/`) — nginx strips the prefix, so the routes here are unchanged.
 pub(crate) const DEFAULT_URL: &str = "https://albas.danni-dev.com/api/sync";
 /// **No longer holds the real bearer token** — see `token_store.rs`, which
 /// moved the secret itself into the OS keyring (desktop) or a separate

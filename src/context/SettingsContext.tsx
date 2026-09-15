@@ -26,7 +26,7 @@ export interface SettingsContextType {
   fontSize: FontSizeChoice;
   firstDayOfWeek: FirstDayOfWeek;
   setSetting: (key: string, value: string) => void;
-  /** Raw read of any setting, layout's included — closes CLAUDE.md TODO 2. */
+  /** Raw read of any setting, layout's included. */
   getSetting: (key: string) => string | undefined;
   /**
    * Replaces the whole settings map from a fresh store read. Only the data
@@ -36,16 +36,15 @@ export interface SettingsContextType {
   /** Owners hidden on this device (local preference, never synced). */
   hiddenOwners: string[];
   toggleOwnerHidden: (owner: string) => void;
-  /** True when sync credentials exist (passkey login or a pasted token). */
+  /** True when sync credentials exist (any sign-in method, or a pasted token). */
   signedIn: boolean;
-  /** Account name from passkey login; null for token-only setups. */
+  /** Account name from sign-in; null for token-only setups. */
   syncAccount: string | null;
   /**
-   * The bearer token this device authenticates to the sync server with, or
-   * null when signed out. Exposed so the auth-method modules
-   * (`src/authMethods/`) can call authenticated endpoints without a Tauri
-   * round-trip; passkey ceremonies still go through Rust because they need
-   * the OS authenticator.
+   * The `__sync_token` presence marker (`"1"`), or null when signed out —
+   * never the bearer itself, which stays in Rust (`token_store.rs`) and is
+   * attached by `sync_api`. The auth-method modules (`src/authMethods/`) read
+   * this only to know whether authenticated calls can be made at all.
    */
   syncToken: string | null;
   /** Welcome screen dismissed (or made moot by being signed in). */

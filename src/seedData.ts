@@ -5,8 +5,8 @@ import type { Todo } from './types';
 const today = new Date();
 const todayStr = fmt(today);
 
-// Seed demo data on the current Mon–Sun week so it lines up with the weekly tracker,
-// but never on future days.
+// Seed demo data on the current week (Sunday-first, `weekOf`'s default — the
+// dashboard re-slices by the user's first day) but never on future days.
 const weekDates = weekOf(today).filter((d) => d <= todayStr);
 const weekAgo = new Date(today);
 weekAgo.setDate(today.getDate() - 7);

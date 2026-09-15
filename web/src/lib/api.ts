@@ -153,7 +153,7 @@ export async function loginWithPassword(
   try {
     const body: Record<string, string> = { name, password };
     if (code) body.code = code;
-    if (recoveryCode) body.recovery_code = recoveryCode;
+    if (recoveryCode) body.recoveryCode = recoveryCode;
     return await post<Session>('/login/password', body);
   } catch (e) {
     if (e instanceof ApiError && e.status === 423) {
@@ -340,5 +340,3 @@ export function confirmTotp(token: string, code: string): Promise<TotpConfirmati
 export function disableTotp(token: string): Promise<void> {
   return authedRequest<void>('DELETE', '/totp', token);
 }
-
-// --- Sessions (Settings -> Sessions equivalent for the web portal) ---

@@ -6,8 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Db(pub Mutex<Connection>);
 
-/// updated_at/deleted never leave Rust: they exist for the future sync server,
-/// and the frontend only ever sees live rows.
+/// updated_at/deleted never leave Rust: they exist for sync (`sync.rs` pushes
+/// by `updated_at` and tombstones by `deleted`), and the frontend only ever
+/// sees live rows.
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -136,7 +137,8 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
                  ALTER TABLE habits ADD COLUMN time TEXT;",
             )?;
         }
-        // v4 (categorised to-dos), see the note on the version bump below.
+        // v4 (categorised to-dos): a category id and the star. v3 was a
+        // frontend-only shape change and added no columns.
         if version < 4 {
             conn.execute_batch(
                 "ALTER TABLE habits ADD COLUMN category TEXT NOT NULL DEFAULT '';

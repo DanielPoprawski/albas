@@ -573,6 +573,20 @@ pub(crate) mod tests {
             .unwrap()
     }
 
+    /// Stores a fresh set of recovery codes for the account and returns them
+    /// in the clear, as `enroll_confirm` would have.
+    pub(crate) fn issue_recovery_codes(c: &Connection, id: i64) -> Vec<String> {
+        let codes = generate_recovery_codes();
+        for code in &codes {
+            c.execute(
+                "INSERT INTO recovery_codes (account_id, code_hash, created_at) VALUES (?1, ?2, 0)",
+                params![id, hash_recovery_code(code)],
+            )
+            .unwrap();
+        }
+        codes
+    }
+
     /// A secret long enough for `totp-rs` (it refuses anything under 128
     /// bits), base32-encoded as an authenticator would receive it.
     pub(crate) fn fresh_secret() -> String {

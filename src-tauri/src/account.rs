@@ -331,8 +331,8 @@ mod tests {
     }
 
     /// The real server puts the API under `/api`, because the same origin also
-    /// serves the web console. The base must keep that prefix — dropping it
-    /// would send every ceremony to the console's routes instead.
+    /// serves the sign-in portal (`web/`). The base must keep that prefix —
+    /// dropping it would send every request to the portal's pages instead.
     #[test]
     fn base_normalisation_keeps_a_path_prefix() {
         assert_eq!(
@@ -354,8 +354,8 @@ mod tests {
 // --- Browser sign-in ---
 //
 // The ceremony runs on the public site, not in this WebView: that is what lets
-// one flow cover passkeys, password + TOTP and (later) Google OAuth, and what
-// makes iOS reachable at all, since `tauri-plugin-webauthn` has no iOS support.
+// one flow cover passkeys, password + TOTP and Google OAuth, and what keeps the
+// app free of any WebAuthn plugin (none of them covers every platform).
 //
 // The app never sees the browser's session. It opens the portal with a nonce
 // and polls until the page reports a token bound to that nonce. Deliberately
@@ -531,7 +531,7 @@ pub async fn account_login_password(
             .map(|c| c.trim().to_string())
             .filter(|c| !c.is_empty())
         {
-            body["recovery_code"] = Value::String(rc);
+            body["recoveryCode"] = Value::String(rc);
         }
         let res = ureq::post(&format!("{base}/login/password"))
             .timeout(Duration::from_secs(30))

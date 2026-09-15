@@ -45,7 +45,11 @@ export interface AuthMethodRow {
 
 /** What a method is handed to do its work. */
 export interface AuthMethodContext {
-  /** Bearer token for the sync server; null when signed out. */
+  /**
+   * Non-null when signed in (`SettingsContext.syncToken`, a presence marker).
+   * The real bearer never reaches the WebView: `apiRequest()` goes through
+   * Rust, which attaches it from `token_store`.
+   */
   token: string | null;
   /** Sync server base URL — no trailing slash, no `/sync`. */
   server: string;

@@ -55,7 +55,7 @@ export interface Todo {
   reminder: boolean;
   /**
    * Category id, empty for uncategorised. Was free text; a synced
-   * `categories` table now owns the name/colour (`AppContext#categoryById`).
+   * `categories` table now owns the name/colour (`DataContext`'s `categoryById`).
    */
   category: string;
   /** Starred. Sorts above everything else in its category. */

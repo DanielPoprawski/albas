@@ -80,11 +80,10 @@ export function accentNameOf(hex: string): CategoryAccentName | null {
 export type CategoryAccentName = keyof typeof CATEGORY_ACCENTS;
 
 /**
- * The five starter categories `AppContext` seeds into the (now managed,
- * synced) `categories` table on a fresh, never-signed-in install — see
- * `AppProvider`'s seeding effect for exactly when. Once seeded they are
- * ordinary rows the user can rename, recolour, or delete; this array is not
- * read anywhere else.
+ * The five starter categories `loadState.ts` seeds into the (managed, synced)
+ * `categories` table on a fresh, never-signed-in install — see
+ * `loadInitialState` for exactly when. Once seeded they are ordinary rows the
+ * user can rename, recolour, or delete; this array is not read anywhere else.
  */
 export const TODO_CATEGORIES: { label: string; hex: string }[] = [
   { label: 'Work', hex: CATEGORY_ACCENTS.blue.hex },

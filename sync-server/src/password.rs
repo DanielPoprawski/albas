@@ -240,8 +240,11 @@ pub(crate) async fn login_password(
         .get("code")
         .and_then(|v| v.as_str())
         .map(str::to_string);
+    // `recoveryCode` is the wire name (camelCase like everything else);
+    // `recovery_code` is what clients before 2026-09-15 sent.
     let recovery_code = body
-        .get("recovery_code")
+        .get("recoveryCode")
+        .or_else(|| body.get("recovery_code"))
         .and_then(|v| v.as_str())
         .map(str::to_string);
     let kek = state.kek;
@@ -577,5 +580,21 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(ok["name"], "tess");
+
+        // A recovery code stands in for the TOTP code, under the camelCase
+        // wire name and, for clients from before the rename, the old one.
+        let codes = {
+            let c = state.conn.lock().unwrap();
+            totp::tests::issue_recovery_codes(&c, auth.account_id)
+        };
+        for (field, code) in [("recoveryCode", &codes[0]), ("recovery_code", &codes[1])] {
+            let ok = login(
+                &state,
+                json!({ "name": "tess", "password": "CorrectHorseBattery1", field: code }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(ok["name"], "tess", "{field}");
+        }
     }
 }

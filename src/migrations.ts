@@ -105,8 +105,8 @@ export function taskToTodo(t: LegacyTask): Todo {
 }
 
 /**
- * Best-effort, cheap-to-keep migration: `Todo.category` used to be free text
- * (pre-Phase K). Once `AppContext` has a `categories` list (seeded or
+ * Best-effort, cheap-to-keep migration: `Todo.category` used to be free text.
+ * Given the store's `categories` list (seeded by `loadState.ts` or
  * user-made), a stored value that already names one of them by id is left
  * alone; one that still holds an old free-text name gets pointed at the
  * matching category's id (case-insensitive); anything else — including a

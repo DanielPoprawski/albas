@@ -372,7 +372,7 @@ export function byDashboardOrder(a: Todo, b: Todo): number {
 }
 
 export interface TaskGroup {
-  /** Category id, or '' for uncategorised. Resolve the name via `AppContext#categoryById`. */
+  /** Category id, or '' for uncategorised. Resolve the name via `DataContext`'s `categoryById`. */
   category: string;
   todos: Todo[];
 }

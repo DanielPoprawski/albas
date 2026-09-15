@@ -4,11 +4,8 @@
  * in step by hand (`sync-server/src/password.rs`) since there's no build
  * step that shares Rust and TS.
  *
- * `src/syncServer.ts` re-exports these so existing imports keep working.
- *
- * TODO: `web/src/lib` should import `NAME_PATTERN` / `MIN_PASSWORD_LENGTH` /
- * `MAX_PASSWORD_LENGTH` from here instead of keeping its own copies — not
- * wired up yet (tracked separately from the desktop-frontend half of Phase D).
+ * `src/syncServer.ts` re-exports these so existing imports keep working;
+ * `web/src/components/auth/RegisterForm.tsx` imports them directly.
  */
 
 /** The account-name rule, mirroring `name_ok()` on the server. */

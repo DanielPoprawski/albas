@@ -229,6 +229,5 @@ export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): Wee
       };
     });
     // `days` is rebuilt each render from currentMonth, so key on that instead
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks]);
 }

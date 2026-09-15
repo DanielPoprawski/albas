@@ -251,7 +251,8 @@ tokens era gets its credentials moved into the `tokens` table, same guarantee.
 
 An account can expose parts of its data to another account, **read-only**.
 Grants are per table group — `calendar` (events, periods) and `todos` (to-dos
-*and* habits: they live in the same table, so they share a toggle). The app manages grants in Settings →
+*and* habits, with their completions: they live in the same table, so they share a toggle). Both groups
+carry `categories`, since rows in either refer to them by id. The app manages grants in Settings →
 Sharing; the endpoints (account bearer token):
 
 ```
@@ -412,6 +413,7 @@ works well).
 | `ALBAS_SYNC_ASSETLINKS`     | *(unset)*             | Raw JSON served at `/.well-known/assetlinks.json` (Android Digital Asset Links). |
 | `ALBAS_SYNC_DB`             | `/data/albas-sync.db` | SQLite file, shared by the server and `albas-sync admin`. Back this up (`.backup` under "Admin CLI"). |
 | `ALBAS_SYNC_ADDR`           | `0.0.0.0:8787`        | Listen address.                                                          |
+| `ALBAS_SYNC_PORT`           | *(port of `ADDR`)*    | Only `albas-sync health` (the container healthcheck) reads it: the localhost port to probe. |
 | `ALBAS_SYNC_GOOGLE_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URI` | *(unset)* | Google OAuth (server-side confidential client, `google.rs`). All three or none; unset hides the Google button (`GET /auth/config`). |
 | `ALBAS_SYNC_KEK`            | *(unset)*             | Base64 of exactly 32 raw bytes — the key TOTP secrets are encrypted under at rest (AES-256-GCM). Generate with `openssl rand -base64 32`. Unset means `POST /totp/enroll` refuses with 503 rather than storing a secret in the clear; set but not 32 base64 bytes refuses to boot; an *existing* encrypted secret that can't be decrypted (unset/rotated/corrupted) fails TOTP verification closed, logging the reason server-side rather than exposing it. Losing or rotating this key without a plan makes every enrolled account's TOTP unverifiable — `albas-sync admin totp clear <name>` is the recovery, same as a lost authenticator. |
 

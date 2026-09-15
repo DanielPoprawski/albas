@@ -260,7 +260,6 @@ export function AccountSigninCard({
   onConnect: () => void;
   status: SyncStatusInfo | null;
   syncToken: string | null;
-  /** Refreshes local state after the account itself is gone from the server. */
 }) {
   const configured = !!status?.configured;
 
@@ -454,7 +453,6 @@ export function SessionsCard({ status, syncToken }: { status: SyncStatusInfo | n
     } catch (e) {
       setError(errorMessage(e, 'Network error.'));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.token, ctx.server]);
 
   useEffect(() => {

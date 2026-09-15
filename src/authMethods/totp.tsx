@@ -6,9 +6,9 @@
  * passkey never needs one enrolled — a passkey ceremony is already possession
  * plus user verification (the OS authenticator's own PIN/biometric prompt),
  * so a typed code on top of that adds friction without adding a factor. The
- * passkey ceremony also runs through the OS authenticator via a Tauri plugin
- * (`src/auth.ts`), which has nowhere to prompt for a code even if it wanted
- * to. `Action` below says this plainly rather than implying broader coverage.
+ * passkey ceremony also runs in the system browser (`web/`), which has nowhere
+ * to hand a code back to the app even if it wanted to. `Action` below says
+ * this plainly rather than implying broader coverage.
  *
  * `load` only reports a row once the server says the secret is **confirmed**
  * (`GET /totp` -> `{ enrolled, confirmed }`). An enrolled-but-unconfirmed
@@ -96,7 +96,6 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
     };
     // Re-check whenever the token changes (sign-in/out); mutations below
     // update `status` directly rather than re-running this effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.token, ctx.server]);
 
   function beginEnroll() {

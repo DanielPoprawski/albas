@@ -1,11 +1,12 @@
 //! Passkey (WebAuthn) registration and login, plus the invite system.
 //!
-//! The ceremonies run *in the Albas app* via `tauri-plugin-webauthn`, which
-//! speaks the same `webauthn-rs-proto` wire types this server emits — the app
-//! relays `options` to the platform authenticator and posts the credential
-//! back. Login is discoverable (usernameless): the authenticator tells us which
-//! credential it used and we look the account up by credential id, so the
-//! registration-time user id is a throwaway.
+//! The ceremonies run in the system browser on the sign-in portal (`web/`,
+//! `lib/webauthn.ts`), never in the app: the page relays `options` to the
+//! browser's WebAuthn API and posts the credential back, and the app collects
+//! the result through the `app_session.rs` handoff. Login is discoverable
+//! (usernameless): the authenticator tells us which credential it used and we
+//! look the account up by credential id, so the registration-time user id is
+//! a throwaway.
 //!
 //! Signups are open by default (`ALBAS_SYNC_SIGNUPS=invite` locks them down).
 //! Invites exist for two cases: locked-down servers, and attaching a passkey to

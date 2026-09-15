@@ -53,8 +53,9 @@ export function prepareCreationOptions(publicKey: Record<string, unknown>): Cred
 
   // webauthn-rs only *prefers* a resident key by default (server sends
   // "discouraged"); login here is discoverable/usernameless, so a
-  // non-resident credential would silently break sign-in later. Insist, same
-  // as src/auth.ts does for the Tauri app's passkey ceremonies.
+  // non-resident credential would silently break sign-in later. Insist. (This
+  // is the only WebAuthn code in the project: the app holds none and sends
+  // people here for every ceremony.)
   pk.authenticatorSelection = {
     ...((pk.authenticatorSelection as object) ?? {}),
     residentKey: 'required',
