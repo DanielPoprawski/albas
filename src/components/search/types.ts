@@ -1,12 +1,10 @@
-import type { CalendarEvent, ItemKey, Todo } from '../../types';
+import type { ActiveView, CalendarEvent, ItemKey, Todo } from '../../types';
 
 /** Which page mounts the palette — sets only the default scope tab. */
-export type SearchPage = 'calendar' | 'tasks' | 'habits';
+export type SearchPage = Exclude<ActiveView, 'settings'>;
 
 /** The scope tabs. `all` exists but is never the default. */
 export type ScopeTab = 'all' | 'events' | 'tasks' | 'habits';
-
-export type { ItemKey } from '../../types';
 
 interface ItemBase {
   key: ItemKey;
@@ -31,7 +29,3 @@ export interface Hit {
   /** Matched character indices per `item.fields` entry. */
   positions: number[][];
 }
-
-/** The reminder chips: none, or minutes before. To-dos only know on/off. */
-export type { ReminderChoice } from '../bulk/useBulkActions';
-export { REMINDER_CHOICES } from '../bulk/useBulkActions';

@@ -24,30 +24,6 @@ import { useEditorMode, useShortcuts } from '../shortcuts';
 import SidebarCategories from './sidebar/SidebarCategories';
 import type { ActiveView, AddType } from '../types';
 
-/**
- * The four destinations the redesign's sidebar has. They are the shell's own
- * vocabulary rather than `ActiveView`'s: Habits is a new screen (package 04)
- * that the stored view type doesn't name yet, and Dashboard/To-Do read better
- * here than the old calendar/todos.
- */
-type Route = 'dashboard' | 'todo' | 'habits' | 'settings';
-
-/** Route → the stored view. */
-const VIEW_OF: Record<Route, ActiveView> = {
-  dashboard: 'calendar',
-  todo: 'todos',
-  habits: 'habits',
-  settings: 'settings',
-};
-
-/** The stored view → this shell's route. */
-function routeOf(view: ActiveView): Route {
-  if (view === 'todos') return 'todo';
-  if (view === 'habits') return 'habits';
-  if (view === 'settings') return 'settings';
-  return 'dashboard';
-}
-
 /* ── Sidebar ─────────────────────────────────────────────────────────────*/
 
 /** A titled group of rows inside the sidebar (Menu, the page's slot). */
@@ -59,15 +35,16 @@ const SIDEBAR_SECTION = 'flex flex-col gap-2';
  */
 const MAIN_COLUMN = 'min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5';
 
-const NAV: { route: Route; label: string; icon: ReactNode }[] = [
-  { route: 'dashboard', label: 'Dashboard', icon: <LayoutGrid size="1rem" /> },
-  { route: 'todo', label: 'To-Dos', icon: <ListChecks size="1rem" /> },
-  { route: 'habits', label: 'Habits', icon: <Target size="1rem" /> },
-  { route: 'settings', label: 'Settings', icon: <SettingsIcon size="1rem" /> },
+/** The sidebar's destinations — `ActiveView`, the app's one vocabulary for screens. */
+const NAV: { view: ActiveView; label: string; icon: ReactNode }[] = [
+  { view: 'calendar', label: 'Dashboard', icon: <LayoutGrid size="1rem" /> },
+  { view: 'todos', label: 'To-Dos', icon: <ListChecks size="1rem" /> },
+  { view: 'habits', label: 'Habits', icon: <Target size="1rem" /> },
+  { view: 'settings', label: 'Settings', icon: <SettingsIcon size="1rem" /> },
 ];
 
 /** The three content screens; Settings is drawn on its own at the foot of the sidebar. */
-const CONTENT_NAV = NAV.filter((n) => n.route !== 'settings');
+const CONTENT_NAV = NAV.filter((n) => n.view !== 'settings');
 const SETTINGS_NAV = NAV[NAV.length - 1];
 
 function NavLink({
@@ -76,22 +53,22 @@ function NavLink({
   onNavigate,
 }: {
   item: (typeof NAV)[number];
-  current: Route;
-  onNavigate: (r: Route) => void;
+  current: ActiveView;
+  onNavigate: (view: ActiveView) => void;
 }) {
-  const { route, label, icon } = item;
+  const { view, label, icon } = item;
   return (
     // Real anchors, so a destination has a hover target, a focus ring
     // and a middle-click affordance. The href is the hash the route
     // would have if this app ever grows a router; navigation itself is
     // still state, hence the preventDefault.
     <a
-      href={`#/${route}`}
-      aria-current={current === route ? 'page' : undefined}
-      className={`sidebar-item${current === route ? ' active' : ''}`}
+      href={`#/${view}`}
+      aria-current={current === view ? 'page' : undefined}
+      className={`sidebar-item${current === view ? ' active' : ''}`}
       onClick={(e) => {
         e.preventDefault();
-        onNavigate(route);
+        onNavigate(view);
       }}
     >
       {icon}
@@ -100,7 +77,7 @@ function NavLink({
   );
 }
 
-function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Route) => void }) {
+function Sidebar({ view, onNavigate }: { view: ActiveView; onNavigate: (view: ActiveView) => void }) {
   return (
     <aside className="sidebar max-md:hidden">
       <div className="flex items-center gap-2 font-heading text-base font-bold text-ink">
@@ -115,17 +92,17 @@ function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Rout
       <div className={SIDEBAR_SECTION}>
         <div className="sidebar-title">Menu</div>
         {CONTENT_NAV.map((item) => (
-          <NavLink key={item.route} item={item} current={route} onNavigate={onNavigate} />
+          <NavLink key={item.view} item={item} current={view} onNavigate={onNavigate} />
         ))}
       </div>
 
       {/* Categories sit directly under the screens they filter, on every route. */}
       <div className={SIDEBAR_SECTION}>
-        <SidebarCategories showCompletedRow={route === 'todo'} />
+        <SidebarCategories showCompletedRow={view === 'todos'} />
       </div>
 
       <div className={cn(SIDEBAR_SECTION, 'mt-auto')}>
-        <NavLink item={SETTINGS_NAV} current={route} onNavigate={onNavigate} />
+        <NavLink item={SETTINGS_NAV} current={view} onNavigate={onNavigate} />
       </div>
     </aside>
   );
@@ -227,21 +204,10 @@ export default function AppShell() {
   } = useApp();
   const calNav = { setCurrentMonth, setSelectedDate };
 
-  // The shell's own route. Seeded from the persisted view and re-derived
-  // whenever something else changes it (Settings links, the account menu),
-  // but held locally as well because Habits has no ActiveView to store.
-  const [route, setRoute] = useState<Route>(() => routeOf(activeView));
-  useEffect(() => setRoute(routeOf(activeView)), [activeView]);
-
-  function navigate(next: Route) {
-    setRoute(next);
-    setActiveView(VIEW_OF[next]);
-  }
-
   // The bottom bar's mode: INSERT while something editable has the keyboard.
   useEditorMode(setInserting);
   // A selection belongs to the list it was made in.
-  useEffect(() => setSelectedKeys(new Set()), [route]);
+  useEffect(() => setSelectedKeys(new Set()), [activeView]);
 
   // Ctrl+N's target, owned here rather than threaded through every screen so
   // it works no matter which route is active — `AddModal` itself already
@@ -284,23 +250,21 @@ export default function AppShell() {
   useShortcuts({
     newItem() {
       const date = selectedDate ?? fmt(new Date());
-      if (route === 'dashboard') setAddRequest({ type: 'event', date });
-      else if (route === 'todo') setAddRequest({ type: 'task', date });
-      else if (route === 'habits') setAddRequest({ type: 'habit', date });
+      if (activeView === 'calendar') setAddRequest({ type: 'event', date });
+      else if (activeView === 'todos') setAddRequest({ type: 'task', date });
+      else if (activeView === 'habits') setAddRequest({ type: 'habit', date });
       // settings: no item to create.
     },
-    navigate(target) {
-      navigate(target);
-    },
+    navigate: setActiveView,
     // The calendar keys only mean something on the calendar screen.
     calendarToday() {
-      if (route === 'dashboard') goToday(calNav);
+      if (activeView === 'calendar') goToday(calNav);
     },
     calendarStepMonth(dir) {
-      if (route === 'dashboard') stepMonth(calNav, dir);
+      if (activeView === 'calendar') stepMonth(calNav, dir);
     },
     calendarStepYear(dir) {
-      if (route === 'dashboard') stepYear(calNav, dir);
+      if (activeView === 'calendar') stepYear(calNav, dir);
     },
   });
 
@@ -326,7 +290,7 @@ export default function AppShell() {
   return (
     <div className="flex h-screen flex-col">
       <div className="flex flex-1 overflow-hidden max-md:flex-col">
-        <Sidebar route={route} onNavigate={navigate} />
+        <Sidebar view={activeView} onNavigate={setActiveView} />
 
         <ResizeHandle
           side="right"
@@ -346,23 +310,23 @@ export default function AppShell() {
                 so those routes get an explicit back bar here. It lives in the
                 shell rather than in each screen because it is the shell's
                 navigation that went missing. */}
-          {isMobile && route !== 'dashboard' && (
+          {isMobile && activeView !== 'calendar' && (
             <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-surface px-2">
               <button
                 type="button"
                 className="flex cursor-pointer items-center gap-1 text-xs font-semibold text-accent"
-                onClick={() => navigate('dashboard')}
+                onClick={() => setActiveView('calendar')}
               >
                 <span aria-hidden="true">←</span> Dashboard
               </button>
               {/* mr-18 balances the back button so the title sits centred in the bar. */}
               <span className="mr-18 flex-1 text-center font-heading text-sm font-bold text-ink">
-                {NAV.find((n) => n.route === route)?.label}
+                {NAV.find((n) => n.view === activeView)?.label}
               </span>
             </div>
           )}
 
-          {route === 'dashboard' &&
+          {activeView === 'calendar' &&
             (isMobile ? (
               <HomeView />
             ) : (
@@ -373,14 +337,13 @@ export default function AppShell() {
                 {calendarMode === 'day' && <DayView />}
               </div>
             ))}
-          {route === 'dashboard' && !isMobile && <RightPanel />}
+          {activeView === 'calendar' && !isMobile && <RightPanel />}
 
-          {route === 'todo' && <TodoViewRedesign />}
+          {activeView === 'todos' && <TodoViewRedesign />}
 
-          {/* Package 04 owns this screen; the shell only routes to it. */}
-          {route === 'habits' && <HabitsView />}
+          {activeView === 'habits' && <HabitsView />}
 
-          {route === 'settings' && (
+          {activeView === 'settings' && (
             <div className={MAIN_COLUMN}>
               <Settings />
             </div>

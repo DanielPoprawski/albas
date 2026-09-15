@@ -75,12 +75,4 @@ export interface SubmitData {
   fields: Record<string, any>;
 }
 
-/** Reminder chip label → lead time in minutes before the start. */
-export const REMINDER_MINUTES: Record<string, number> = {
-  'At time': 0,
-  '10 min': 10,
-  '1 hour': 60,
-  '1 day': 1440,
-};
-
 export const REPEAT_OPTIONS: EventRepeat[] = ['Never', 'Daily', 'Weekly', 'Monthly'];

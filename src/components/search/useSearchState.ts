@@ -3,12 +3,14 @@ import { jumpTo } from '../../calendarNav';
 import { useBulkActions } from '../bulk/useBulkActions';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
+import { byCategoryOrder } from '../../categoryLogic';
+import { REMINDER_QUICK, type ReminderChoice } from '../../reminders';
 import { parseQuery } from '../../searchMatch';
 import type { CalendarEvent, Category, CategoryScope, Todo } from '../../types';
 import { MAX_HITS, matchAll, rankHits, tabOf, toSearchItems } from './searchItems';
-import type { ItemKey, ReminderChoice, ScopeTab, SearchItem, SearchPage } from './types';
+import type { ScopeTab, SearchItem, SearchPage } from './types';
 
-const DEFAULT_TAB: Record<SearchPage, ScopeTab> = { calendar: 'events', tasks: 'tasks', habits: 'habits' };
+const DEFAULT_TAB: Record<SearchPage, ScopeTab> = { calendar: 'events', todos: 'tasks', habits: 'habits' };
 
 /** The one value every selected item shares, or null when they differ (or nothing is selected). */
 function common<T>(values: T[]): T | null {
@@ -19,9 +21,11 @@ function common<T>(values: T[]): T | null {
 /**
  * All of the palette's state and derived data, in one hook so the three
  * views (trigger, results, edit panel) stay presentational. The selection is
- * a set of keys that survives query, tab and scope changes — that is what
- * makes "select everything, narrow, deselect these, clear, delete the rest"
- * possible — and is resolved against the live items whenever it's acted on.
+ * the app-wide one (`UiContext.selectedKeys`, shared with the list views'
+ * Ctrl/Shift selection and the status bar's VISUAL mode): a set of keys that
+ * survives query, tab and scope changes — that is what makes "select
+ * everything, narrow, deselect these, clear, delete the rest" possible — and
+ * is resolved against the live items whenever it's acted on.
  */
 export function useSearchState(page: SearchPage) {
   const app = useApp();
@@ -36,13 +40,14 @@ export function useSearchState(page: SearchPage) {
     setActiveView,
     setCurrentMonth,
     setSelectedDate,
+    selectedKeys: selected,
+    setSelectedKeys: setSelected,
   } = app;
 
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ScopeTab>(DEFAULT_TAB[page]);
   const [active, setActive] = useState(0);
-  const [selected, setSelected] = useState<Set<ItemKey>>(() => new Set());
   const [shiftN, setShiftN] = useState(1);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editing, setEditing] = useState<{ event?: CalendarEvent; todo?: Todo } | null>(null);
@@ -99,7 +104,7 @@ export function useSearchState(page: SearchPage) {
       if (i.kind === 'event') {
         const r = i.event.reminders;
         if (r.length === 0) return 'none';
-        if (r.length === 1 && (r[0] === 0 || r[0] === 10 || r[0] === 60 || r[0] === 1440)) return r[0];
+        if (r.length === 1 && (REMINDER_QUICK as readonly number[]).includes(r[0])) return r[0];
         return 'mixed';
       }
       return i.todo.reminder ? 0 : 'none';
@@ -112,23 +117,23 @@ export function useSearchState(page: SearchPage) {
     const scopes = new Set<CategoryScope>(
       selectedItems.map((i) => (i.kind === 'event' ? 'calendar' : i.kind === 'task' ? 'tasks' : 'habits')),
     );
-    return categories
-      .filter((c) => c.scopes.some((s) => scopes.has(s)))
-      .slice()
-      .sort((a, b) => a.sort - b.sort);
+    return categories.filter((c) => c.scopes.some((s) => scopes.has(s))).sort(byCategoryOrder);
   }, [categories, selectedItems]);
 
   // --- selection ---
 
-  const toggleSelect = useCallback((item: SearchItem) => {
-    if (!item.selectable) return;
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(item.key)) next.delete(item.key);
-      else next.add(item.key);
-      return next;
-    });
-  }, []);
+  const toggleSelect = useCallback(
+    (item: SearchItem) => {
+      if (!item.selectable) return;
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.key)) next.delete(item.key);
+        else next.add(item.key);
+        return next;
+      });
+    },
+    [setSelected],
+  );
 
   /** Adds every match in the current tab (all of them, not just the 50 shown). */
   const selectAll = useCallback(() => {
@@ -137,7 +142,7 @@ export function useSearchState(page: SearchPage) {
       for (const h of tabMatches) if (h.item.selectable) next.add(h.item.key);
       return next;
     });
-  }, [tabMatches]);
+  }, [tabMatches, setSelected]);
 
   /** Removes every match in the current tab; anything selected elsewhere stays. */
   const deselectAll = useCallback(() => {
@@ -146,12 +151,12 @@ export function useSearchState(page: SearchPage) {
       for (const h of tabMatches) next.delete(h.item.key);
       return next;
     });
-  }, [tabMatches]);
+  }, [tabMatches, setSelected]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
     setConfirmDelete(false);
-  }, []);
+  }, [setSelected]);
 
   const visibleSelectedCount = useMemo(() => {
     let n = 0;
@@ -187,7 +192,7 @@ export function useSearchState(page: SearchPage) {
       setSelected(new Set([item.key]));
       setConfirmDelete(false);
     },
-    [page, jump, setActiveView],
+    [page, jump, setActiveView, setSelected],
   );
 
   const openFullEditor = useCallback(() => {
@@ -204,7 +209,7 @@ export function useSearchState(page: SearchPage) {
     bulk.applyDelete();
     setSelected(new Set());
     setConfirmDelete(false);
-  }, [bulk.applyDelete]);
+  }, [bulk.applyDelete, setSelected]);
 
   return {
     // state

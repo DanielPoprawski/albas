@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { byCategoryOrder } from '../categoryLogic';
 import { fmt } from '../dates';
 import * as ipc from '../ipc';
 import type { SyncOutcome } from '../ipc';
@@ -318,10 +319,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const categoriesFor = useCallback(
-    (scope: CategoryScope): Category[] =>
-      categories
-        .filter((c) => c.scopes.includes(scope))
-        .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)),
+    (scope: CategoryScope): Category[] => categories.filter((c) => c.scopes.includes(scope)).sort(byCategoryOrder),
     [categories],
   );
 

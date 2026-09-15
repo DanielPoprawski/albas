@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { errorMessage } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
-import { DEFAULT_SYNC_URL, MIN_PASSWORD_LENGTH, NAME_PATTERN } from '../../syncServer';
+import { apiBase, MIN_PASSWORD_LENGTH, NAME_PATTERN } from '../../syncServer';
 import * as ipc from '../../ipc';
+
+/**
+ * The API base a sign-in talks to: whatever server this device is pointed at
+ * (Settings › Advanced writes `__sync_url`), the hosted default otherwise.
+ * Read live rather than captured, so changing the server and then signing
+ * in on the same screen goes to the new one.
+ */
+function useServer(): () => string {
+  const { getSetting } = useApp();
+  return useCallback(() => apiBase(getSetting('__sync_url')), [getSetting]);
+}
 
 /**
  * The two ways this device gets onto an account — password in-app, or a
@@ -38,9 +50,10 @@ export type PasswordSignInState =
   | { kind: 'totp' }
   | { kind: 'error'; message: string };
 
-export function usePasswordSignIn(server: string = DEFAULT_SYNC_URL) {
+export function usePasswordSignIn() {
   const [state, setState] = useState<PasswordSignInState>({ kind: 'idle' });
   const finishSignIn = useFinishSignIn();
+  const server = useServer();
 
   const finish = useCallback(async () => {
     setState({ kind: 'idle' });
@@ -52,7 +65,7 @@ export function usePasswordSignIn(server: string = DEFAULT_SYNC_URL) {
       setState({ kind: 'busy' });
       try {
         const res = await ipc.accountLoginPassword(
-          server,
+          server(),
           name.trim(),
           password,
           code?.trim() || null,
@@ -64,7 +77,7 @@ export function usePasswordSignIn(server: string = DEFAULT_SYNC_URL) {
         }
         await finish();
       } catch (err) {
-        setState({ kind: 'error', message: String(err) });
+        setState({ kind: 'error', message: errorMessage(err) });
       }
     },
     [server, finish],
@@ -92,10 +105,10 @@ export function usePasswordSignIn(server: string = DEFAULT_SYNC_URL) {
       }
       setState({ kind: 'busy' });
       try {
-        await ipc.accountRegisterPassword(server, name.trim(), password);
+        await ipc.accountRegisterPassword(server(), name.trim(), password);
         await finish();
       } catch (err) {
-        setState({ kind: 'error', message: String(err) });
+        setState({ kind: 'error', message: errorMessage(err) });
       }
     },
     [server, finish],
@@ -143,6 +156,7 @@ const INTERVAL_MS = 3000;
 export function useBrowserSignIn() {
   const [state, setState] = useState<BrowserSignInState>({ kind: 'idle' });
   const finishSignIn = useFinishSignIn();
+  const server = useServer();
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -211,7 +225,7 @@ export function useBrowserSignIn() {
     async (screen: 'login' | 'register', open = true) => {
       setState({ kind: 'starting' });
       try {
-        const res = await ipc.appSigninStart(DEFAULT_SYNC_URL, screen);
+        const res = await ipc.appSigninStart(server(), screen);
         if (open) {
           const { openUrl } = await import('@tauri-apps/plugin-opener');
           await openUrl(res.url);
@@ -219,10 +233,10 @@ export function useBrowserSignIn() {
         setState({ kind: 'waiting', code: res.code, url: res.url });
         poll(res.nonce);
       } catch (err) {
-        setState({ kind: 'error', message: String(err) });
+        setState({ kind: 'error', message: errorMessage(err) });
       }
     },
-    [poll],
+    [poll, server],
   );
 
   /**
@@ -234,14 +248,14 @@ export function useBrowserSignIn() {
     async (nonce: string) => {
       setState({ kind: 'starting' });
       try {
-        const res = await ipc.appSigninAttach(DEFAULT_SYNC_URL, nonce);
+        const res = await ipc.appSigninAttach(server(), nonce);
         setState({ kind: 'waiting', code: '', url: '' });
         poll(res.nonce);
       } catch (err) {
-        setState({ kind: 'error', message: String(err) });
+        setState({ kind: 'error', message: errorMessage(err) });
       }
     },
-    [poll],
+    [poll, server],
   );
 
   return { state, start, attach, cancel };

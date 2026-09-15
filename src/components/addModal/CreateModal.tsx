@@ -9,24 +9,17 @@ import { StarButton } from '../ui/star';
 import { Switch } from '../ui/switch';
 import type { AddType } from '../../types';
 import { useApp } from '../../context/AppContext';
+import { newCategory } from '../../categoryLogic';
 import { colorHex, PALETTE_COMPACT } from '../../colors';
 import { buildCreate, type EventRepeat } from '../../createItem';
+import { REMINDER_QUICK, reminderLabel } from '../../reminders';
 import { addDays, addMinutes, diffDays, fmt, nowFloor15 } from '../../dates';
 import { describeWhen, stripMatch, useNlDate, type NlDateMatch } from '../../nlDate';
 import DateField from '../forms/DateField';
 import RepeatField, { buildRepeat, draftFromRepeat, repeatError, type RepeatDraft } from '../forms/RepeatField';
 import { ColorPicker } from '../forms/shared';
 import { useModalDismiss } from '../ui/useModalDismiss';
-import {
-  FIELD_ROW,
-  PLACEHOLDERS,
-  REMINDER_MINUTES,
-  REPEAT_OPTIONS,
-  SCOPE_FOR,
-  SECTIONS,
-  type FieldKey,
-  type Props,
-} from './catalog';
+import { FIELD_ROW, PLACEHOLDERS, REPEAT_OPTIONS, SCOPE_FOR, SECTIONS, type FieldKey, type Props } from './catalog';
 import { FieldRow, SectionGroup } from './parts';
 
 export function CreateModal({
@@ -39,7 +32,7 @@ export function CreateModal({
   onSubmit,
   snappiness = 1,
 }: Props) {
-  const { addEvent, addTodo, selectedDate, categoriesFor, addCategory, firstDayOfWeek } = useApp();
+  const { addEvent, addTodo, selectedDate, categories, categoriesFor, addCategory, firstDayOfWeek } = useApp();
   const initialDate = defaultDate ?? selectedDate ?? fmt(new Date());
   const initialStart = defaultStartTime ?? nowFloor15();
 
@@ -63,7 +56,8 @@ export function CreateModal({
   const [important, setImportant] = useState(false);
   const [category, setCategory] = useState(defaultCategory ?? '');
   const [target, setTarget] = useState(1);
-  const [reminders, setReminders] = useState<Record<string, boolean>>({ '10 min': true });
+  /** Lead times (minutes) switched on; 10 minutes to begin with. */
+  const [reminders, setReminders] = useState<Record<number, boolean>>({ 10: true });
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState<string>(PALETTE_COMPACT[0]);
@@ -75,7 +69,7 @@ export function CreateModal({
   function createCategory() {
     const name = newCatName.trim();
     if (!name) return;
-    const created = addCategory({ name, colorKey: newCatColor, scopes: [SCOPE_FOR[type]], sort: catOptions.length });
+    const created = addCategory(newCategory(name, newCatColor, categories));
     setCategory(created.id);
     setNewCatOpen(false);
     setNewCatName('');
@@ -314,12 +308,7 @@ export function CreateModal({
     // A field only reaches the payload if its row is actually showing — an
     // unrevealed chip's state is a default, not a choice the user made.
     const has = (k: FieldKey) => active.has(k);
-    const reminderMins = has('reminder')
-      ? Object.keys(reminders)
-          .filter((r) => reminders[r])
-          .map((r) => REMINDER_MINUTES[r])
-          .sort((a, b) => a - b)
-      : [];
+    const reminderMins = has('reminder') ? REMINDER_QUICK.filter((m) => reminders[m]) : [];
 
     const payload = buildCreate(type, name, {
       startDate: sStartDate,
@@ -488,22 +477,22 @@ export function CreateModal({
     reminder: currentOn.has('reminder') && (
       <FieldRow label="Remind" align="start" onRemove={() => collapseSectionOf('reminder')}>
         <div className="flex-1 flex flex-wrap gap-1.5">
-          {['At time', '10 min', '1 hour', '1 day'].map((r) => (
+          {REMINDER_QUICK.map((m) => (
             <button
-              key={r}
+              key={m}
               type="button"
               onClick={() => {
                 setReminders((prev) => {
                   const next = { ...prev };
-                  if (next[r]) delete next[r];
-                  else next[r] = true;
+                  if (next[m]) delete next[m];
+                  else next[m] = true;
                   return next;
                 });
               }}
               className="chip border-solid"
-              data-selected={reminders[r] || undefined}
+              data-selected={reminders[m] || undefined}
             >
-              {r}
+              {reminderLabel(m, 'short')}
             </button>
           ))}
         </div>

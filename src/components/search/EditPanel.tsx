@@ -3,8 +3,8 @@ import { cn } from '@/lib/utils';
 import { colorHex } from '../../colors';
 import InlineEditor, { InlineEventEditor } from '../InlineEditor';
 import { shortDate } from '../../dates';
+import { REMINDER_CHOICES } from '../../reminders';
 import { KIND_LABEL } from './searchItems';
-import { REMINDER_CHOICES } from './types';
 import type { SearchState } from './useSearchState';
 
 const SECTION = 'text-[0.625rem] font-bold uppercase tracking-[0.5px] text-ink-muted';

@@ -10,6 +10,7 @@
 //   phone should not buzz for someone else's dentist appointment.
 
 import type { CalendarEvent, Category, CategoryScope, RawSharedRow, SharedGroup, Todo } from './types';
+import { byCategoryOrder } from './categoryLogic';
 import { migrateLegacyTask, migrateTodo, periodToEvent, taskToTodo } from './migrations';
 import { DEFAULT_COLOR } from './colors';
 
@@ -176,7 +177,7 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
       owner,
       events: events.sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id)),
       todos: [...todos.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
-      categories: [...categories.values()].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)),
+      categories: [...categories.values()].sort(byCategoryOrder),
     });
   }
 

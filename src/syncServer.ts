@@ -1,22 +1,39 @@
 /**
- * The sync server, full stop.
- *
- * This was a *default* behind an editable Server field in Welcome and in
- * Settings → Account & sync; both fields are gone. There is one hosted server,
- * an account on it is the product, and a URL box asking a person to name their
- * own only ever produced typos and a stale `http://localhost:8787/sync` sitting
- * in front of this constant forever. Rust keeps its own copy of the string
+ * The sync server: the hosted default, and every transform between the forms
+ * its address takes. Rust keeps its own copy of the default
  * (`sync::DEFAULT_URL`, in endpoint form) and the two must stay in step.
  *
- * `__sync_url` still wins over it in Rust, and is still what the passkey flow
- * writes — nothing reads a URL from the UI any more, so the only values that
- * can be in there are this one and leftovers `db::repoint_default_server`
- * sweeps. Pointing a build at another server means editing these two
- * constants, not shipping the field again.
+ * `__sync_url` (the stored `/sync` endpoint) wins over the default in Rust.
+ * It is written by every sign-in (`adopt_session`) and by Settings › Advanced,
+ * the one place a person can name their own server; blank there means the
+ * default, never localhost.
  */
 import type { ApiResponse } from './ipc';
 
 export const DEFAULT_SYNC_URL = 'https://albas.danni-dev.com/api';
+
+/**
+ * Turns whatever a person pastes into the Advanced server field into
+ * something `syncEndpoint()` (and then Rust's `check_url`) can judge: blank
+ * is the default; a bare domain is assumed to mean `https://`; anything
+ * already carrying a scheme passes through unchanged, and `check_url` in
+ * `sync.rs` — the single source of truth on which schemes are allowed —
+ * rejects `http://` with a clear reason the next time this device syncs.
+ */
+export function normalizeSyncUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') return DEFAULT_SYNC_URL;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+/**
+ * The web portal (`/login`, passkey management) for an API base: the same
+ * origin with the `/api` prefix (stripped by nginx before proxying) dropped.
+ * Mirrors `portal_base()` in `account.rs`.
+ */
+export function portalUrl(apiBaseUrl: string): string {
+  return apiBaseUrl.replace(/\/api\/?$/, '');
+}
 
 /**
  * `__sync_url` holds the full `/sync` endpoint — `sync::run` POSTs straight to
@@ -30,14 +47,11 @@ export function syncEndpoint(url: string): string {
 }
 
 /**
- * The inverse of `syncEndpoint`: the API base the auth-method fetches want
- * (`/passkeys`, `/password`, `/totp` hang off it), recovered from whatever is
- * actually stored in `__sync_url`.
- *
- * Needed because the server is editable again (Settings → Advanced). Deriving
- * the base from the live sync URL instead of `DEFAULT_SYNC_URL` is what stops
- * a self-hoster's Settings from listing sign-in methods off the hosted server
- * while their data syncs somewhere else entirely.
+ * The inverse of `syncEndpoint`: the API base every server call wants
+ * (`/passkeys`, `/login/password`, `/app-session` hang off it), recovered
+ * from whatever is actually stored in `__sync_url`. Deriving it from the
+ * live sync URL rather than `DEFAULT_SYNC_URL` is what keeps a self-hoster's
+ * sign-in and Settings on their own server rather than the hosted one.
  */
 export function apiBase(url: string | null | undefined): string {
   if (!url) return DEFAULT_SYNC_URL;

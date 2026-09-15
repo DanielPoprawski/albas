@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/utils';
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import * as ipc from '../../ipc';
@@ -135,7 +136,7 @@ function DeleteAccount({ enabled, onDeleted }: { enabled: boolean; onDeleted: ()
       setExpanded(false);
       await onDeleted();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

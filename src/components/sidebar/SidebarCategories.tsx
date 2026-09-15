@@ -1,8 +1,8 @@
 import { useState, type KeyboardEvent } from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { moveCategory } from '../../categoryLogic';
-import { CATEGORY_PALETTE, colorHex, DEFAULT_COLOR } from '../../colors';
+import { byCategoryOrder, moveCategory, newCategory, nextColor, toggleScope } from '../../categoryLogic';
+import { colorHex, DEFAULT_COLOR } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { GENERAL, isDone } from '../../todoLogic';
 import type { Category } from '../../types';
@@ -26,12 +26,6 @@ function onRowKey(e: KeyboardEvent<HTMLDivElement>, action: () => void) {
   }
 }
 
-/** The first palette hue no category wears yet, so new ones start distinct. */
-function nextColor(categories: Category[]): string {
-  const used = new Set(categories.map((c) => colorHex(c.colorKey).toLowerCase()));
-  return CATEGORY_PALETTE.find((hex) => !used.has(hex)) ?? DEFAULT_COLOR;
-}
-
 /**
  * The sidebar's Categories section, on every route: a tick per category (and
  * one for General) that hides or shows it in whichever list is on screen,
@@ -53,7 +47,7 @@ export default function SidebarCategories({ showCompletedRow }: { showCompletedR
     showCompleted,
     setShowCompleted,
   } = useApp();
-  const sorted = categories.slice().sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+  const sorted = categories.slice().sort(byCategoryOrder);
 
   const [open, setOpen] = useState(true);
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -93,7 +87,7 @@ export default function SidebarCategories({ showCompletedRow }: { showCompletedR
   function commitAdd() {
     const name = newName.trim();
     if (!name) return;
-    addCategory({ name, colorKey: newColor, scopes: ['calendar', 'tasks', 'habits'], sort: categories.length });
+    addCategory(newCategory(name, newColor, categories));
     setAdding(false);
     setNewColorOpen(false);
   }
@@ -230,12 +224,7 @@ export default function SidebarCategories({ showCompletedRow }: { showCompletedR
                     onRename={() => setRenamingId(cat.id)}
                     onColor={() => setColorId(cat.id)}
                     onMove={(dir) => move(cat.id, dir)}
-                    onToggleScope={(scope) => {
-                      const scopes = cat.scopes.includes(scope)
-                        ? cat.scopes.filter((s) => s !== scope)
-                        : [...cat.scopes, scope];
-                      updateCategory(cat.id, { scopes });
-                    }}
+                    onToggleScope={(scope) => updateCategory(cat.id, { scopes: toggleScope(cat, scope) })}
                     onDelete={() => setConfirmId(cat.id)}
                   />
                 </div>

@@ -4,6 +4,7 @@ import { DEFAULT_COLOR } from '../../colors';
 import { addDays, addMinutes, diffDays, fmt, nowFloor15, shortDate } from '../../dates';
 import { samePatch } from '@/lib/utils';
 import { describeWhen, stripMatch, useNlDate } from '../../nlDate';
+import { GENERAL } from '../../todoLogic';
 import type { CalendarEvent, Recurrence } from '../../types';
 import {
   CheckboxRow,
@@ -39,7 +40,7 @@ export default function EventForm({
 }) {
   const { addEvent, updateEvent, deleteEvent, selectedDate, categoriesFor } = useApp();
   const categoryOptions = [
-    { value: '', label: 'None' },
+    { value: '', label: GENERAL },
     ...categoriesFor('calendar').map((c) => ({ value: c.id, label: c.name })),
   ];
   const initialDate = edit?.startDate ?? defaultDate ?? selectedDate ?? fmt(new Date());

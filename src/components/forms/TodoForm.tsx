@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
 import { samePatch } from '@/lib/utils';
 import { describeWhen, stripMatch, useNlDate } from '../../nlDate';
+import { GENERAL } from '../../todoLogic';
 import type { Todo, TodoKind } from '../../types';
 import {
   CheckboxRow,
@@ -38,7 +39,7 @@ export default function TodoForm({
   const { addTodo, updateTodo, deleteTodo, selectedDate, firstDayOfWeek, categoriesFor } = useApp();
 
   const categoryOptions = [
-    { value: '', label: 'None' },
+    { value: '', label: GENERAL },
     ...categoriesFor('tasks').map((c) => ({ value: c.id, label: c.name })),
   ];
 

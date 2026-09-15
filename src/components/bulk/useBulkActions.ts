@@ -1,28 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { addDays, fmt } from '../../dates';
-import { doneDate, isDone, isDoneOn } from '../../todoLogic';
+import { type ReminderChoice, reminderLabel } from '../../reminders';
+import { doneDate, GENERAL, isDone, isDoneOn } from '../../todoLogic';
 import type { SearchItem } from '../search/types';
-
-/** A reminder preset: none, or minutes before (0 = at the time). To-dos only know on/off. */
-export type ReminderChoice = 'none' | 0 | 10 | 60 | 1440;
-
-export const REMINDER_CHOICES: { value: ReminderChoice; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 0, label: 'At time' },
-  { value: 10, label: '10 min before' },
-  { value: 60, label: '1 hr before' },
-  { value: 1440, label: '1 day before' },
-];
 
 const NOTICE_MS = 2400;
 
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
-
-function labelOf(choice: Exclude<ReminderChoice, 'none'>): string {
-  return choice === 0 ? 'At time' : choice === 10 ? '10 min before' : choice === 60 ? '1 hr before' : '1 day before';
 }
 
 /**
@@ -50,7 +36,7 @@ export function useBulkActions(selectedItems: SearchItem[]) {
         if (item.kind === 'event') updateEvent(item.event.id, { category: categoryId });
         else updateTodo(item.todo.id, { category: categoryId });
       }
-      const name = categoryById(categoryId)?.name ?? 'General';
+      const name = categoryById(categoryId)?.name ?? GENERAL;
       setNotice(`Moved ${plural(selectedItems.length, 'item')} to ${name}`);
     },
     [selectedItems, updateEvent, updateTodo, categoryById],
@@ -93,7 +79,7 @@ export function useBulkActions(selectedItems: SearchItem[]) {
         if (item.kind === 'event') updateEvent(item.event.id, { reminders: choice === 'none' ? [] : [choice] });
         else updateTodo(item.todo.id, { reminder: choice !== 'none' });
       }
-      const label = choice === 'none' ? 'No reminder' : `Reminder "${labelOf(choice)}"`;
+      const label = choice === 'none' ? 'No reminder' : `Reminder "${reminderLabel(choice)}"`;
       setNotice(`${label} on ${plural(selectedItems.length, 'item')}`);
     },
     [selectedItems, updateEvent, updateTodo],

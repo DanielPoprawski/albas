@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { ActiveView } from './types';
 
 /**
  * A tiny cross-component "focus this thing" registry. `/` needs to reach a DOM
@@ -34,9 +35,6 @@ export interface ShortcutSpec {
   label: string;
   group: ShortcutGroup;
 }
-
-/** The sidebar's destinations, as the shortcuts name them. */
-export type NavTarget = 'dashboard' | 'todo' | 'habits' | 'settings';
 
 /**
  * The single source of truth for the app's global shortcuts: both the
@@ -81,17 +79,17 @@ export function formatKeys(keys: string[]): string[] {
   return keys;
 }
 
-const NAV_KEYS: Record<string, NavTarget> = {
-  '1': 'dashboard',
-  '2': 'todo',
+const NAV_KEYS: Record<string, ActiveView> = {
+  '1': 'calendar',
+  '2': 'todos',
   '3': 'habits',
   '0': 'settings',
 };
 
 /** The second key of a `g` chord. */
-const CHORD_KEYS: Record<string, NavTarget> = {
-  d: 'dashboard',
-  t: 'todo',
+const CHORD_KEYS: Record<string, ActiveView> = {
+  d: 'calendar',
+  t: 'todos',
   h: 'habits',
   s: 'settings',
 };
@@ -116,7 +114,7 @@ export interface ShortcutHandlers {
   /** Ctrl+N — create the current screen's default item type. */
   newItem: () => void;
   /** 1/2/3/0 or g d/t/h/s — go to a sidebar destination. */
-  navigate: (target: NavTarget) => void;
+  navigate: (target: ActiveView) => void;
   /** T — show today. Only the calendar screen answers. */
   calendarToday: () => void;
   /** [ / ] — previous/next month. */

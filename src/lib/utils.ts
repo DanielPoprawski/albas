@@ -18,6 +18,17 @@ export function initialsOf(name: string): string {
 }
 
 /**
+ * What to show for a caught `unknown`. Rust commands reject with a plain
+ * string, `fetch` and our own code throw `Error`s; anything else gets the
+ * fallback rather than "[object Object]".
+ */
+export function errorMessage(err: unknown, fallback = 'Something went wrong.'): string {
+  if (err instanceof Error) return err.message || fallback;
+  if (typeof err === 'string') return err.trim() || fallback;
+  return fallback;
+}
+
+/**
  * True when applying `patch` to `base` would change nothing — field by field,
  * structurally (arrays and nested objects compared by content). Lets an edit
  * form skip a no-op update, which would otherwise bump `updated_at` and sync.

@@ -16,6 +16,8 @@
  * in place (`toParts`).
  */
 
+import { errorMessage } from '@/lib/utils';
+
 const SCORE_MATCH = 16;
 const SCORE_GAP_START = -3;
 const SCORE_GAP_EXT = -1;
@@ -206,7 +208,7 @@ function regexFrom(pattern: string, flags: string, reason: RegexReason): Plan {
   try {
     return { mode: 'regex', ok: true, re: new RegExp(pattern, f), reason };
   } catch (e) {
-    return { mode: 'regex', ok: false, reason, error: e instanceof Error ? e.message : String(e) };
+    return { mode: 'regex', ok: false, reason, error: errorMessage(e) };
   }
 }
 

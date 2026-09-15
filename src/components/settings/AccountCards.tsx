@@ -11,7 +11,7 @@ import { Tag } from '../ui/tag';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/dialog';
 import { DEFAULT_SYNC_URL, apiBase, apiError, apiRequest } from '../../syncServer';
 import { timeAgo } from '../../dates';
-import { initialsOf } from '@/lib/utils';
+import { errorMessage, initialsOf } from '@/lib/utils';
 import {
   authMethods,
   METHOD_PILL,
@@ -226,7 +226,7 @@ function useAuthMethods(ctx: AuthMethodContext, enabled: boolean) {
           if (!cancelled) setById((prev) => ({ ...prev, [m.id]: { rows, error: null } }));
         })
         .catch((err) => {
-          if (!cancelled) setById((prev) => ({ ...prev, [m.id]: { rows: [], error: String(err) } }));
+          if (!cancelled) setById((prev) => ({ ...prev, [m.id]: { rows: [], error: errorMessage(err) } }));
         });
     }
     return () => {
@@ -406,7 +406,7 @@ function ExportDataSection({ ctx }: { ctx: AuthMethodContext }) {
       const path = await ipc.accountExport();
       setState({ kind: 'done', path });
     } catch (e) {
-      setState({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
+      setState({ kind: 'error', message: errorMessage(e) });
     }
   }
 
@@ -462,7 +462,7 @@ export function SessionsCard({ status, syncToken }: { status: SyncStatusInfo | n
       setRows(res.body as TokenRow[]);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error.');
+      setError(errorMessage(e, 'Network error.'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.token, ctx.server]);
@@ -480,7 +480,7 @@ export function SessionsCard({ status, syncToken }: { status: SyncStatusInfo | n
       }
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error.');
+      setError(errorMessage(e, 'Network error.'));
     } finally {
       setBusyId(null);
     }
@@ -495,7 +495,7 @@ export function SessionsCard({ status, syncToken }: { status: SyncStatusInfo | n
       }
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error.');
+      setError(errorMessage(e, 'Network error.'));
     } finally {
       setBusyId(null);
     }

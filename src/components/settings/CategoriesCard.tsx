@@ -6,8 +6,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Button, IconButton } from '../ui/button';
 import { cn } from '@/lib/utils';
 import { ColorPicker, inputClass } from '../forms/shared';
-import type { Category, CategoryScope } from '../../types';
-import { moveCategory } from '../../categoryLogic';
+import { byCategoryOrder, moveCategory, newCategory, toggleScope } from '../../categoryLogic';
 import { SCOPE_OPTIONS } from '../sidebar/CategoryMenu';
 import { Card } from './shared';
 
@@ -27,7 +26,7 @@ export function CategoriesCard() {
   const [newColor, setNewColor] = useState<string>(DEFAULT_COLOR);
   const [newColorOpen, setNewColorOpen] = useState(false);
 
-  const sorted = [...categories].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+  const sorted = [...categories].sort(byCategoryOrder);
 
   function move(id: string, dir: -1 | 1) {
     const swap = moveCategory(sorted, id, dir);
@@ -35,15 +34,10 @@ export function CategoriesCard() {
     for (const { id: target, ...patch } of swap) updateCategory(target, patch);
   }
 
-  function toggleScope(cat: Category, scope: CategoryScope) {
-    const scopes = cat.scopes.includes(scope) ? cat.scopes.filter((s) => s !== scope) : [...cat.scopes, scope];
-    updateCategory(cat.id, { scopes });
-  }
-
   function handleAdd() {
     const name = newName.trim();
     if (!name) return;
-    addCategory({ name, colorKey: newColor, scopes: ['tasks'], sort: sorted.length });
+    addCategory(newCategory(name, newColor, categories));
     setNewName('');
     setNewColorOpen(false);
   }
@@ -77,7 +71,10 @@ export function CategoriesCard() {
                     key={value}
                     className="flex items-center gap-[0.3125rem] text-xs text-ink-secondary cursor-pointer"
                   >
-                    <Checkbox checked={cat.scopes.includes(value)} onCheckedChange={() => toggleScope(cat, value)} />
+                    <Checkbox
+                      checked={cat.scopes.includes(value)}
+                      onCheckedChange={() => updateCategory(cat.id, { scopes: toggleScope(cat, value) })}
+                    />
                     {label}
                   </label>
                 ))}

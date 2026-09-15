@@ -21,6 +21,7 @@
  * image. Every request goes through `apiRequest` (a Rust hop inside the
  * app), same as `password.tsx`.
  */
+import { errorMessage } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { apiError, apiRequest } from '../syncServer';
@@ -88,7 +89,7 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
         if (!cancelled) setStatus(s);
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Network error.');
+        if (!cancelled) setError(errorMessage(e, 'Network error.'));
       });
     return () => {
       cancelled = true;
@@ -120,7 +121,7 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
       setPassword('');
       setCode('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error.');
+      setError(errorMessage(e, 'Network error.'));
     } finally {
       setBusy(false);
     }
@@ -146,7 +147,7 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
       setCopied(false);
       ctx.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error.');
+      setError(errorMessage(e, 'Network error.'));
     } finally {
       setBusy(false);
     }
@@ -198,7 +199,7 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
       setNotice('Two-factor authentication is turned off.');
       ctx.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error.');
+      setError(errorMessage(e, 'Network error.'));
     } finally {
       setBusy(false);
     }

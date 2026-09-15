@@ -30,7 +30,7 @@ const MOBILE_HEADER_BUTTON =
 export default function HomeView() {
   const [editing, setEditing] = useState<Todo | null>(null);
   const isMobile = useIsMobile();
-  const [mobileTab, setMobileTab] = useState<'dashboard' | 'habits' | 'tasks'>('dashboard');
+  const [mobileTab, setMobileTab] = useState<MobileTab>('dashboard');
 
   if (isMobile) {
     return (
@@ -80,8 +80,8 @@ function MobileShell({
 }: {
   editing: Todo | null;
   setEditing: (t: Todo | null) => void;
-  currentTab: 'dashboard' | 'habits' | 'tasks';
-  setCurrentTab: (tab: 'dashboard' | 'habits' | 'tasks') => void;
+  currentTab: MobileTab;
+  setCurrentTab: (tab: MobileTab) => void;
 }) {
   const { setActiveView } = useApp();
   const today = new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' });

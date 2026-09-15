@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -42,7 +43,7 @@ export default function QrScanner({
         done.current = true;
         onScan(result.content);
       } catch (err) {
-        if (!cancelled) setError(String(err));
+        if (!cancelled) setError(errorMessage(err));
       }
     })();
 

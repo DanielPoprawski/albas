@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/utils';
 import { useCallback, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { isAndroid } from '../../persistence';
@@ -146,7 +147,7 @@ export function SignedInPanel() {
     try {
       setOffer(await ipc.appSessionOffer());
     } catch (err) {
-      setError(String(err));
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -168,7 +169,7 @@ export function SignedInPanel() {
     try {
       setApproval(await ipc.appSessionClaim(payload.nonce));
     } catch (err) {
-      setError(String(err));
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }

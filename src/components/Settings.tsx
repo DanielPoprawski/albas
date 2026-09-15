@@ -1,10 +1,11 @@
+import { errorMessage } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { inTauri } from '../persistence';
 import * as ipc from '../ipc';
 import type { SyncStatusInfo } from '../ipc';
 import { useBrowserSignIn, usePasswordSignIn } from './auth/signInHooks';
-import { DEFAULT_SYNC_URL, syncEndpoint } from '../syncServer';
+import { normalizeSyncUrl, syncEndpoint } from '../syncServer';
 import { AccountSigninCard, ProfileCard, SessionCard, SessionsCard } from './settings/AccountCards';
 import { AppearanceCard } from './settings/AppearanceCard';
 import { CategoriesCard } from './settings/CategoriesCard';
@@ -13,32 +14,13 @@ import { ImportCard, SharingCard } from './settings/IntegrationsCards';
 import { AboutCard, PreferencesCard, ShortcutsCard } from './settings/misc';
 import type { SyncState } from './settings/shared';
 
-/**
- * Turns whatever a person pastes into the "Advanced" server field into
- * something `syncEndpoint()` (and then Rust's `check_url`) can judge.
- *
- * Blank -> the real default, never localhost. A bare domain (no scheme) is
- * assumed to mean `https://` — the common case of pasting just the host —
- * rather than being handed to `check_url` as-is to fail with a message that
- * doesn't explain what's missing. Anything already carrying a scheme
- * (including `http://`, e.g. a LAN test server) is passed through unchanged:
- * `check_url` in `sync.rs` is the single source of truth on which schemes are
- * actually allowed, and it will reject `http://` with a clear reason the next
- * time this device syncs.
- */
-function normalizeSyncUrl(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed === '') return DEFAULT_SYNC_URL;
-  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
 export default function Settings() {
   const { setSetting, syncNow, reloadFromStore, syncToken } = useApp();
   const [status, setStatus] = useState<SyncStatusInfo | null>(null);
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' });
   const [token, setToken] = useState('');
   const [manual, setManual] = useState(false);
-  // Blank means "use the default server" (see `normalizeSyncUrl` below), never
+  // Blank means "use the default server" (`normalizeSyncUrl`), never
   // prefilled from `status.url` — so clearing the field can't read back as
   // whatever custom value was last saved.
   const [url, setUrl] = useState('');
@@ -78,7 +60,7 @@ export default function Settings() {
             : `Synced - ${parts.join(', ')}.`,
       });
     } catch (err) {
-      setSyncState({ kind: 'error', message: String(err) });
+      setSyncState({ kind: 'error', message: errorMessage(err) });
     }
   }
 
@@ -105,7 +87,7 @@ export default function Settings() {
       await ipc.syncSignOut();
       await afterLeavingAccount();
     } catch (err) {
-      setSyncState({ kind: 'error', message: String(err) });
+      setSyncState({ kind: 'error', message: errorMessage(err) });
     }
   }
 
@@ -131,7 +113,7 @@ export default function Settings() {
       setSyncState({ kind: 'idle' });
       await sync();
     } catch (err) {
-      setSyncState({ kind: 'error', message: String(err) });
+      setSyncState({ kind: 'error', message: errorMessage(err) });
     }
   }
 

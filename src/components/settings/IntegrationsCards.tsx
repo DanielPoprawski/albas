@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { inTauri } from '../../persistence';
@@ -139,7 +140,7 @@ export function SharingCard() {
 
   useEffect(() => {
     if (!available) return;
-    load().catch((err) => setState({ kind: 'error', message: String(err) }));
+    load().catch((err) => setState({ kind: 'error', message: errorMessage(err) }));
   }, [available]);
 
   async function setShare(name: string, calendar: boolean, todos: boolean) {
@@ -149,7 +150,7 @@ export function SharingCard() {
       await load();
       setState({ kind: 'idle' });
     } catch (err) {
-      setState({ kind: 'error', message: String(err) });
+      setState({ kind: 'error', message: errorMessage(err) });
     }
   }
 
@@ -169,7 +170,7 @@ export function SharingCard() {
       await load();
       setState({ kind: 'idle' });
     } catch (err) {
-      setState({ kind: 'error', message: String(err) });
+      setState({ kind: 'error', message: errorMessage(err) });
     }
   }
 

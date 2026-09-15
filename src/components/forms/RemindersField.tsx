@@ -1,20 +1,10 @@
 import { useState } from 'react';
 import { Bell, Pencil, Plus, Trash2 } from 'lucide-react';
+import { REMINDER_PRESETS, reminderLabel } from '../../reminders';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { inputClass, labelClass, Select } from './shared';
 
-/** Lead times offered as one tap. Stored as minutes before the event starts. */
-const PRESETS: { minutes: number; label: string }[] = [
-  { minutes: 0, label: 'At start time' },
-  { minutes: 5, label: '5 minutes before' },
-  { minutes: 10, label: '10 minutes before' },
-  { minutes: 30, label: '30 minutes before' },
-  { minutes: 60, label: '1 hour before' },
-  { minutes: 120, label: '2 hours before' },
-  { minutes: 1440, label: '1 day before' },
-  { minutes: 2880, label: '2 days before' },
-  { minutes: 10080, label: '1 week before' },
-];
+const PRESETS: readonly number[] = REMINDER_PRESETS;
 
 type Unit = 'minutes' | 'hours' | 'days' | 'weeks';
 const UNIT_MINUTES: Record<Unit, number> = {
@@ -23,27 +13,6 @@ const UNIT_MINUTES: Record<Unit, number> = {
   days: 1440,
   weeks: 10080,
 };
-
-/** Minutes-before as words, picking the largest unit that divides evenly. */
-export function reminderLabel(minutes: number): string {
-  if (minutes === 0) return 'At start time';
-  const preset = PRESETS.find((p) => p.minutes === minutes);
-  if (preset) return preset.label;
-
-  const units: [Unit, number][] = [
-    ['weeks', 10080],
-    ['days', 1440],
-    ['hours', 60],
-    ['minutes', 1],
-  ];
-  for (const [unit, size] of units) {
-    if (minutes % size === 0) {
-      const n = minutes / size;
-      return `${n} ${n === 1 ? unit.slice(0, -1) : unit} before`;
-    }
-  }
-  return `${minutes} minutes before`;
-}
 
 /**
  * Add/edit one reminder. Presets cover the common cases; "Custom" is there so
@@ -60,7 +29,7 @@ function ReminderDialog({
   onSave: (minutes: number) => void;
   onClose: () => void;
 }) {
-  const isPreset = initial != null && PRESETS.some((p) => p.minutes === initial);
+  const isPreset = initial != null && PRESETS.includes(initial);
   const [custom, setCustom] = useState(initial != null && !isPreset);
   const [amount, setAmount] = useState(() => {
     if (initial == null || isPreset) return '15';
@@ -106,7 +75,7 @@ function ReminderDialog({
 
         {!custom ? (
           <div className="space-y-xs">
-            {PRESETS.map(({ minutes, label }) => {
+            {PRESETS.map((minutes) => {
               // already-used lead times would silently collapse into one
               const used = taken.includes(minutes) && minutes !== initial;
               return (
@@ -119,7 +88,7 @@ function ReminderDialog({
                     used ? 'text-ink-muted cursor-default' : 'text-ink bg-subtle hover:bg-subtle-strong'
                   }`}
                 >
-                  {label}
+                  {reminderLabel(minutes)}
                   {used && <span className="text-xs ml-xs">already added</span>}
                 </button>
               );

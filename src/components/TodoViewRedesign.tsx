@@ -118,7 +118,7 @@ export default function TodoViewRedesign() {
         {/* Header */}
         <div className="border-b border-line px-4 py-3 grid grid-cols-[auto_minmax(12.5rem,1fr)_auto] items-center gap-4">
           <h1 className="text-h1 font-heading font-bold">To-Do</h1>
-          <SearchPalette scope="tasks" className="hidden md:flex w-full max-w-[35rem] justify-self-center" />
+          <SearchPalette scope="todos" className="hidden md:flex w-full max-w-[35rem] justify-self-center" />
           <span aria-hidden />
         </div>
 

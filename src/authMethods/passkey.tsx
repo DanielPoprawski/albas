@@ -12,7 +12,7 @@
  * informational — it lists what's attached, it doesn't drive attaching one.
  */
 import { inTauri } from '../persistence';
-import { apiError, apiRequest } from '../syncServer';
+import { apiError, apiRequest, portalUrl } from '../syncServer';
 import type { AuthMethod, AuthMethodContext, AuthMethodRow } from './registry';
 
 /** What `GET /passkeys` returns. The server stores no device name, so `label`
@@ -47,16 +47,7 @@ async function load(ctx: AuthMethodContext): Promise<AuthMethodRow[]> {
   }));
 }
 
-/** The portal that serves `/login`, mirroring `portal_base()` in
- *  `account.rs`: the API base with its `/api` prefix (stripped by nginx
- *  before proxying) dropped.
- *
- *  Derived from `ctx.server` rather than `DEFAULT_SYNC_URL` so a self-hoster
- *  is sent to their own portal, not the hosted one. */
-function portalUrl(server: string): string {
-  return server.replace(/\/api\/?$/, '');
-}
-
+/** Opens the portal for `ctx.server` — a self-hoster's own, not the hosted one. */
 async function openPortal(server: string) {
   const url = portalUrl(server);
   if (inTauri()) {
