@@ -46,12 +46,12 @@ export default function HabitsView() {
     // its content and let the page grey show through.
     <div className="flex-1 min-w-0 flex flex-col bg-surface overflow-hidden">
       {/* Header */}
-      <div className="grid grid-cols-[auto_minmax(12.5rem,1fr)_auto] items-center gap-4 px-6 py-4 border-b border-[var(--t-border)]">
+      <div className="grid grid-cols-[auto_minmax(12.5rem,1fr)_auto] items-center gap-4 px-6 py-4 border-b border-line">
         <div className="flex flex-col gap-[2px]">
-          <h1 className="font-heading text-lg font-bold text-[var(--t-ink)]">Habits</h1>
-          <p className="text-sm text-[var(--t-ink-muted)]">Build consistency, one day at a time.</p>
+          <h1 className="font-heading text-lg font-bold text-ink">Habits</h1>
+          <p className="text-sm text-ink-muted">Build consistency, one day at a time.</p>
         </div>
-        <SearchPalette scope="habits" className="hidden md:flex w-full max-w-[35rem] justify-self-center" />
+        <SearchPalette scope="habits" className="flex max-md:hidden w-full max-w-[35rem] justify-self-center" />
         <span aria-hidden />
       </div>
 

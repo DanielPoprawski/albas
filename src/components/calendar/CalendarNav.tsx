@@ -31,13 +31,13 @@ function ModeButtons({
 }) {
   return (
     <div className="flex items-center gap-xs">
-      <div className="flex items-center bg-subtle-strong rounded-lg p-xs gap-0.5">
+      <div className="flex items-center bg-subtle-strong p-xs gap-0.5">
         {MODES.map(({ value, label }) => (
           <button
             key={value}
             onClick={() => onPick(value)}
             aria-pressed={mode === value}
-            className={`px-md py-xs rounded font-semibold text-meta transition-colors ${
+            className={`px-md py-xs font-semibold text-meta transition-colors ${
               mode === value ? 'bg-accent text-on-accent' : 'text-ink-muted hover:text-ink hover:bg-line-strong'
             }`}
           >
@@ -47,7 +47,7 @@ function ModeButtons({
       </div>
       <button
         onClick={onToday}
-        className="px-md py-xs rounded-lg font-semibold text-meta text-ink-muted bg-subtle-strong hover:text-ink hover:bg-line-strong transition-colors"
+        className="px-md py-xs font-semibold text-meta text-ink-muted bg-subtle-strong hover:text-ink hover:bg-line-strong transition-colors"
       >
         Today
       </button>
@@ -93,12 +93,8 @@ export function ModeModal({
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          showCloseButton={false}
-          aria-describedby={undefined}
-          className="block rounded-2xl p-md w-full max-w-[min(22rem,calc(100%-2rem))] border-line shadow-2xl"
-        >
-          <DialogTitle className="text-h1 font-title font-normal text-ink mb-md">View</DialogTitle>
+        <DialogContent aria-describedby={undefined} className="max-w-[min(22rem,calc(100%-2rem))]">
+          <DialogTitle className="text-h1">View</DialogTitle>
 
           <div className="space-y-xs">
             {MODES.map(({ value, label, Icon, hint }) => (
@@ -108,13 +104,13 @@ export function ModeModal({
                   onPick(value);
                   setOpen(false);
                 }}
-                className={`w-full flex items-center gap-sm p-sm rounded-lg border text-left transition-colors ${
+                className={`w-full flex items-center gap-sm p-sm border text-left transition-colors ${
                   mode === value ? 'border-accent bg-subtle-strong' : 'border-line hover:bg-subtle-strong'
                 }`}
               >
                 <Icon size="1.25rem" className={mode === value ? 'text-accent' : 'text-ink-muted'} />
                 <span className="min-w-0">
-                  <span className="block text-body-sm font-semibold text-ink">{label}</span>
+                  <span className="block text-sm font-semibold text-ink">{label}</span>
                   <span className="block text-xs text-ink-muted">{hint}</span>
                 </span>
               </button>
@@ -126,7 +122,7 @@ export function ModeModal({
               onToday();
               setOpen(false);
             }}
-            className="mt-md w-full px-md py-sm bg-accent text-on-accent rounded-lg font-semibold text-body-sm active:scale-95 transition-transform"
+            className="mt-md w-full px-md py-sm bg-accent text-on-accent font-semibold text-sm active:scale-95 transition-transform"
           >
             Jump to today
           </button>
@@ -189,7 +185,7 @@ export default function CalendarNav({ compact = false }: { compact?: boolean }) 
       <div className="flex items-center gap-xs">
         <ModeModal mode={calendarMode} onPick={switchMode} onToday={goToday} />
         {calendarMode !== 'month' && (
-          <div className="flex items-center bg-subtle-strong rounded-lg p-0.5">
+          <div className="flex items-center bg-subtle-strong p-0.5">
             {arrow(-1)}
             {arrow(1)}
           </div>
@@ -200,7 +196,7 @@ export default function CalendarNav({ compact = false }: { compact?: boolean }) 
 
   return (
     <div className="flex items-center gap-sm">
-      <div className="flex items-center bg-subtle-strong rounded-lg p-xs">
+      <div className="flex items-center bg-subtle-strong p-xs">
         {arrow(-1)}
         {arrow(1)}
       </div>

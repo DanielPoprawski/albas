@@ -65,13 +65,10 @@ function ReminderDialog({
       }}
     >
       <DialogContent
-        showCloseButton={false}
         aria-describedby={undefined}
-        className="block rounded-2xl p-md w-full max-w-[min(22rem,calc(100%-2rem))] max-h-[80vh] overflow-y-auto scrollbar-hide border-line shadow-2xl"
+        className="max-w-[min(22rem,calc(100%-2rem))] max-h-[80vh] overflow-y-auto scrollbar-hide"
       >
-        <DialogTitle className="text-body-md font-title font-normal text-ink mb-md">
-          {initial == null ? 'Add notification' : 'Edit notification'}
-        </DialogTitle>
+        <DialogTitle>{initial == null ? 'Add notification' : 'Edit notification'}</DialogTitle>
 
         {!custom ? (
           <div className="space-y-xs">
@@ -84,7 +81,7 @@ function ReminderDialog({
                   type="button"
                   disabled={used}
                   onClick={() => save(minutes)}
-                  className={`w-full py-sm px-sm rounded-lg text-left text-body-sm transition-colors ${
+                  className={`w-full py-sm px-sm text-left text-sm transition-colors ${
                     used ? 'text-ink-muted cursor-default' : 'text-ink bg-subtle hover:bg-subtle-strong'
                   }`}
                 >
@@ -96,7 +93,7 @@ function ReminderDialog({
             <button
               type="button"
               onClick={() => setCustom(true)}
-              className="w-full py-sm px-sm rounded-lg text-left text-body-sm text-primary-fixed-dim bg-subtle hover:bg-subtle-strong transition-colors"
+              className="w-full py-sm px-sm text-left text-sm text-accent bg-subtle hover:bg-subtle-strong transition-colors"
             >
               Custom…
             </button>
@@ -131,14 +128,14 @@ function ReminderDialog({
               <button
                 type="button"
                 onClick={() => setCustom(false)}
-                className="px-md py-sm rounded-lg text-body-sm text-ink-muted hover:bg-subtle transition-colors"
+                className="px-md py-sm text-sm text-ink-muted hover:bg-subtle transition-colors"
               >
                 Back
               </button>
               <button
                 type="button"
                 onClick={saveCustom}
-                className="flex-1 py-sm bg-primary text-on-primary rounded-lg font-semibold text-body-sm hover:bg-primary/90 active:scale-95 transition-all"
+                className="flex-1 py-sm bg-accent text-on-accent font-semibold text-sm hover:bg-accent-hover active:scale-95 transition-all"
               >
                 {initial == null ? 'Add' : 'Save'}
               </button>
@@ -149,7 +146,7 @@ function ReminderDialog({
         <button
           type="button"
           onClick={onClose}
-          className="w-full mt-sm py-sm rounded-lg text-center text-body-sm text-ink-muted hover:bg-subtle transition-colors"
+          className="w-full mt-sm py-sm text-center text-sm text-ink-muted hover:bg-subtle transition-colors"
         >
           Cancel
         </button>
@@ -182,7 +179,7 @@ export default function RemindersField({ value, onChange }: { value: number[]; o
         <button
           type="button"
           onClick={() => setEditing('new')}
-          className="flex items-center gap-0.5 text-label-md font-semibold text-primary-fixed-dim hover:bg-subtle-strong rounded px-xs py-0.5 transition-colors"
+          className="flex items-center gap-0.5 text-xs font-semibold text-accent hover:bg-subtle-strong px-xs py-0.5 transition-colors"
         >
           <Plus size="0.875rem" />
           Add
@@ -194,9 +191,9 @@ export default function RemindersField({ value, onChange }: { value: number[]; o
       ) : (
         <div className="space-y-xs">
           {sorted.map((minutes) => (
-            <div key={minutes} className="flex items-center gap-sm py-xs px-sm rounded-lg bg-subtle">
+            <div key={minutes} className="flex items-center gap-sm py-xs px-sm bg-subtle">
               <Bell size="0.9375rem" className="text-ink-muted flex-shrink-0" />
-              <span className="text-body-sm text-ink flex-1 min-w-0 truncate">{reminderLabel(minutes)}</span>
+              <span className="text-sm text-ink flex-1 min-w-0 truncate">{reminderLabel(minutes)}</span>
               <button
                 type="button"
                 title="Edit"

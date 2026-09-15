@@ -98,7 +98,7 @@ export default function HabitRow({
           <Dot accent={color} size={10} />
           <span className="font-heading text-sm font-bold text-ink truncate">{todo.name}</span>
         </div>
-        <div className="flex items-center gap-1.5 min-w-0 max-wide:hidden">
+        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden max-wide:hidden">
           <Tag accent={category ? colorHex(category.colorKey) : color} className="shrink-0">
             {category?.name ?? fallbackLabel(todo)}
           </Tag>

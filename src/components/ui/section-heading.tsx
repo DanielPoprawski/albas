@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * The uppercase micro-heading above a grouped list — a to-do category, the
- * dashboard's "Habits" / "Today's Tasks". Matches the `text-label-md` recipe
+ * dashboard's "Habits" / "Today's Tasks". Matches the `text-xs font-semibold` recipe
  * already shared by `TasksSection`/`HabitsSection` (0.75rem, tracking-wider,
  * uppercase); sites that draw a
  * bolder or differently-coloured heading (e.g. the dashboard's purple
@@ -27,7 +27,10 @@ export function SectionHeading({
 }) {
   return (
     <h3
-      className={cn('text-label-md text-ink-muted uppercase tracking-wider flex items-center gap-xs', className)}
+      className={cn(
+        'text-xs font-semibold text-ink-muted uppercase tracking-wider flex items-center gap-xs',
+        className,
+      )}
       // dynamic: pass-through for a category's own colour
       style={style}
     >

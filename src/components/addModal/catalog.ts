@@ -44,8 +44,8 @@ export const PLACEHOLDERS: Record<AddType, string> = {
 /** Which `categoriesFor()` scope each Add-modal type's category chip offers. */
 export const SCOPE_FOR: Record<AddType, CategoryScope> = { event: 'calendar', task: 'tasks', habit: 'habits' };
 
-/** One optional field's row, revealed with the `rowIn` keyframes (App.css). */
-export const FIELD_ROW = 'flex items-center gap-2.5 animate-[rowIn_0.2s_ease_both] motion-reduce:animate-none';
+/** One optional field's row, revealed with the `row-in` keyframes (App.css). */
+export const FIELD_ROW = 'flex items-center gap-2.5 animate-[row-in_0.2s_ease_both] motion-reduce:animate-none';
 
 export interface Props {
   onClose: () => void;

@@ -18,10 +18,10 @@ const TRIGGER =
 
 /** The menu surface: the `panel` hairline + `pop` shadow, as `ui/popover.tsx` paints it. */
 const CONTENT =
-  'z-50 min-w-[10rem] panel shadow-pop p-1 outline-none data-[state=open]:animate-[pop_150ms_ease-out_both] data-[state=closed]:animate-[pop_120ms_ease-in_reverse_both] motion-reduce:animate-none';
+  'z-50 min-w-[10rem] panel shadow-pop p-1 data-[state=open]:animate-[pop_150ms_ease-out_both] data-[state=closed]:animate-[pop_120ms_ease-in_reverse_both] motion-reduce:animate-none';
 
 const ITEM =
-  'flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-sm text-ink outline-none data-[highlighted]:bg-subtle data-[disabled]:pointer-events-none data-[disabled]:text-ink-muted';
+  'flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-sm text-ink data-[highlighted]:bg-subtle data-[disabled]:pointer-events-none data-[disabled]:text-ink-muted';
 
 const SEPARATOR = 'my-1 h-px bg-line';
 

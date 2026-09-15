@@ -122,7 +122,7 @@ export function CategoriesCard() {
           </div>
         ))}
 
-        {sorted.length === 0 && <p className="text-body-sm text-ink-muted">No categories yet — add one below.</p>}
+        {sorted.length === 0 && <p className="text-sm text-ink-muted">No categories yet — add one below.</p>}
 
         {/* Add row */}
         <div className={cn('pt-xs', sorted.length > 0 && 'border-t border-line')}>

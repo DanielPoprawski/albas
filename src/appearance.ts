@@ -2,7 +2,7 @@ import { deriveAccent, isHex } from './colors';
 import type { ThemeName, ThemePref } from './types';
 
 /**
- * The themes that exist. Two, not the four CLAUDE.md § Theming lists: the
+ * The themes that exist. Two (`ThemeName`): the
  * redesign draws `:root` (light) and `[data-theme='dark']` only, and
  * `grey-high`/`grey-low` are gone for good.
  *

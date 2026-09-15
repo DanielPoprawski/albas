@@ -166,7 +166,7 @@ const ACTION = 'micro-label transition-colors';
 export function RowActions({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
   const { deleteTodo } = useApp();
   return (
-    <span className="flex items-center gap-xs flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+    <span className="flex items-center gap-xs flex-shrink-0 opacity-0 max-md:opacity-100 group-hover:opacity-100 transition-opacity">
       <button
         type="button"
         onClick={(e) => {

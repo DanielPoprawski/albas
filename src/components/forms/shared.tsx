@@ -28,7 +28,7 @@ export const labelClass = 'micro-label block mb-xs';
  * Re-export of `ui/segmented.tsx#Segmented` under this form's older name
  * (its two callers, EventForm and TodoForm, are untouched) — that one has
  * roving-arrow keyboard support this one never grew. Visual note: this
- * merge swaps a padded rounded-pill track (redundant anyway, since the
+ * merge swaps a padded-pill track (redundant anyway, since the
  * app-wide `border-radius: 0` reset already squared its corners off) for
  * the bordered adjoining-square look every other segmented control in the
  * app already uses (Settings' appearance rows).
@@ -59,7 +59,7 @@ export function Select<T extends string>({
       </SelectTrigger>
       <SelectContent>
         {options.map((opt) => (
-          <SelectItem key={opt.value} value={opt.value} className="text-body-sm">
+          <SelectItem key={opt.value} value={opt.value} className="text-sm">
             {opt.label}
           </SelectItem>
         ))}
@@ -88,7 +88,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (hex
       type="button"
       title={c}
       onClick={() => onChange(c)}
-      className={`aspect-square rounded-full transition-all ${
+      className={`aspect-square transition-all ${
         hex.toLowerCase() === c.toLowerCase()
           ? 'ring-2 ring-ink/70 ring-offset-1 ring-offset-transparent scale-110'
           : 'opacity-70 hover:opacity-100 hover:scale-110'
@@ -103,7 +103,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (hex
       type="button"
       title="Custom color"
       onClick={() => customRef.current?.click()}
-      className={`aspect-square rounded-full relative transition-all ${
+      className={`aspect-square relative transition-all ${
         isCustom ? 'ring-2 ring-ink/70 scale-110' : 'opacity-90 hover:opacity-100 hover:scale-110'
       }`}
       // dynamic: the wheel shows the custom colour once one is picked
@@ -114,7 +114,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (hex
       }}
     >
       {/* punched-out centre marks it as "pick anything", not a colour itself */}
-      {!isCustom && <span className="absolute inset-[30%] rounded-full bg-surface" />}
+      {!isCustom && <span className="absolute inset-[30%] bg-surface" />}
     </button>
   );
 
@@ -156,12 +156,12 @@ export function CheckboxRow({
   return (
     <label
       htmlFor={id}
-      className="flex items-start gap-sm cursor-pointer p-sm rounded-lg bg-subtle hover:bg-subtle-strong transition-colors"
+      className="flex items-start gap-sm cursor-pointer p-sm bg-subtle hover:bg-subtle-strong transition-colors"
     >
       {/* was `accent-blue-600` — a literal blue that ignored the theme accent */}
       <Checkbox id={id} checked={checked} onCheckedChange={(v) => onChange(v === true)} className="mt-0.5" />
       <span>
-        <span className="block text-body-sm text-ink font-medium">{label}</span>
+        <span className="block text-sm text-ink font-medium">{label}</span>
         {hint && <span className="block text-xs text-ink-muted">{hint}</span>}
       </span>
     </label>
@@ -172,7 +172,7 @@ export function CheckboxRow({
  * `ui/button.tsx#Button` in its `primary` variant, which already draws from
  * `--t-accent` (not shadcn's neutral "accent" hover surface — see CLAUDE.md).
  * `active:scale-95` is kept as a press affordance the shared Button doesn't
- * have; `text-sm` replaces the old `text-body-sm` (0.875rem).
+ * have; `text-sm` replaces the old `text-sm` (0.875rem).
  */
 export function SubmitButton({ label }: { label: string }) {
   return (
@@ -189,7 +189,7 @@ export function EditActions({ saveLabel, onDelete }: { saveLabel: string; onDele
       <button
         type="button"
         onClick={onDelete}
-        className="px-md py-sm font-semibold text-body-sm border border-danger/55 text-danger hover:bg-cat-red-tint active:scale-95 transition-all flex items-center gap-xs flex-shrink-0"
+        className="px-md py-sm font-semibold text-sm border border-danger/55 text-danger hover:bg-cat-red-tint active:scale-95 transition-all flex items-center gap-xs flex-shrink-0"
       >
         <Trash2 size="0.9375rem" />
         Delete

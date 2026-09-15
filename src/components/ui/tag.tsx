@@ -32,7 +32,7 @@ export function Tag({ className, accent, solid, style, ...props }: TagProps) {
       data-slot="tag"
       className={cn(
         'inline-flex items-center gap-[0.25rem] px-[0.5rem] py-[0.1875rem]',
-        'text-xs font-bold uppercase tracking-[0.5px] leading-none',
+        'text-xs font-bold uppercase tracking-wider leading-none',
         c && (solid ? `${c.solid} text-on-accent` : `${c.tint} ${c.ink}`),
         !accent && (solid ? 'bg-ink-secondary text-on-accent' : 'bg-subtle text-ink-secondary'),
         className,
@@ -46,7 +46,10 @@ export function Tag({ className, accent, solid, style, ...props }: TagProps) {
 
 export interface DotProps extends React.HTMLAttributes<HTMLSpanElement> {
   accent?: AccentInput;
-  /** Square edge in px — 7 on a task row, 10 in the sidebar, 8 on a header. */
+  /**
+   * Square edge at the default text size — 7 on a task row, 10 in the
+   * sidebar, 8 on a header. Emitted in rem so Settings › Text size scales it.
+   */
   size?: number;
 }
 
@@ -56,6 +59,7 @@ export interface DotProps extends React.HTMLAttributes<HTMLSpanElement> {
  */
 export function Dot({ className, accent, size = 8, style, ...props }: DotProps) {
   const name = accent ? nameOf(accent) : null;
+  const edge = `${size / 16}rem`;
   return (
     <span
       data-slot="dot"
@@ -67,7 +71,7 @@ export function Dot({ className, accent, size = 8, style, ...props }: DotProps) 
         className,
       )}
       // dynamic: size and accent come from the caller
-      style={{ width: size, height: size, ...(accent && !name ? { background: accentOf(accent).hex } : {}), ...style }}
+      style={{ width: edge, height: edge, ...(accent && !name ? { background: accentOf(accent).hex } : {}), ...style }}
       {...props}
     />
   );

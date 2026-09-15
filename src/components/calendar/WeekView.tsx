@@ -51,7 +51,7 @@ export default function WeekView() {
     onceTodos.some((t) => t.dueDate && t.dueDate >= weekStart && t.dueDate <= weekEnd);
 
   return (
-    <div className="flex-1 min-h-0 rounded-xl border overflow-hidden shadow-2xl flex flex-col border-line bg-surface">
+    <div className="flex-1 min-h-0 border overflow-hidden shadow-modal flex flex-col border-line bg-surface">
       {/* Weekday header */}
       <div className="flex border-b flex-shrink-0 border-line bg-subtle">
         <div className="flex-shrink-0 w-gutter-w" />
@@ -74,11 +74,11 @@ export default function WeekView() {
                 {dayLabels[i]}
               </span>
               <span
-                className={`w-7 h-7 flex items-center justify-center rounded-full text-body-sm font-bold ${
+                className={`w-7 h-7 flex items-center justify-center text-sm font-bold ${
                   isToday
-                    ? 'bg-primary text-on-primary shadow-lg'
+                    ? 'bg-accent text-on-accent shadow-pop'
                     : isSelected
-                      ? 'bg-primary/15 text-primary'
+                      ? 'bg-accent/15 text-accent'
                       : 'text-ink-secondary'
                 }`}
               >
@@ -151,7 +151,7 @@ export default function WeekView() {
                       <div
                         key={todo.id}
                         onClick={() => setEditTodo(todo)}
-                        className={`cursor-pointer text-xs font-bold px-xs py-0.5 rounded truncate hover:opacity-80 ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                        className={`cursor-pointer text-xs font-bold px-xs py-0.5 truncate hover:opacity-80 ${isDone(todo) ? 'line-through opacity-50' : ''}`}
                         // dynamic: the to-do's own colour
                         style={{
                           backgroundColor: `${hex}${PILL_BG_ALPHA}`,

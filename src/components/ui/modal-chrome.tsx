@@ -36,7 +36,7 @@ export function ModalChrome({ title, onClose, children, footer, cardRef, innerRe
         ref={cardRef}
         className={cn(
           'modal-card flex w-[29.375rem] max-w-full flex-col overflow-hidden border border-line bg-surface shadow-modal',
-          'animate-[modalIn_0.22s_cubic-bezier(0.2,0.8,0.3,1)_both] motion-reduce:animate-none',
+          'animate-[modal-in_0.22s_cubic-bezier(0.2,0.8,0.3,1)_both] motion-reduce:animate-none',
           cardClassName,
         )}
         role="dialog"

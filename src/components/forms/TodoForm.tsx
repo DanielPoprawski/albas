@@ -209,7 +209,7 @@ export default function TodoForm({
         <CheckboxRow checked={reminder} onChange={setReminder} label="Remind me on days it's due" />
       </div>
 
-      {error && <p className="text-body-sm text-danger">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {edit ? (
         <EditActions

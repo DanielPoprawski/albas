@@ -63,9 +63,7 @@ export default function RightPanel() {
       <aside className="flex-none h-full w-[var(--layout-right-w,20rem)] border-l border-line bg-surface flex flex-col px-4 py-4 overflow-y-auto scrollbar-hide">
         {/* Habits Section */}
         <div className="mb-4">
-          <SectionHeading className="text-sm font-bold tracking-[0.5px] text-[var(--t-cat-purple-ink)] mb-2">
-            Habits
-          </SectionHeading>
+          <SectionHeading className="text-sm font-bold tracking-wider text-accent-deep mb-2">Habits</SectionHeading>
 
           <div className="space-y-xs">
             {habits.map((habit) => {
@@ -76,7 +74,7 @@ export default function RightPanel() {
                     type="button"
                     aria-expanded={expandedId === habit.id}
                     onClick={() => toggleExpanded(habit.id)}
-                    className="block w-full text-left truncate text-xs font-semibold uppercase tracking-[0.5px] mb-[0.375rem] hover:underline"
+                    className="micro-label block w-full text-left truncate mb-[0.375rem] hover:underline"
                     // dynamic: the habit's own colour
                     style={{ color: hex }}
                   >
@@ -104,9 +102,7 @@ export default function RightPanel() {
 
         {/* Tasks: the uncategorised list first, then one list per category */}
         <div>
-          <SectionHeading className="text-sm font-bold tracking-[0.5px] text-[var(--t-cat-purple-ink)] mb-2">
-            Tasks
-          </SectionHeading>
+          <SectionHeading className="text-sm font-bold tracking-wider text-accent-deep mb-2">Tasks</SectionHeading>
 
           <div className="space-y-md">
             <div className="space-y-xs">

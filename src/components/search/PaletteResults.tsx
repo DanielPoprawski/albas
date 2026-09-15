@@ -14,7 +14,7 @@ const TABS: { id: ScopeTab; label: string }[] = [
   { id: 'habits', label: 'Habits' },
 ];
 
-const LINK = 'text-[0.6875rem] font-medium text-ink-secondary hover:text-ink hover:underline';
+const LINK = 'text-micro font-medium text-ink-secondary hover:text-ink hover:underline';
 
 function summaryText(s: SearchState): string {
   const total = s.tabMatches.length;
@@ -53,7 +53,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
             aria-selected={s.tab === t.id}
             onClick={() => s.setTab(t.id)}
             className={cn(
-              'flex items-center gap-1.5 border-b-2 pt-2 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-[0.5px] transition-colors',
+              'flex items-center gap-1.5 border-b-2 pt-2 pb-1.5 text-micro font-semibold uppercase tracking-wider transition-colors',
               s.tab === t.id ? 'border-accent text-accent' : 'border-transparent text-ink-muted hover:text-ink',
             )}
           >
@@ -61,7 +61,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
             <span className="font-medium text-ink-muted tabular-nums">{s.counts[t.id]}</span>
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-3 text-[0.6875rem] text-ink-muted">
+        <div className="ml-auto flex items-center gap-3 text-micro text-ink-muted">
           <span>{summaryText(s)}</span>
           <button type="button" className={LINK} onClick={s.selectAll}>
             Select all
@@ -131,7 +131,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
                   <Highlighted text={item.title} positions={hit.positions[0]} />
                 </span>
                 {second && (
-                  <span className="block truncate text-[0.6875rem] text-ink-muted">
+                  <span className="block truncate text-micro text-ink-muted">
                     {item.categoryName && (
                       <Highlighted text={item.categoryName} positions={hit.positions[item.fields.length - 1]} />
                     )}
@@ -143,7 +143,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
                 )}
               </span>
               {item.hasReminder && <Bell size="0.75rem" className="shrink-0 text-accent" aria-label="Has a reminder" />}
-              <span className="min-w-[5.75rem] shrink-0 text-right text-[0.6875rem] text-ink-secondary tabular-nums">
+              <span className="min-w-[5.75rem] shrink-0 text-right text-micro text-ink-secondary tabular-nums">
                 {dateLabel(item, s.firstDayOfWeek)}
               </span>
               <span className="w-9 shrink-0 text-[0.5625rem] font-bold uppercase text-ink-muted">
@@ -154,7 +154,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
         })}
       </ul>
 
-      <div className="flex items-center justify-between gap-4 border-t border-line px-[0.875rem] py-2 text-[0.6875rem] text-ink-muted">
+      <div className="flex items-center justify-between gap-4 border-t border-line px-[0.875rem] py-2 text-micro text-ink-muted">
         <span>↑↓ move · ↵ open · ⇧↵ select · Ctrl+⇧A select all · Ctrl+⇧D deselect all</span>
         <span className="font-mono text-[0.625rem] whitespace-nowrap">
           'exact !exclude ^start end$ /regex/ cat:health

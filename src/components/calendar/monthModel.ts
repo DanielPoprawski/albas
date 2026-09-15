@@ -139,8 +139,8 @@ export interface MonthLayoutProps {
 function periodBackground(hexes: string[]): string | undefined {
   if (hexes.length === 0) return undefined;
   if (hexes.length === 1) return `${hexes[0]}26`;
-  const stripe = 9; // px per color band
-  const stops = hexes.map((hex, i) => `${hex}2e ${i * stripe}px, ${hex}2e ${(i + 1) * stripe}px`).join(', ');
+  const stripe = 0.5625; // rem per colour band
+  const stops = hexes.map((hex, i) => `${hex}2e ${i * stripe}rem, ${hex}2e ${(i + 1) * stripe}rem`).join(', ');
   return `repeating-linear-gradient(135deg, ${stops})`;
 }
 

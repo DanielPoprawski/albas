@@ -64,9 +64,8 @@
      references them, and a `var()` on :root is never pruned. */
   --t-font-body: "Outfit", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --t-font-heading: "Sora", "Outfit", system-ui, -apple-system, sans-serif;
-  /* Not bundled: no file supplied, and only the admin console's ids and SQL
-     console ask for it. Named first so dropping one into public/ is all it
-     takes; the system mono renders until then. */
+  /* Not bundled: named first so dropping a file into public/ is all it takes;
+     the system mono renders until then (recovery codes, the export path). */
   --t-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Surfaces */
@@ -185,18 +184,10 @@
   /* Status roles beyond danger/success. These alias the category ramp on
      purpose — the ramp already has light and dark values tuned for both
      small marks and callout surfaces — so a `var()` here needs no dark
-     restatement. `info` had no token at all before; `warn` had ink only. */
-  --t-info: var(--t-cat-blue);
-  --t-info-tint: var(--t-cat-blue-tint);
-  --t-info-line: var(--t-cat-blue-line);
-  --t-info-ink: var(--t-cat-blue-ink);
+     restatement. Only the roles something paints with exist. */
   --t-warn: var(--t-cat-amber);
   --t-warn-tint: var(--t-cat-amber-tint);
-  --t-warn-line: var(--t-cat-amber-line);
   --t-danger-tint: var(--t-cat-red-tint);
-  --t-danger-line: var(--t-cat-red-line);
-  --t-success-tint: var(--t-cat-green-tint);
-  --t-success-line: var(--t-cat-green-line);
 
   /* Text selection and the search-match `mark`. One name so a theme can
      decouple them from the accent tint later. */
@@ -213,9 +204,6 @@
   /* A soft accent hairline (a hovered search bar, a notice's top rule).
      Mixed from the accent so a custom accent colour carries it along. */
   --t-accent-line: color-mix(in srgb, var(--t-accent) 45%, var(--t-surface));
-
-  /* shadcn's components read --radius directly, not through @theme. */
-  --radius: 0;
 }
 
 /*
@@ -227,10 +215,10 @@
  * redesign never drew them, `ThemeName` names two, and `appearance.ts`'s THEMES
  * validates against those two.
  *
- * This block redefines only the `--t-*` properties whose *value* changes; the
- * ones carrying a literal in `:root` (`--t-subtle-strong`, `--t-past-*`) are
- * restated here because nothing else would move them. The three font stacks
- * don't change at all.
+ * This block redefines only the `--t-*` properties whose *value* changes; a
+ * `var()` alias in `:root` (`--t-star`, the status roles, `--t-selection*`)
+ * follows its target and is not restated. The three font stacks don't change
+ * at all.
  *
  * Everything the app paints reaches these through `@theme inline`, which emits
  * `var(--t-…)` into the utilities rather than copying the light value, so this
@@ -275,9 +263,6 @@
   /* On dark the ink is light, so mixing toward it would wash the accent out;
      mix toward the surface instead for a deeper, still-purple chrome. */
   --t-accent-2: color-mix(in srgb, var(--t-accent) 70%, var(--t-surface));
-  --t-on-accent-2: #ffffff;
-  --t-star: var(--t-cat-amber);
-  --t-star-line: var(--t-cat-amber-ink);
 
   /* Text. Slightly off-white rather than #fff — full white on a near-black
      surface haloes at 11–0.8125rem, which is most of this app's type. */
@@ -355,8 +340,8 @@
   /*
    * The calendar sheet.
    *
-   * Per CLAUDE.md § Theming the sheet *follows* the theme rather than
-   * inverting it, so in dark it is a dark surface just above the page —
+   * The sheet *follows* the theme rather than inverting it, so in dark it
+   * is a dark surface just above the page —
    * which is exactly what `--t-surface` already is. Past/outside cells are
    * restated all the same: the light-theme greys (#f3f4f6, #dfe2e7) both read
    * as *lighter* than #17191e, which would make an elapsed day glow instead
@@ -376,14 +361,12 @@
 
 @theme inline {
   /* ── Type ─────────────────────────────────────────────────────────────
-     Outfit is the default for everything; Sora is opt-in via `font-heading`
-     on titles, the wordmark and card headers. `font-title` is kept as an
-     alias so the headings that already carry it land on Sora unedited. */
+     Outfit is the default for everything (the `*` rule in `@layer base`);
+     Sora is opt-in via `font-heading` on titles, the wordmark and card
+     headers. */
   --font-body: var(--t-font-body);
   --font-heading: var(--t-font-heading);
   --font-mono: var(--t-font-mono);
-  --font-sans: var(--t-font-body);
-  --font-title: var(--t-font-heading);
 
   /* ── Colour ───────────────────────────────────────────────────────────*/
   --color-page: var(--t-page);
@@ -439,18 +422,10 @@
 
   --color-danger: var(--t-danger);
   --color-danger-tint: var(--t-danger-tint);
-  --color-danger-line: var(--t-danger-line);
   --color-success: var(--t-success);
-  --color-success-tint: var(--t-success-tint);
-  --color-success-line: var(--t-success-line);
   --color-warn: var(--t-warn);
   --color-warn-tint: var(--t-warn-tint);
-  --color-warn-line: var(--t-warn-line);
   --color-warn-ink: var(--t-warn-ink);
-  --color-info: var(--t-info);
-  --color-info-tint: var(--t-info-tint);
-  --color-info-line: var(--t-info-line);
-  --color-info-ink: var(--t-info-ink);
   --color-on-accent: var(--t-on-accent);
   --color-selection: var(--t-selection);
   --color-selection-ink: var(--t-selection-ink);
@@ -481,8 +456,11 @@
   --shadow-accent: var(--t-shadow-accent);
 
   /* ── Type scale ───────────────────────────────────────────────────────
-     The redesign's four real sizes. `micro` is the uppercase 0.625rem label that
-     sits above inputs and heads every section. */
+     The named sizes beside Tailwind's `text-xs`…`text-lg`: `h1` for a page
+     title, `ui` for body copy (= `text-sm`, kept as the semantic name),
+     `meta` for a row's second line (= `text-xs`), `micro` for the smallest
+     legible size — palette sublines, weekday initials, chip text. Sizes and
+     line-heights only; weight, case and tracking are the call site's. */
   --text-h1: 1.25rem;
   --text-h1--line-height: 1.75rem;
   --text-h1--font-weight: 700;
@@ -492,45 +470,11 @@
   --text-meta--line-height: 1rem;
   --text-micro: 0.6875rem;
   --text-micro--line-height: 1rem;
-  --text-micro--letter-spacing: 0.04em;
-  --text-micro--font-weight: 700;
-
-  /*
-   * shadcn/ui bridge.
-   *
-   * shadcn components are written against a fixed vocabulary of colour names.
-   * Aliasing that vocabulary onto the tokens above means a generated file
-   * inherits the redesign untouched.
-   *
-   * Note `accent` is NOT aliased here: in this palette `accent` is the brand
-   * purple (above), not shadcn's menu-hover surface. The generated files in
-   * components/ui were rewritten to use `bg-subtle` for that hover instead,
-   * so the name means one thing app-wide.
-   */
-  --color-background: var(--t-page);
-  --color-foreground: var(--t-ink);
-  --color-card: var(--t-surface);
-  --color-card-foreground: var(--t-ink);
-  --color-popover: var(--t-surface);
-  --color-popover-foreground: var(--t-ink);
-  --color-primary: var(--t-accent);
-  --color-primary-foreground: var(--t-on-accent);
-  --color-secondary: var(--t-subtle);
-  --color-secondary-foreground: var(--t-ink);
-  --color-muted: var(--t-subtle);
-  --color-muted-foreground: var(--t-ink-secondary);
-  --color-destructive: var(--t-danger);
-  --color-destructive-foreground: var(--t-on-accent);
-  --color-border: var(--t-border);
-  --color-input: var(--t-border);
-  --color-ring: var(--t-accent);
 
   --color-past-cell: var(--t-past-cell);
   --color-past-ink: var(--t-past-ink);
   --color-outside-cell: var(--t-outside-cell);
   --color-outside-ink: var(--t-outside-ink);
-  --color-primary-fixed-dim: var(--t-accent);
-  --color-on-primary: var(--t-on-accent);
 }
 
 @theme {
@@ -539,13 +483,14 @@
   --breakpoint-wide: 68.75rem;
 
   /* Named spacing aliases (`px-sm`, `gap-xs`, `mb-md`) used alongside
-     Tailwind's numeric scale. */
+     Tailwind's numeric scale. Note they share the spacing namespace with
+     Tailwind's size keywords, so `max-w-lg` here means 2.5rem, not a
+     breakpoint-sized column — width utilities take an explicit `[…]`. */
   --spacing-xs: 0.25rem;
   --spacing-base: 0.5rem;
   --spacing-sm: 0.75rem;
   --spacing-md: 1.5rem;
   --spacing-gutter: 1.5rem;
-  --spacing-margin: 2rem;
   --spacing-lg: 2.5rem;
   --spacing-xl: 4rem;
 
@@ -556,22 +501,6 @@
   --spacing-gutter-w: 3.5rem;
   --spacing-lane-h: 1.125rem;
   --spacing-lane-row: 1.25rem;
-
-  /* Legacy type scale — superseded by --text-h1/h2/ui/meta/micro above. */
-  --text-headline-lg: 1.5rem;
-  --text-headline-lg--line-height: 2rem;
-  --text-headline-lg--font-weight: 700;
-  --text-headline-lg-mobile: 1.25rem;
-  --text-headline-lg-mobile--line-height: 1.75rem;
-  --text-headline-lg-mobile--font-weight: 600;
-  --text-body-md: 1rem;
-  --text-body-md--line-height: 1.5rem;
-  --text-body-sm: 0.875rem;
-  --text-body-sm--line-height: 1.25rem;
-  --text-label-md: 0.75rem;
-  --text-label-md--line-height: 1rem;
-  --text-label-md--letter-spacing: 0.04em;
-  --text-label-md--font-weight: 600;
 }
 
 /*
@@ -585,10 +514,9 @@
  * consolidation, not a new visual language.
  */
 
-/* The uppercase 0.625rem label above an input, a card's title row, or a
-   sidebar section ("MENU", "CATEGORIES"). `tracking-wider` (0.05em) and the
-   hand-written `tracking-[0.5px]` variants it replaces resolve to the same
-   0.5px at this font size, so this is a pure consolidation, no visual delta. */
+/* The uppercase 0.75rem label above an input, a card's title row, or a
+   sidebar section ("MENU", "CATEGORIES"). `tracking-wider` (0.05em) is the
+   0.5px the design specifies at this font size. */
 @utility micro-label {
   @apply text-xs font-bold uppercase tracking-wider text-ink-muted;
 }
@@ -617,7 +545,7 @@
    now that the global focus outline (App.css `@layer base`) is gone — a
    call site doesn't also need `focus:border-accent`. */
 @utility field-input {
-  @apply w-full bg-surface border border-line px-sm py-xs text-body-sm text-ink placeholder:text-ink-muted transition-colors;
+  @apply w-full bg-surface border border-line px-sm py-xs text-sm text-ink placeholder:text-ink-muted transition-colors;
 
   &:focus {
     outline: none;
@@ -630,10 +558,10 @@
   @apply border border-line bg-surface hover:border-accent hover:bg-subtle transition-all;
 }
 
-/* The uppercase title inside a card (Settings) — a tighter, ink-coloured
-   micro-label with the card's own bottom gap. */
+/* The uppercase title inside a card (Settings) — an ink-coloured micro-label
+   with the card's own bottom gap. */
 @utility card-title {
-  @apply micro-label text-xs text-ink mb-4;
+  @apply micro-label text-ink mb-4;
 }
 
 /* ── Buttons (Settings, auth methods, Add modal) ─────────────────────────
@@ -647,8 +575,10 @@
   @apply bg-accent text-on-accent border border-accent px-3 py-2 text-sm font-semibold uppercase tracking-wider cursor-pointer transition-all duration-200 hover:bg-accent-hover hover:border-accent-hover;
 }
 
-/* Layered on `button-small` or `button-primary`; later in the file, so it
-   wins the border/colour without `!important`. */
+/* Layered on `button-small` or `button-primary`. Tailwind sorts `@utility`
+   rules by name, so `button-danger` lands after both and wins the border and
+   colour without `!important`; rename any of the three and check that still
+   holds. */
 @utility button-danger {
   @apply border-danger text-danger hover:border-danger hover:text-danger hover:bg-danger-tint;
 }
@@ -891,9 +821,10 @@ html.qr-scanning #root {
  * Keyframes
  * ─────────────────────────────────────────────────────────────────────────
  * Referenced by name from `animate-[…]` utilities in `MonthViewMobile`,
- * `ui/modal-chrome`, `AddModal`, `ui/dialog` and `ui/select`, each paired with
- * `motion-reduce:animate-none`. `fade` and `pop` run in `reverse` for Radix's
- * `data-[state=closed]` exit — one keyframe each way, not a tw-animate-css import.
+ * `ui/modal-chrome`, `addModal/catalog`, `ui/dialog`, `ui/select` and
+ * `SearchPalette`, each paired with `motion-reduce:animate-none`. `fade` and
+ * `pop` run in `reverse` for Radix's `data-[state=closed]` exit — one
+ * keyframe each way, not a tw-animate-css import.
  */
 @keyframes fade {
   from {
@@ -937,7 +868,7 @@ html.qr-scanning #root {
   }
 }
 
-@keyframes modalIn {
+@keyframes modal-in {
   from {
     opacity: 0;
     transform: translateY(0.625rem) scale(0.985);
@@ -948,7 +879,7 @@ html.qr-scanning #root {
   }
 }
 
-@keyframes rowIn {
+@keyframes row-in {
   from {
     opacity: 0;
     transform: translateY(-0.25rem);

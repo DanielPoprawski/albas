@@ -144,12 +144,12 @@ export default function PasswordForm({
           type="button"
           onClick={() => setUseRecoveryCode((v) => !v)}
           disabled={busy}
-          className="text-xs text-[var(--t-ink-muted)] underline self-start bg-transparent border-0 cursor-pointer p-0"
+          className="text-xs text-ink-muted underline self-start bg-transparent border-0 cursor-pointer p-0"
         >
           {useRecoveryCode ? 'Use an authenticator code instead' : 'Use a recovery code instead'}
         </button>
       )}
-      {state.kind === 'error' && <p className="text-sm text-[var(--t-danger)] leading-snug">{state.message}</p>}
+      {state.kind === 'error' && <p className="text-sm text-danger leading-snug">{state.message}</p>}
       <button type="submit" className={submitClass} disabled={busy}>
         {busy
           ? mode === 'login'

@@ -144,7 +144,7 @@ export default function RepeatField({
       {value.choice === 'every' && (
         <div className="mt-sm space-y-sm">
           <div className="flex items-center gap-sm">
-            <span className="text-body-sm text-ink-muted">Every</span>
+            <span className="text-sm text-ink-muted">Every</span>
             <input
               type="number"
               min="1"
@@ -181,7 +181,7 @@ export default function RepeatField({
             value={value.times}
             onChange={(e) => patch({ times: e.target.value })}
           />
-          <span className="text-body-sm text-ink-muted">times per</span>
+          <span className="text-sm text-ink-muted">times per</span>
           <Select
             className="flex-1"
             options={[

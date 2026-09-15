@@ -32,7 +32,7 @@ export default function DayView() {
   const hasAllDayContent = longOccs.length > 0 || barOccs.length > 0 || dayTodos.length > 0;
 
   return (
-    <div className="flex-1 min-h-0 rounded-xl border overflow-hidden shadow-2xl flex flex-col border-line bg-surface">
+    <div className="flex-1 min-h-0 border overflow-hidden shadow-modal flex flex-col border-line bg-surface">
       {/* All-day strip */}
       {hasAllDayContent && (
         <div className="border-b flex-shrink-0 px-sm py-sm flex flex-col gap-xs border-line bg-subtle">
@@ -49,8 +49,8 @@ export default function DayView() {
                 style={{ opacity: sharedOpacity(o.event) }}
               >
                 {/* dynamic: the event's own colour */}
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: hex }} />
-                <span className="text-body-sm font-semibold text-ink">{eventTitle(o.event)}</span>
+                <span className="w-2 h-2 flex-shrink-0" style={{ backgroundColor: hex }} />
+                <span className="text-sm font-semibold text-ink">{eventTitle(o.event)}</span>
                 <span className="text-xs text-ink-muted">
                   {shortDate(o.startDate)} – {shortDate(o.endDate)}
                 </span>
@@ -66,7 +66,7 @@ export default function DayView() {
                   key={o.key}
                   onClick={() => openEvent(o.event, o.startDate)}
                   title={sharedTitleAttr(o.event)}
-                  className="text-xs font-bold px-sm py-0.5 rounded-full cursor-pointer hover:opacity-90"
+                  className="text-xs font-bold px-sm py-0.5 cursor-pointer hover:opacity-90"
                   // dynamic: the event's own colour, dimmed when shared
                   style={{ backgroundColor: `${hex}cc`, color: 'var(--t-on-accent)', opacity: sharedOpacity(o.event) }}
                 >
@@ -82,7 +82,7 @@ export default function DayView() {
                   key={todo.id}
                   onClick={() => toggleTodo(todo.id, dateStr)}
                   title={done ? 'Mark not done' : 'Mark done'}
-                  className="text-xs font-bold px-sm py-0.5 rounded-full cursor-pointer border flex items-center gap-xs"
+                  className="text-xs font-bold px-sm py-0.5 cursor-pointer border flex items-center gap-xs"
                   // dynamic: the to-do's own colour
                   style={{
                     borderColor: hex,

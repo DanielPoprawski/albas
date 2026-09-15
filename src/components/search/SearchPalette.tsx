@@ -160,7 +160,7 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
                   {regexChip && (
                     <span
                       className={cn(
-                        'flex shrink-0 items-center gap-1 px-[0.4375rem] py-0.5 text-[0.6875rem] font-semibold leading-none',
+                        'flex shrink-0 items-center gap-1 px-[0.4375rem] py-0.5 text-micro font-semibold leading-none',
                         regexChip.live ? 'bg-selection text-selection-ink' : 'bg-subtle text-ink-secondary',
                       )}
                     >

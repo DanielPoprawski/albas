@@ -157,7 +157,7 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate,
                       onEditEvent(occ.event, occ.startDate);
                     }}
                     title={sharedTitleAttr(occ.event)}
-                    className="absolute rounded px-xs py-0.5 cursor-pointer overflow-hidden hover:opacity-90"
+                    className="absolute px-xs py-0.5 cursor-pointer overflow-hidden hover:opacity-90"
                     // dynamic: the event's own time span, lane, and colour
                     style={{
                       top: atMinutes(startMin),

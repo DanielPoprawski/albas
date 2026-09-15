@@ -9,7 +9,7 @@ import { plural } from '../bulk/useBulkActions';
 import { KIND_LABEL } from './searchItems';
 import type { SearchState } from './useSearchState';
 
-const SECTION = 'text-[0.625rem] font-bold uppercase tracking-[0.5px] text-ink-muted';
+const SECTION = 'micro-label';
 const STEP_BTN =
   'size-[1.625rem] flex items-center justify-center border border-line text-ink-secondary transition-colors hover:border-accent hover:text-accent';
 
@@ -40,15 +40,15 @@ export default function EditPanel({ s }: { s: SearchState }) {
           <div className="truncate font-heading text-[0.8125rem] font-bold text-ink">
             {one ? one.title : `${items.length} selected`}
           </div>
-          <div className="text-[0.6875rem] text-ink-muted">{subline}</div>
+          <div className="text-micro text-ink-muted">{subline}</div>
           {s.missingCount > 0 && (
-            <div className="text-[0.6875rem] text-accent-deep">{s.missingCount} selected not in this result set</div>
+            <div className="text-micro text-accent-deep">{s.missingCount} selected not in this result set</div>
           )}
         </div>
         <button
           type="button"
           onClick={s.clearSelection}
-          className="shrink-0 text-[0.6875rem] font-medium text-ink-secondary hover:text-ink hover:underline"
+          className="shrink-0 text-micro font-medium text-ink-secondary hover:text-ink hover:underline"
         >
           Clear
         </button>
@@ -124,7 +124,7 @@ export default function EditPanel({ s }: { s: SearchState }) {
                 type="button"
                 onClick={() => s.applyReminder(r.value)}
                 className={cn(
-                  'whitespace-nowrap border px-[0.4375rem] py-[0.1875rem] text-[0.6875rem] font-medium transition-colors',
+                  'whitespace-nowrap border px-[0.4375rem] py-[0.1875rem] text-micro font-medium transition-colors',
                   s.commonReminder === r.value
                     ? 'border-accent bg-accent text-on-accent'
                     : 'border-line text-ink-secondary hover:border-accent hover:text-accent',
@@ -141,7 +141,7 @@ export default function EditPanel({ s }: { s: SearchState }) {
         </div>
       </div>
 
-      <BulkNotice notice={s.notice} className="px-[0.875rem] py-2 text-[0.6875rem]" />
+      <BulkNotice notice={s.notice} className="px-[0.875rem] py-2 text-micro" />
     </aside>
   );
 }

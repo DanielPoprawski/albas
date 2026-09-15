@@ -79,7 +79,7 @@ interface ResizeHandleProps {
  * outside the window) left the drag running until the next click, with the
  * panel following the mouse across the whole screen.
  *
- * Desktop only — `hidden md:block` matches the 768px breakpoint the sidebar
+ * Desktop only — `max-md:hidden` matches the 768px breakpoint the sidebar
  * itself goes `display: none` under (`useIsMobile`'s `MOBILE_QUERY`).
  */
 export default function ResizeHandle({ side, onDelta, onEnd, onReset, ariaLabel }: ResizeHandleProps) {
@@ -132,7 +132,7 @@ export default function ResizeHandle({ side, onDelta, onEnd, onReset, ariaLabel 
       aria-label={ariaLabel}
       data-side={side}
       className={cn(
-        'relative hidden w-2 shrink-0 cursor-col-resize touch-none md:block',
+        'relative block max-md:hidden w-2 shrink-0 cursor-col-resize touch-none',
         "after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:bg-accent-2 after:transition-colors after:duration-150 after:content-[''] hover:after:bg-accent",
         dragging && 'after:bg-accent',
       )}

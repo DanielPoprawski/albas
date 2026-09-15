@@ -271,7 +271,7 @@ export default function EventForm({
         />
         {recType !== 'none' && (
           <div className="flex items-center gap-sm mt-sm flex-wrap">
-            <span className="text-body-sm text-ink-muted">Every</span>
+            <span className="text-sm text-ink-muted">Every</span>
             <input
               type="number"
               min="1"
@@ -279,10 +279,10 @@ export default function EventForm({
               value={interval}
               onChange={(e) => setInterval_(e.target.value)}
             />
-            <span className="text-body-sm text-ink-muted">
+            <span className="text-sm text-ink-muted">
               {recType === 'daily' ? 'day(s)' : recType === 'weekly' ? 'week(s)' : 'month(s)'}
             </span>
-            <span className="text-body-sm text-ink-muted ml-sm">until</span>
+            <span className="text-sm text-ink-muted ml-sm">until</span>
             <DateField
               value={until}
               onChange={setUntil}
@@ -308,7 +308,7 @@ export default function EventForm({
         />
       </div>
 
-      {error && <p className="text-body-sm text-danger">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {edit ? <EditActions saveLabel="Done" onDelete={handleDelete} /> : <SubmitButton label="Add Event" />}
 
@@ -316,23 +316,16 @@ export default function EventForm({
           only this one, and focus is trapped here until it goes away. */}
       {edit && (
         <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-          <DialogContent
-            showCloseButton={false}
-            className="block rounded-2xl p-md w-full max-w-[min(20rem,calc(100%-2rem))] shadow-2xl border-line"
-          >
-            <DialogTitle className="text-body-md font-title font-normal text-ink mb-xs">
-              Delete recurring event
-            </DialogTitle>
-            <DialogDescription className="text-body-sm text-ink-muted mb-md">
-              “{edit.title}” repeats. What should be deleted?
-            </DialogDescription>
+          <DialogContent className="max-w-[min(20rem,calc(100%-2rem))]">
+            <DialogTitle className="mb-xs">Delete recurring event</DialogTitle>
+            <DialogDescription>“{edit.title}” repeats. What should be deleted?</DialogDescription>
             <div className="space-y-xs">
               {occurrenceDate && (
                 <>
                   <button
                     type="button"
                     onClick={deleteJustThis}
-                    className="w-full py-sm px-sm rounded-lg text-left text-body-sm font-medium text-ink bg-subtle hover:bg-subtle-strong transition-colors"
+                    className="w-full py-sm px-sm text-left text-sm font-medium text-ink bg-subtle hover:bg-subtle-strong transition-colors"
                   >
                     Just this event
                     <span className="text-ink-muted"> · {shortDate(occurrenceDate)}</span>
@@ -340,7 +333,7 @@ export default function EventForm({
                   <button
                     type="button"
                     onClick={deleteFuture}
-                    className="w-full py-sm px-sm rounded-lg text-left text-body-sm font-medium text-ink bg-subtle hover:bg-subtle-strong transition-colors"
+                    className="w-full py-sm px-sm text-left text-sm font-medium text-ink bg-subtle hover:bg-subtle-strong transition-colors"
                   >
                     This and all future events
                   </button>
@@ -349,14 +342,14 @@ export default function EventForm({
               <button
                 type="button"
                 onClick={deleteAll}
-                className="w-full py-sm px-sm text-left text-body-sm font-medium text-danger bg-subtle hover:bg-cat-red-tint transition-colors"
+                className="w-full py-sm px-sm text-left text-sm font-medium text-danger bg-subtle hover:bg-cat-red-tint transition-colors"
               >
                 All events
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="w-full py-sm px-sm rounded-lg text-center text-body-sm text-ink-muted hover:bg-subtle transition-colors"
+                className="w-full py-sm px-sm text-center text-sm text-ink-muted hover:bg-subtle transition-colors"
               >
                 Cancel
               </button>

@@ -112,14 +112,9 @@ export function SessionCard({
         </button>
       </SettingItem>
       <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent
-          showCloseButton={false}
-          className="block rounded-2xl p-md w-full max-w-[min(24rem,calc(100%-2rem))] border-line shadow-2xl"
-        >
-          <DialogTitle className="text-headline-lg-mobile font-title font-normal text-ink mb-sm">
-            Sign out{status?.account ? ` of ${status.account}` : ''}?
-          </DialogTitle>
-          <DialogDescription className="text-body-sm text-ink-muted mb-md">
+        <DialogContent className="max-w-[min(24rem,calc(100%-2rem))]">
+          <DialogTitle className="text-h1 mb-sm">Sign out{status?.account ? ` of ${status.account}` : ''}?</DialogTitle>
+          <DialogDescription>
             Your local items stay on this device, but syncing will stop until you sign in again.
           </DialogDescription>
           <div className="flex gap-xs justify-end">

@@ -39,7 +39,7 @@ export default function Welcome() {
   const busy = browser.state.kind === 'starting' || browser.state.kind === 'waiting' || password.state.kind === 'busy';
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gradient-to-br from-[var(--t-page)] to-[var(--t-page-shade)]">
+    <div className="h-screen w-screen overflow-hidden bg-gradient-to-br from-page to-page-shade">
       {screen === 'splash' && (
         <SplashScreen
           onSignIn={() => setScreen('signin')}
@@ -96,13 +96,13 @@ function SplashScreen({
         </div>
 
         {/* Title */}
-        <h1 className="text-4xl font-bold font-heading text-[var(--t-ink)] mb-[0.5rem] tracking-tight">Albas</h1>
+        <h1 className="text-4xl font-bold font-heading text-ink mb-[0.5rem] tracking-tight">Albas</h1>
 
         {/* Subtitle */}
-        <p className="text-lg text-[var(--t-ink-secondary)] font-medium mb-[0.75rem]">Productivity Suite</p>
+        <p className="text-lg text-ink-secondary font-medium mb-[0.75rem]">Productivity Suite</p>
 
         {/* Description */}
-        <p className="text-base text-[var(--t-ink-muted)] mb-[2.5rem] leading-relaxed">
+        <p className="text-base text-ink-muted mb-[2.5rem] leading-relaxed">
           Organize your schedule, habits, and tasks in one intuitive workspace. Everything you need to do, in one place.
         </p>
       </div>
@@ -111,23 +111,23 @@ function SplashScreen({
       <div className="flex flex-col gap-[0.75rem] w-full max-w-[18.75rem]">
         <button
           onClick={onSignIn}
-          className="px-[1.5rem] py-[0.75rem] text-on-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg shadow-accent gradient-accent"
+          className="px-[1.5rem] py-[0.75rem] text-on-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:translate-y-[-2px] hover:shadow-pop shadow-accent gradient-accent"
         >
           Sign In
         </button>
         <button
           onClick={onCreateAccount}
-          className="px-[1.5rem] py-[0.75rem] bg-surface text-[var(--t-accent)] border-2 border-[var(--t-accent)] font-semibold text-lg cursor-pointer transition-all duration-300 hover:bg-[var(--t-cat-purple-tint)]"
+          className="px-[1.5rem] py-[0.75rem] bg-surface text-accent border-2 border-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:bg-accent-tint"
         >
           Create Account
         </button>
       </div>
 
       {/* Offline link */}
-      <div className="mt-[1.5rem] pt-[1.5rem] border-t border-[var(--t-border)]">
+      <div className="mt-[1.5rem] pt-[1.5rem] border-t border-line">
         <button
           onClick={onUseOffline}
-          className="text-sm text-[var(--t-ink-muted)] cursor-pointer transition-colors duration-300 hover:text-[var(--t-accent)] text-center"
+          className="text-sm text-ink-muted cursor-pointer transition-colors duration-300 hover:text-accent text-center"
         >
           ⚙️ Use Offline — Set up later
         </button>
@@ -145,12 +145,12 @@ function OfflineCard({ onStart, onBack, busy }: { onStart: () => void; onBack: (
       <Card className="border-0 w-full max-w-[26.25rem] p-[2.5rem] shadow-modal">
         {/* Header */}
         <div className="text-center mb-[2rem]">
-          <h2 className="text-3xl font-bold font-heading text-[var(--t-ink)] mb-[0.5rem]">Use Offline</h2>
-          <p className="text-base text-[var(--t-ink-muted)]">Get started without signing in</p>
+          <h2 className="text-3xl font-bold font-heading text-ink mb-[0.5rem]">Use Offline</h2>
+          <p className="text-base text-ink-muted">Get started without signing in</p>
         </div>
 
         {/* Description */}
-        <p className="text-sm text-[var(--t-ink-muted)] mb-[1.25rem] leading-relaxed">
+        <p className="text-sm text-ink-muted mb-[1.25rem] leading-relaxed">
           Albas works fully offline on your device. Your data stays on your machine unless you set up sync later in
           Settings.
         </p>
@@ -172,7 +172,7 @@ function OfflineCard({ onStart, onBack, busy }: { onStart: () => void; onBack: (
           <button
             onClick={onBack}
             disabled={busy}
-            className="flex-1 px-[0.75rem] py-[0.75rem] bg-transparent text-[var(--t-accent)] font-semibold text-lg cursor-pointer transition-colors duration-300 hover:bg-[var(--t-cat-purple-tint)] disabled:opacity-40 disabled:pointer-events-none"
+            className="flex-1 px-[0.75rem] py-[0.75rem] bg-transparent text-accent font-semibold text-lg cursor-pointer transition-colors duration-300 hover:bg-accent-tint disabled:opacity-40 disabled:pointer-events-none"
           >
             Back
           </button>
@@ -208,10 +208,10 @@ function AuthCard({
     <div className="h-full flex items-center justify-center px-[1.25rem] overflow-y-auto">
       <Card className="border-0 w-full max-w-[26.25rem] p-[2.5rem] shadow-modal my-[1.25rem]">
         <div className="text-center mb-[1.5rem]">
-          <h2 className="text-3xl font-bold font-heading text-[var(--t-ink)] mb-[0.5rem]">
+          <h2 className="text-3xl font-bold font-heading text-ink mb-[0.5rem]">
             {isLogin ? 'Welcome Back' : 'Get Started'}
           </h2>
-          <p className="text-base text-[var(--t-ink-muted)]">
+          <p className="text-base text-ink-muted">
             {isLogin ? 'Sign in to sync your schedule, habits and tasks' : 'Create your Albas account'}
           </p>
         </div>
@@ -227,13 +227,13 @@ function AuthCard({
         )}
 
         {!isLogin && !browserBusy && (
-          <p className="text-sm text-[var(--t-ink-muted)] mt-[0.75rem] leading-relaxed">
+          <p className="text-sm text-ink-muted mt-[0.75rem] leading-relaxed">
             You can add a passkey or an authenticator app afterwards in Settings.
           </p>
         )}
 
         {isLogin && (
-          <div className="mt-[1.25rem] pt-[1.25rem] border-t border-[var(--t-border)]">
+          <div className="mt-[1.25rem] pt-[1.25rem] border-t border-line">
             <SignedOutPanel browser={browser} busy={busy} />
           </div>
         )}
@@ -241,18 +241,18 @@ function AuthCard({
         <button
           onClick={onBack}
           disabled={busy}
-          className="w-full mt-[1rem] px-[0.75rem] py-[0.625rem] bg-transparent text-[var(--t-accent)] font-semibold text-base cursor-pointer transition-colors duration-300 hover:bg-[var(--t-cat-purple-tint)] disabled:opacity-40 disabled:pointer-events-none"
+          className="w-full mt-[1rem] px-[0.75rem] py-[0.625rem] bg-transparent text-accent font-semibold text-base cursor-pointer transition-colors duration-300 hover:bg-accent-tint disabled:opacity-40 disabled:pointer-events-none"
         >
           Back
         </button>
 
-        <div className="text-center mt-[1rem] pt-[1rem] border-t border-[var(--t-border)]">
-          <p className="text-sm text-[var(--t-ink-muted)] leading-relaxed">
+        <div className="text-center mt-[1rem] pt-[1rem] border-t border-line">
+          <p className="text-sm text-ink-muted leading-relaxed">
             {isLogin ? "Don't have an account? " : 'Already have an account? '}
             <button
               onClick={onFooterClick}
               disabled={busy}
-              className="text-[var(--t-accent)] font-semibold cursor-pointer hover:underline disabled:opacity-40"
+              className="text-accent font-semibold cursor-pointer hover:underline disabled:opacity-40"
             >
               {isLogin ? 'Create one' : 'Sign in'}
             </button>

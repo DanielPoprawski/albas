@@ -40,7 +40,7 @@ const PaletteTrigger = forwardRef<
         {query || 'Search events, tasks and habits'}
       </span>
       {query && (
-        <span className="shrink-0 bg-selection px-1.5 py-px text-[0.6875rem] font-semibold leading-none text-selection-ink">
+        <span className="shrink-0 bg-selection px-1.5 py-px text-micro font-semibold leading-none text-selection-ink">
           {count}
         </span>
       )}

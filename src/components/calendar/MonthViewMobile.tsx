@@ -97,7 +97,7 @@ export default function MonthViewMobile({ weeks, onEditEvent, onEditTodo, onDayC
                   variant="mobile"
                   className={cn(
                     'border-r border-b border-line',
-                    cell.isSelected && !cell.isToday && !cell.background && 'bg-primary/10',
+                    cell.isSelected && !cell.isToday && !cell.background && 'bg-accent/10',
                   )}
                   onDayClick={onDayClick}
                   onEditEvent={onEditEvent}

@@ -22,7 +22,7 @@ import { FormMessage } from '../ui/field';
  */
 type Browser = ReturnType<typeof useBrowserSignIn>;
 
-const LINK = 'text-sm text-[var(--t-accent)] font-semibold cursor-pointer hover:underline disabled:opacity-40';
+const LINK = 'text-sm text-accent font-semibold cursor-pointer hover:underline disabled:opacity-40';
 
 export function SignedOutPanel({ browser, busy }: { browser: Browser; busy: boolean }) {
   const [showQr, setShowQr] = useState(false);
@@ -52,7 +52,7 @@ export function SignedOutPanel({ browser, busy }: { browser: Browser; busy: bool
     return (
       <div className="flex flex-col items-center gap-[0.75rem] text-center">
         <QRCodeSVG value={st.url} size={176} includeMargin />
-        <p className="text-sm text-[var(--t-ink-secondary)] leading-snug">
+        <p className="text-sm text-ink-secondary leading-snug">
           On a phone that's signed in, open Settings → Session → <strong>Scan to sign in another device</strong>. It
           should show the code <strong className="tracking-[0.2em]">{st.code}</strong>.
         </p>
@@ -73,7 +73,7 @@ export function SignedOutPanel({ browser, busy }: { browser: Browser; busy: bool
   if (st.kind === 'waiting' && !showQr) {
     return (
       <div className="text-center">
-        <p className="text-sm text-[var(--t-ink-secondary)] leading-snug">
+        <p className="text-sm text-ink-secondary leading-snug">
           {st.code ? (
             <>
               Finish in your browser — it should show the code <strong className="tracking-[0.2em]">{st.code}</strong>.
@@ -119,9 +119,9 @@ export function SignedOutPanel({ browser, busy }: { browser: Browser; busy: bool
           Sign in with your phone
         </button>
       )}
-      {st.kind === 'starting' && <p className="text-sm text-[var(--t-ink-muted)]">Starting…</p>}
-      {st.kind === 'error' && <p className="text-sm text-[var(--t-danger)] text-center">{st.message}</p>}
-      {scanError && <p className="text-sm text-[var(--t-danger)] text-center">{scanError}</p>}
+      {st.kind === 'starting' && <p className="text-sm text-ink-muted">Starting…</p>}
+      {st.kind === 'error' && <p className="text-sm text-danger text-center">{st.message}</p>}
+      {scanError && <p className="text-sm text-danger text-center">{scanError}</p>}
       {scanning && (
         <QrScanner
           hint="Point the camera at the code shown on the signed-in device (Settings → Session → Link another device)."

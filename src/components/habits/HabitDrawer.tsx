@@ -29,7 +29,7 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
             {labels.map((label, i) => (
               <span
                 key={habit.cells[i * 7].dateStr}
-                className="w-[0.875rem] whitespace-nowrap overflow-visible text-[0.625rem] leading-none uppercase tracking-[0.5px] text-ink-muted"
+                className="w-[0.875rem] whitespace-nowrap overflow-visible text-[0.625rem] leading-none uppercase tracking-wider text-ink-muted"
               >
                 {label}
               </span>
@@ -56,7 +56,7 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
         </div>
 
         <div className="flex flex-col gap-3 pt-[1.125rem] max-md:pt-0">
-          <span className="micro-label text-[0.625rem]">
+          <span className="micro-label">
             Last {HISTORY_WEEKS} weeks · {habit.completion}% complete
           </span>
           <span className="flex items-center gap-[0.375rem] text-xs text-ink-secondary">
