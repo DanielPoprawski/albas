@@ -1,10 +1,8 @@
-import { useRef, useState } from 'react';
-import { LAYOUT_LIMITS, clampRem } from '../appearance';
 import { useApp } from '../context/AppContext';
-import AddModal from './AddModal';
 import InlineEditor from './InlineEditor';
 import QuickAddField from './QuickAddField';
-import ResizeHandle from './ResizeHandle';
+import ResizeHandle, { useResizableWidth } from './ResizeHandle';
+import { useInlineEdit } from './useInlineEdit';
 import { fmt, weekOf } from '../dates';
 import { byDashboardOrder, dashboardTasks, groupTasks, isRepeating } from '../todoLogic';
 import type { Todo } from '../types';
@@ -22,43 +20,10 @@ import TaskRow from './todo/TaskRow';
  * weekly checkboxes and today's tasks.
  */
 export default function RightPanel() {
-  const { todos, firstDayOfWeek, getSetting, setSetting, categoriesFor, categoryById, hiddenCategoryIds } = useApp();
-  /** The one row (habit card or task) whose inline editor is open. */
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  /** The "Advanced…" path out of an inline editor. */
-  const [editing, setEditing] = useState<Todo | null>(null);
-  const toggleExpanded = (id: string) => setExpandedId((cur) => (cur === id ? null : id));
-
-  // Drag state for the panel's own resize handle. Held in a ref, not React
-  // state — a pixel-by-pixel setState would re-render this whole panel on
-  // every pointermove. The var is written straight onto <html> during the
-  // drag; `setSetting` (which persists and re-derives `applyLayout`) only
-  // runs once, when the handle reports the drag ended.
-  const dragRem = useRef<number | null>(null);
-
-  function commitRightWidth() {
-    if (dragRem.current === null) return;
-    setSetting('__layout_right_w', String(dragRem.current));
-    dragRem.current = null;
-  }
-
-  function handleRightDelta(deltaPx: number) {
-    if (dragRem.current === null) {
-      const stored = parseFloat(getSetting('__layout_right_w') ?? '');
-      dragRem.current = Number.isFinite(stored) ? stored : LAYOUT_LIMITS.right.def;
-    }
-    const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    // The handle sits on the panel's *left* edge, so dragging left (a
-    // negative clientX delta) widens the panel — hence the subtraction.
-    dragRem.current = clampRem(dragRem.current - deltaPx / remPx, LAYOUT_LIMITS.right.min, LAYOUT_LIMITS.right.max);
-    document.documentElement.style.setProperty('--layout-right-w', `${dragRem.current}rem`);
-  }
-
-  function handleRightReset() {
-    dragRem.current = null;
-    document.documentElement.style.removeProperty('--layout-right-w');
-    setSetting('__layout_right_w', '');
-  }
+  const { todos, firstDayOfWeek, categoriesFor, categoryById, hiddenCategoryIds } = useApp();
+  const { expandedId, toggleExpanded, setEditing, editModal } = useInlineEdit();
+  // The handle sits on the panel's *left* edge, so dragging left widens it.
+  const resize = useResizableWidth('right', -1);
 
   // Get today's date
   const today = fmt(new Date());
@@ -94,13 +59,7 @@ export default function RightPanel() {
       {/* Sits on the panel's left edge, as a sibling flex item in
           `.shell-content` — not absolutely positioned over the panel — so its
           own 0.5rem is genuinely reserved (see MonthViewDesktop's RESERVED). */}
-      <ResizeHandle
-        side="left"
-        onDelta={handleRightDelta}
-        onEnd={commitRightWidth}
-        onReset={handleRightReset}
-        ariaLabel="Resize right panel"
-      />
+      <ResizeHandle side="left" {...resize} ariaLabel="Resize right panel" />
       <aside className="flex-none h-full w-[var(--layout-right-w,20rem)] border-l border-line bg-surface flex flex-col px-4 py-4 overflow-y-auto scrollbar-hide">
         {/* Habits Section */}
         <div className="mb-4">
@@ -178,7 +137,7 @@ export default function RightPanel() {
           </div>
         </div>
       </aside>
-      {editing && <AddModal editTodo={editing} onClose={() => setEditing(null)} />}
+      {editModal}
     </>
   );
 }

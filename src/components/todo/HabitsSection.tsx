@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { fmt, weekOf } from '../../dates';
 import { isRepeating, repeatLabel, statusLabel } from '../../todoLogic';
@@ -8,6 +7,7 @@ import HabitStrip from '../habits/HabitStrip';
 import { cellsFor } from '../habits/habitModel';
 import { RowActions } from './TaskRow';
 import { SectionHeading } from '../ui/section-heading';
+import { useInlineEdit } from '../useInlineEdit';
 import type { Todo } from '../../types';
 
 /** Repeating to-do: name + status, then the week strip. The name opens the inline editor. */
@@ -53,8 +53,7 @@ function RepeatingRow({
 /** Repeating to-dos (habits and chores) with their week strips. */
 export default function HabitsSection({ onEdit }: { onEdit: (t: Todo) => void }) {
   const { todos, hiddenCategoryIds } = useApp();
-  /** The one row whose inline editor is open. */
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { expandedId, toggleExpanded } = useInlineEdit();
 
   const habits = todos.filter((t) => !hiddenCategoryIds.has(t.category) && isRepeating(t));
   if (habits.length === 0) return null;
@@ -69,7 +68,7 @@ export default function HabitsSection({ onEdit }: { onEdit: (t: Todo) => void })
             todo={todo}
             onEdit={onEdit}
             expanded={expandedId === todo.id}
-            onToggleExpand={() => setExpandedId((cur) => (cur === todo.id ? null : todo.id))}
+            onToggleExpand={() => toggleExpanded(todo.id)}
           />
         ))}
       </div>

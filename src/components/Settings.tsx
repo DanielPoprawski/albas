@@ -1,4 +1,3 @@
-import { errorMessage } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { inTauri } from '../persistence';
@@ -12,12 +11,12 @@ import { CategoriesCard } from './settings/CategoriesCard';
 import { DangerZoneCard } from './settings/DangerZoneCard';
 import { ImportCard, SharingCard } from './settings/IntegrationsCards';
 import { AboutCard, PreferencesCard, ShortcutsCard } from './settings/misc';
-import type { SyncState } from './settings/shared';
+import { useAsyncState } from './settings/shared';
 
 export default function Settings() {
   const { setSetting, syncNow, reloadFromStore, syncToken } = useApp();
   const [status, setStatus] = useState<SyncStatusInfo | null>(null);
-  const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' });
+  const { state: syncState, setState: setSyncState, run } = useAsyncState();
   const [token, setToken] = useState('');
   const [manual, setManual] = useState(false);
   // Blank means "use the default server" (`normalizeSyncUrl`), never
@@ -46,22 +45,20 @@ export default function Settings() {
   }, [available, browser.state.kind, password.state.kind]);
 
   async function sync() {
-    setSyncState({ kind: 'busy', what: 'Syncing' });
-    try {
+    await run('Syncing', async () => {
       const out = await syncNow();
       await refreshStatus();
       const parts = [`sent ${out.pushed}`, `received ${out.pulled}`];
-      if (out.skipped > 0) parts.push(`${out.skipped} skipped`);
-      setSyncState({
-        kind: out.skipped > 0 ? 'error' : 'ok',
-        message:
-          out.skipped > 0
-            ? `Synced (${parts.join(', ')}). Skipped rows come from a newer version of Albas.`
-            : `Synced - ${parts.join(', ')}.`,
-      });
-    } catch (err) {
-      setSyncState({ kind: 'error', message: errorMessage(err) });
-    }
+      if (out.skipped > 0) {
+        // A warning after a success: rows this build could not apply.
+        setSyncState({
+          kind: 'error',
+          message: `Synced (${parts.join(', ')}, ${out.skipped} skipped). Skipped rows come from a newer version of Albas.`,
+        });
+        return;
+      }
+      return `Synced - ${parts.join(', ')}.`;
+    });
   }
 
   /**
@@ -83,12 +80,10 @@ export default function Settings() {
   }
 
   async function signOut() {
-    try {
+    await run('Signing out', async () => {
       await ipc.syncSignOut();
       await afterLeavingAccount();
-    } catch (err) {
-      setSyncState({ kind: 'error', message: errorMessage(err) });
-    }
+    });
   }
 
   async function refreshStatus() {
@@ -100,8 +95,7 @@ export default function Settings() {
   }
 
   async function connectManually() {
-    setSyncState({ kind: 'busy', what: 'Saving' });
-    try {
+    await run('Saving', async () => {
       // Rust owns the token (keyring on desktop) and the signed-in marker;
       // `set_setting` refuses both keys, so this goes through the same
       // adoption path as every other sign-in. React learns of the marker on
@@ -110,11 +104,8 @@ export default function Settings() {
       setSetting('__welcome_done', '1');
       await reloadFromStore();
       await refreshStatus();
-      setSyncState({ kind: 'idle' });
-      await sync();
-    } catch (err) {
-      setSyncState({ kind: 'error', message: errorMessage(err) });
-    }
+    });
+    await sync();
   }
 
   return (

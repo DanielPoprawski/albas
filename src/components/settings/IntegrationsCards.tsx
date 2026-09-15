@@ -1,4 +1,3 @@
-import { errorMessage } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { inTauri } from '../../persistence';
@@ -6,53 +5,34 @@ import { parseIcs } from '../../ics';
 import * as ipc from '../../ipc';
 import type { SharesRes } from '../../ipc';
 import { Switch } from '../ui/switch';
-import { FormMessage } from '../ui/field';
-import { Card, ROW_INSET, type SyncState } from './shared';
+import { AsyncMessage, Card, ROW_INSET, useAsyncState } from './shared';
 
 /* ── Calendar import ─────────────────────────────────────────────────────*/
-
-type ImportState =
-  | { kind: 'idle' }
-  | { kind: 'busy' }
-  | { kind: 'done'; imported: number; skipped: number }
-  | { kind: 'error'; message: string };
 
 export function ImportCard() {
   const { importEvents } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
-  const [state, setState] = useState<ImportState>({ kind: 'idle' });
+  const { state, run, busy } = useAsyncState();
 
-  function runImport(text: string) {
+  /** Parses and imports; the success line, or a thrown error for the message. */
+  function runImport(text: string): string {
     const { events, skipped } = parseIcs(text);
-    if (events.length === 0) {
-      setState({ kind: 'error', message: 'No events found — is that an iCalendar (.ics) file?' });
-      return;
-    }
+    if (events.length === 0) throw new Error('No events found — is that an iCalendar (.ics) file?');
     importEvents(events);
-    setState({ kind: 'done', imported: events.length, skipped });
+    return `Imported ${events.length} event${events.length === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} skipped)` : ''}.`;
   }
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
-    setState({ kind: 'busy' });
-    try {
-      runImport(await file.text());
-    } catch (err) {
-      setState({ kind: 'error', message: `Couldn't read file: ${err}` });
-    }
+    await run('Importing…', async () => runImport(await file.text()));
     if (fileRef.current) fileRef.current.value = ''; // allow re-picking the same file
   }
 
-  async function handleUrl() {
+  function handleUrl() {
     const trimmed = url.trim();
     if (!trimmed) return;
-    setState({ kind: 'busy' });
-    try {
-      runImport(await ipc.fetchIcs(trimmed));
-    } catch (err) {
-      setState({ kind: 'error', message: `Fetch failed: ${err}` });
-    }
+    void run('Importing…', async () => runImport(await ipc.fetchIcs(trimmed)));
   }
 
   return (
@@ -92,12 +72,7 @@ export function ImportCard() {
             onChange={(e) => setUrl(e.target.value)}
             disabled={!inTauri()}
           />
-          <button
-            type="button"
-            onClick={handleUrl}
-            disabled={!inTauri() || state.kind === 'busy'}
-            className="button-primary shrink-0"
-          >
+          <button type="button" onClick={handleUrl} disabled={!inTauri() || busy} className="button-primary shrink-0">
             Import
           </button>
         </div>
@@ -106,14 +81,7 @@ export function ImportCard() {
         )}
       </div>
 
-      {state.kind === 'busy' && <FormMessage kind="busy">Importing…</FormMessage>}
-      {state.kind === 'done' && (
-        <FormMessage kind="success">
-          Imported {state.imported} event{state.imported === 1 ? '' : 's'}
-          {state.skipped > 0 ? ` (${state.skipped} skipped)` : ''}.
-        </FormMessage>
-      )}
-      {state.kind === 'error' && <FormMessage>{state.message}</FormMessage>}
+      <AsyncMessage state={state} />
     </Card>
   );
 }
@@ -127,9 +95,9 @@ export function ImportCard() {
  * drawing it), which is why it isn't a server call.
  */
 export function SharingCard() {
-  const { signedIn, hiddenOwners, toggleOwnerHidden, reloadFromStore } = useApp();
+  const { signedIn, hiddenOwners, toggleOwnerHidden, syncNow } = useApp();
   const [shares, setShares] = useState<SharesRes | null>(null);
-  const [state, setState] = useState<SyncState>({ kind: 'idle' });
+  const { state, run, busy } = useAsyncState();
   const [newName, setNewName] = useState('');
 
   const available = inTauri() && signedIn;
@@ -140,18 +108,14 @@ export function SharingCard() {
 
   useEffect(() => {
     if (!available) return;
-    load().catch((err) => setState({ kind: 'error', message: errorMessage(err) }));
-  }, [available]);
+    void run('', load);
+  }, [available, run]);
 
   async function setShare(name: string, calendar: boolean, todos: boolean) {
-    setState({ kind: 'busy', what: 'Saving…' });
-    try {
+    await run('Saving…', async () => {
       await ipc.sharesSet(name, calendar, todos);
       await load();
-      setState({ kind: 'idle' });
-    } catch (err) {
-      setState({ kind: 'error', message: errorMessage(err) });
-    }
+    });
   }
 
   async function addShare() {
@@ -162,16 +126,11 @@ export function SharingCard() {
   }
 
   /** Their next sync is what actually moves data; ours only re-reads grants. */
-  async function refreshIncoming() {
-    setState({ kind: 'busy', what: 'Syncing…' });
-    try {
-      await ipc.syncNow();
-      await reloadFromStore();
+  function refreshIncoming() {
+    void run('Syncing…', async () => {
+      await syncNow();
       await load();
-      setState({ kind: 'idle' });
-    } catch (err) {
-      setState({ kind: 'error', message: errorMessage(err) });
-    }
+    });
   }
 
   if (!available) return null;
@@ -215,7 +174,7 @@ export function SharingCard() {
         />
         <button
           onClick={() => void addShare()}
-          disabled={state.kind === 'busy' || newName.trim() === ''}
+          disabled={busy || newName.trim() === ''}
           className="button-primary shrink-0"
         >
           Share
@@ -249,13 +208,12 @@ export function SharingCard() {
             ))}
           </div>
         )}
-        <button onClick={() => void refreshIncoming()} disabled={state.kind === 'busy'} className="button-small mt-3">
+        <button onClick={refreshIncoming} disabled={busy} className="button-small mt-3">
           Refresh
         </button>
       </div>
 
-      {state.kind === 'busy' && <FormMessage kind="busy">{state.what}</FormMessage>}
-      {state.kind === 'error' && <FormMessage>{state.message}</FormMessage>}
+      <AsyncMessage state={state} />
     </Card>
   );
 }

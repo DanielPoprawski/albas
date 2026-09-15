@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
-import { addDays, addMinutes, diffDays, fmt, nowFloor15, shortDate } from '../../dates';
+import { addDays, addMinutes, fmt, nowFloor15, shortDate } from '../../dates';
+import { movedEnd } from '../../eventLogic';
 import { samePatch } from '@/lib/utils';
-import { describeWhen, stripMatch, useNlDate } from '../../nlDate';
+import { stripMatch } from '../../nlDate';
 import { GENERAL } from '../../todoLogic';
+import { NlDateSuggestion, useNlSuggestion } from './NlDateSuggestion';
 import type { CalendarEvent, Recurrence } from '../../types';
 import {
   CheckboxRow,
@@ -66,13 +68,10 @@ export default function EventForm({
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Natural-language date suggestion (Phase H). Apply-only — an edit form
-  // never auto-applies on submit, so a title that happens to contain a
-  // date-shaped phrase never silently reschedules an existing event.
-  const suggestion = useNlDate(title);
-  const suggestionKey = suggestion ? `${suggestion.matched.index}:${suggestion.matched.text}` : null;
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const dismissed = suggestionKey !== null && suggestionKey === dismissedKey;
+  // Natural-language date suggestion. Apply-only — an edit form never
+  // auto-applies on submit, so a title that happens to contain a date-shaped
+  // phrase never silently reschedules an existing event.
+  const { suggestion, dismiss: dismissSuggestion } = useNlSuggestion(title);
 
   function applySuggestion() {
     if (!suggestion) return;
@@ -88,10 +87,7 @@ export default function EventForm({
   // Moving the start drags the end with it, keeping the gap — otherwise
   // rescheduling a meeting means editing both dates by hand.
   function changeStartDate(next: string) {
-    if (next && startDate && endDate) {
-      const shift = diffDays(startDate, next);
-      if (shift !== 0) setEndDate(addDays(endDate, shift));
-    }
+    if (next && startDate && endDate) setEndDate(movedEnd(startDate, next, endDate));
     setStartDate(next);
   }
 
@@ -204,33 +200,13 @@ export default function EventForm({
           onChange={(e) => setTitle(e.target.value)}
           autoFocus
         />
-        {suggestion && !dismissed && (
-          <div className="flex items-center justify-between gap-sm mt-xs">
-            <span className="text-sm text-ink-muted truncate">
-              {'→ '}
-              <span className="text-accent font-semibold">{describeWhen(suggestion)}</span>
-              {' — from “'}
-              {suggestion.matched.text}
-              {'”'}
-            </span>
-            <span className="flex items-center gap-sm flex-shrink-0">
-              <button
-                type="button"
-                onClick={applySuggestion}
-                className="text-sm font-semibold text-accent hover:underline"
-              >
-                Apply
-              </button>
-              <button
-                type="button"
-                onClick={() => setDismissedKey(suggestionKey)}
-                aria-label="Dismiss date suggestion"
-                className="text-ink-muted hover:text-ink"
-              >
-                ×
-              </button>
-            </span>
-          </div>
+        {suggestion && (
+          <NlDateSuggestion
+            suggestion={suggestion}
+            onApply={applySuggestion}
+            onDismiss={dismissSuggestion}
+            className="mt-xs"
+          />
         )}
       </div>
 

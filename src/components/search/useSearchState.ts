@@ -49,7 +49,6 @@ export function useSearchState(page: SearchPage) {
   const [tab, setTab] = useState<ScopeTab>(DEFAULT_TAB[page]);
   const [active, setActive] = useState(0);
   const [shiftN, setShiftN] = useState(1);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editing, setEditing] = useState<{ event?: CalendarEvent; todo?: Todo } | null>(null);
 
   const todayStr = fmt(new Date());
@@ -153,10 +152,7 @@ export function useSearchState(page: SearchPage) {
     });
   }, [tabMatches, setSelected]);
 
-  const clearSelection = useCallback(() => {
-    setSelected(new Set());
-    setConfirmDelete(false);
-  }, [setSelected]);
+  const clearSelection = useCallback(() => setSelected(new Set()), [setSelected]);
 
   const visibleSelectedCount = useMemo(() => {
     let n = 0;
@@ -190,7 +186,6 @@ export function useSearchState(page: SearchPage) {
         }
       }
       setSelected(new Set([item.key]));
-      setConfirmDelete(false);
     },
     [page, jump, setActiveView, setSelected],
   );
@@ -208,7 +203,6 @@ export function useSearchState(page: SearchPage) {
   const applyDelete = useCallback(() => {
     bulk.applyDelete();
     setSelected(new Set());
-    setConfirmDelete(false);
   }, [bulk.applyDelete, setSelected]);
 
   return {
@@ -224,8 +218,6 @@ export function useSearchState(page: SearchPage) {
     selected,
     shiftN,
     setShiftN,
-    confirmDelete,
-    setConfirmDelete,
     notice,
     editing,
     setEditing,

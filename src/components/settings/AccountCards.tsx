@@ -27,7 +27,9 @@ import {
   SettingsTableNote,
   SW_TD,
   SW_TR,
-  type SyncState,
+  type AsyncState,
+  AsyncMessage,
+  useAsyncState,
 } from './shared';
 
 /* ── Profile ─────────────────────────────────────────────────────────────
@@ -80,7 +82,7 @@ export function SessionCard({
   onSignOut,
   busy,
 }: {
-  syncState: SyncState;
+  syncState: AsyncState;
   status: SyncStatusInfo | null;
   onSync: () => void;
   onSignOut: () => void;
@@ -136,8 +138,7 @@ export function SessionCard({
           </div>
         </DialogContent>
       </Dialog>
-      {syncState.kind === 'ok' && <FormMessage kind="success">{syncState.message}</FormMessage>}
-      {syncState.kind === 'error' && <FormMessage>{syncState.message}</FormMessage>}
+      <AsyncMessage state={syncState} />
     </Card>
   );
 }
@@ -396,33 +397,20 @@ export function AccountSigninCard({
  * `account.rs::account_export`); this just triggers that and shows the path.
  */
 function ExportDataSection({ ctx }: { ctx: AuthMethodContext }) {
-  const [state, setState] = useState<
-    { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; path: string } | { kind: 'error'; message: string }
-  >({ kind: 'idle' });
-
-  async function run() {
-    setState({ kind: 'busy' });
-    try {
-      const path = await ipc.accountExport();
-      setState({ kind: 'done', path });
-    } catch (e) {
-      setState({ kind: 'error', message: errorMessage(e) });
-    }
-  }
+  const { state, run, busy } = useAsyncState();
 
   return (
     <div>
       <h4 className="card-title text-sm mb-2">Export data</h4>
       <p className="setting-desc mb-2">Downloads everything synced to this account as a JSON file.</p>
-      <button className="button-small" onClick={() => void run()} disabled={!ctx.token || state.kind === 'busy'}>
-        {state.kind === 'busy' ? 'Exporting...' : 'Export data'}
+      <button
+        className="button-small"
+        onClick={() => void run('Exporting…', async () => `Saved to ${await ipc.accountExport()}`)}
+        disabled={!ctx.token || busy}
+      >
+        {busy ? 'Exporting...' : 'Export data'}
       </button>
-      {state.kind === 'done' && (
-        <p className="setting-desc mt-2">
-          Saved to <code className="select-all">{state.path}</code>
-        </p>
-      )}
-      {state.kind === 'error' && <FormMessage>{state.message}</FormMessage>}
+      <AsyncMessage state={state} />
     </div>
   );
 }

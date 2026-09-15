@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
 import { groupTasks, isDone, byImportanceThenDue, GENERAL } from '../../todoLogic';
 import TaskRow from './TaskRow';
 import { SectionHeading } from '../ui/section-heading';
+import { useInlineEdit } from '../useInlineEdit';
 import type { Todo } from '../../types';
 
 /**
@@ -14,8 +14,7 @@ import type { Todo } from '../../types';
  */
 export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) {
   const { todos, categoriesFor, categoryById, hiddenCategoryIds } = useApp();
-  /** The one row whose inline editor is open. */
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { expandedId, toggleExpanded } = useInlineEdit();
   const today = fmt(new Date());
 
   const tasks = todos.filter((t) => !hiddenCategoryIds.has(t.category) && t.schedule.type === 'once');
@@ -25,7 +24,7 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
     onEdit,
     actions: true,
     expanded: expandedId === todo.id,
-    onToggleExpand: () => setExpandedId((cur) => (cur === todo.id ? null : todo.id)),
+    onToggleExpand: () => toggleExpanded(todo.id),
     className: 'px-2 py-1.5',
   });
   const order = categoriesFor('tasks').map((c) => c.id);

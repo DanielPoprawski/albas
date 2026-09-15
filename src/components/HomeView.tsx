@@ -4,56 +4,17 @@ import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
 import CalendarNav from './calendar/CalendarNav';
-import AddModal from './AddModal';
 import QuickAddField from './QuickAddField';
 import HabitsSection from './todo/HabitsSection';
 import TasksSection from './todo/TasksSection';
-import { useIsMobile } from '../useMedia';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
+import { useInlineEdit } from './useInlineEdit';
 import type { Todo } from '../types';
 
-/**
- * The phone's only list surface: calendar, then habits, then tasks, in one
- * scroll. Merging Calendar and To-Do removes the drawer trip that used to sit
- * between "what's this week" and "what do I have to do".
- *
- * The calendar takes a bounded height rather than `flex-1` — it has to stop
- * somewhere for the sections below it to be reachable by scrolling, and a
- * viewport-relative height keeps roughly the same amount of month visible on
- * any device.
- */
 /** The phone header's square icon button — must match `CalendarNav`'s view picker so the bar's two corners agree. */
 const MOBILE_HEADER_BUTTON =
   'flex size-8 shrink-0 cursor-pointer items-center justify-center border-0 bg-subtle p-0 text-ink transition-all active:bg-line';
-
-export default function HomeView() {
-  const [editing, setEditing] = useState<Todo | null>(null);
-  const isMobile = useIsMobile();
-  const [mobileTab, setMobileTab] = useState<MobileTab>('dashboard');
-
-  if (isMobile) {
-    return (
-      <MobileShell editing={editing} setEditing={setEditing} currentTab={mobileTab} setCurrentTab={setMobileTab} />
-    );
-  }
-
-  // Desktop view (unchanged)
-  return (
-    <div className="h-full overflow-y-auto scrollbar-hide">
-      <div className="h-[60vh] min-h-[16.25rem] flex flex-col">
-        <MobileCalendar />
-      </div>
-
-      <div className="p-sm">
-        <HabitsSection onEdit={setEditing} />
-        <TasksSection onEdit={setEditing} />
-      </div>
-
-      {editing && <AddModal editTodo={editing} onClose={() => setEditing(null)} />}
-    </div>
-  );
-}
 
 type MobileTab = 'dashboard' | 'habits' | 'tasks';
 
@@ -70,20 +31,20 @@ const SCREEN = 'flex w-full flex-col';
 const CONTENT = 'px-1 pt-1 pb-20';
 
 /**
- * Mobile dashboard with header, tabbed screens, and bottom navigation.
+ * The phone's dashboard: a header, three tabbed screens (habits, the
+ * calendar-plus-lists dashboard, tasks) and the bottom tab bar. `AppShell`
+ * mounts it only under the phone breakpoint; the desktop has the month view
+ * and `RightPanel` instead.
+ *
+ * The calendar takes a bounded height rather than `flex-1` — it has to stop
+ * somewhere for the sections below it to be reachable by scrolling, and a
+ * viewport-relative height keeps roughly the same amount of month visible on
+ * any device.
  */
-function MobileShell({
-  editing,
-  setEditing,
-  currentTab,
-  setCurrentTab,
-}: {
-  editing: Todo | null;
-  setEditing: (t: Todo | null) => void;
-  currentTab: MobileTab;
-  setCurrentTab: (tab: MobileTab) => void;
-}) {
+export default function HomeView() {
   const { setActiveView } = useApp();
+  const { setEditing, editModal } = useInlineEdit();
+  const [currentTab, setCurrentTab] = useState<MobileTab>('dashboard');
   const today = new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
 
   return (
@@ -134,17 +95,14 @@ function MobileShell({
         ))}
       </div>
 
-      {editing && <AddModal editTodo={editing} onClose={() => setEditing(null)} />}
+      {editModal}
     </div>
   );
 }
 
 /**
- * Dashboard screen: mini calendar + habits + tasks
- */
-/**
  * The calendar body in its current mode. The phone's mode button rides in the
- * top bar (`MobileShell`), so there is no navigation row here.
+ * top bar, so there is no navigation row here.
  */
 function MobileCalendar() {
   const { calendarMode } = useApp();
@@ -157,6 +115,7 @@ function MobileCalendar() {
   );
 }
 
+/** Dashboard screen: mini calendar + habits + tasks. */
 function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
   return (
     <div className={SCREEN}>
@@ -174,9 +133,7 @@ function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void 
   );
 }
 
-/**
- * Habits screen: full list of habits
- */
+/** Habits screen: full list of habits. */
 function HabitsScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
   return (
     <div className={SCREEN}>
@@ -188,9 +145,7 @@ function HabitsScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) 
   );
 }
 
-/**
- * Tasks screen: full list of tasks
- */
+/** Tasks screen: full list of tasks. */
 function TasksScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
   return (
     <div className={SCREEN}>

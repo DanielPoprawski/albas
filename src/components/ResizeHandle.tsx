@@ -1,5 +1,48 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { cn } from '@/lib/utils';
+import { clampRem, LAYOUT_LIMITS } from '../appearance';
+import { useSettings } from '../context/SettingsContext';
+
+/**
+ * The drag state behind one `ResizeHandle`: the panel's width in rem, held
+ * in a ref rather than React state (a pixel-by-pixel setState would re-render
+ * the whole panel on every pointermove). The CSS var is written straight onto
+ * `<html>` during the drag; `setSetting` — which persists and re-derives
+ * `applyLayout` — runs once, when the handle reports the drag ended.
+ *
+ * `sign` says which pointer direction widens the panel: +1 for a handle on
+ * the panel's right edge (dragging right widens), -1 for one on its left.
+ * Returns the three handlers the handle takes, ready to spread.
+ */
+export function useResizableWidth(panel: keyof typeof LAYOUT_LIMITS, sign: 1 | -1) {
+  const { getSetting, setSetting } = useSettings();
+  const key = `__layout_${panel}_w`;
+  const cssVar = `--layout-${panel}-w`;
+  const limits = LAYOUT_LIMITS[panel];
+  const dragRem = useRef<number | null>(null);
+
+  return {
+    onDelta(deltaPx: number) {
+      if (dragRem.current === null) {
+        const stored = parseFloat(getSetting(key) ?? '');
+        dragRem.current = Number.isFinite(stored) ? stored : limits.def;
+      }
+      const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      dragRem.current = clampRem(dragRem.current + (sign * deltaPx) / remPx, limits.min, limits.max);
+      document.documentElement.style.setProperty(cssVar, `${dragRem.current}rem`);
+    },
+    onEnd() {
+      if (dragRem.current === null) return;
+      setSetting(key, String(dragRem.current));
+      dragRem.current = null;
+    },
+    onReset() {
+      dragRem.current = null;
+      document.documentElement.style.removeProperty(cssVar);
+      setSetting(key, '');
+    },
+  };
+}
 
 interface ResizeHandleProps {
   /**

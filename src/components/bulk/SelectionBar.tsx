@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
 import { GENERAL } from '../../todoLogic';
 import { Select } from '../forms/shared';
 import type { SearchItem } from '../search/types';
+import { BulkNotice, DeleteConfirm } from './BulkControls';
 import { plural, useBulkActions } from './useBulkActions';
 import type { ListSelection } from './useListSelection';
 
@@ -28,7 +28,6 @@ export default function SelectionBar({
 }) {
   const { categoriesFor } = useApp();
   const actions = useBulkActions(items);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const n = items.length;
 
   const categoryOptions = [
@@ -93,37 +92,16 @@ export default function SelectionBar({
           </>
         )}
 
-        <span className="ml-auto flex items-center gap-3 text-xs">
-          {confirmDelete ? (
-            <>
-              <span className="text-ink">Delete {plural(n, 'item')}?</span>
-              <button
-                type="button"
-                onClick={() => {
-                  actions.applyDelete();
-                  setConfirmDelete(false);
-                  selection.clear();
-                }}
-                className="font-bold text-danger hover:underline"
-              >
-                Yes
-              </button>
-              <button type="button" onClick={() => setConfirmDelete(false)} className={LINK}>
-                No
-              </button>
-            </>
-          ) : (
-            <button type="button" onClick={() => setConfirmDelete(true)} className={`${ACTION} button-danger`}>
-              Delete
-            </button>
-          )}
-        </span>
+        <DeleteConfirm
+          n={n}
+          onDelete={() => {
+            actions.applyDelete();
+            selection.clear();
+          }}
+          className="ml-auto"
+        />
       </div>
-      {actions.notice && (
-        <div className="border-t border-accent-line bg-selection px-3 py-1.5 text-xs font-semibold text-selection-ink">
-          {actions.notice}
-        </div>
-      )}
+      <BulkNotice notice={actions.notice} />
     </div>
   );
 }

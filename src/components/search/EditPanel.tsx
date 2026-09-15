@@ -4,16 +4,14 @@ import { colorHex } from '../../colors';
 import InlineEditor, { InlineEventEditor } from '../InlineEditor';
 import { shortDate } from '../../dates';
 import { REMINDER_CHOICES } from '../../reminders';
+import { BulkNotice, DeleteConfirm } from '../bulk/BulkControls';
+import { plural } from '../bulk/useBulkActions';
 import { KIND_LABEL } from './searchItems';
 import type { SearchState } from './useSearchState';
 
 const SECTION = 'text-[0.625rem] font-bold uppercase tracking-[0.5px] text-ink-muted';
 const STEP_BTN =
   'size-[1.625rem] flex items-center justify-center border border-line text-ink-secondary transition-colors hover:border-accent hover:text-accent';
-
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
 
 /**
  * The right-hand column that appears once something is selected: what's
@@ -139,37 +137,11 @@ export default function EditPanel({ s }: { s: SearchState }) {
         </section>
 
         <div className="mt-auto pt-2">
-          {s.confirmDelete ? (
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-ink">Delete {plural(items.length, 'item')}?</span>
-              <button type="button" onClick={s.applyDelete} className="font-bold text-danger hover:underline">
-                Yes
-              </button>
-              <button
-                type="button"
-                onClick={() => s.setConfirmDelete(false)}
-                className="text-ink-secondary hover:underline"
-              >
-                No
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => s.setConfirmDelete(true)}
-              className="button-small button-danger w-full"
-            >
-              Delete {plural(items.length, 'item')}
-            </button>
-          )}
+          <DeleteConfirm n={items.length} onDelete={s.applyDelete} className="w-full" />
         </div>
       </div>
 
-      {s.notice && (
-        <div className="border-t border-accent-line bg-selection px-[0.875rem] py-2 text-[0.6875rem] font-semibold text-selection-ink">
-          {s.notice}
-        </div>
-      )}
+      <BulkNotice notice={s.notice} className="px-[0.875rem] py-2 text-[0.6875rem]" />
     </aside>
   );
 }

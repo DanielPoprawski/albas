@@ -125,6 +125,15 @@ export function timeToMinutes(time: string): number {
 }
 
 /** "14:30" -> "2:30 PM" (locale-independent 12h for compact pills). */
+/**
+ * Where an event's end lands when its start moves from `oldStart` to
+ * `newStart`: the same distance, so rescheduling keeps the span's length
+ * instead of making the user edit both dates.
+ */
+export function movedEnd(oldStart: string, newStart: string, end: string): string {
+  return addDays(end, diffDays(oldStart, newStart));
+}
+
 export function shortTime(time: string): string {
   const [h, m] = time.split(':').map(Number);
   const suffix = h < 12 ? 'AM' : 'PM';

@@ -1,5 +1,4 @@
-import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '../ui/button';
 import { ModalChrome } from '../ui/modal-chrome';
@@ -13,12 +12,15 @@ import { newCategory } from '../../categoryLogic';
 import { colorHex, PALETTE_COMPACT } from '../../colors';
 import { buildCreate, type EventRepeat } from '../../createItem';
 import { REMINDER_QUICK, reminderLabel } from '../../reminders';
-import { addDays, addMinutes, diffDays, fmt, nowFloor15 } from '../../dates';
-import { describeWhen, stripMatch, useNlDate, type NlDateMatch } from '../../nlDate';
+import { addMinutes, fmt, nowFloor15 } from '../../dates';
+import { movedEnd } from '../../eventLogic';
+import { stripMatch, type NlDateMatch } from '../../nlDate';
 import DateField from '../forms/DateField';
+import { NlDateSuggestion, useNlSuggestion } from '../forms/NlDateSuggestion';
 import RepeatField, { buildRepeat, draftFromRepeat, repeatError, type RepeatDraft } from '../forms/RepeatField';
 import { ColorPicker } from '../forms/shared';
 import { useModalDismiss } from '../ui/useModalDismiss';
+import { useSpringHeight } from '../ui/useSpringHeight';
 import { FIELD_ROW, PLACEHOLDERS, REPEAT_OPTIONS, SCOPE_FOR, SECTIONS, type FieldKey, type Props } from './catalog';
 import { FieldRow, SectionGroup } from './parts';
 
@@ -75,15 +77,11 @@ export function CreateModal({
     setNewCatName('');
   }
 
-  // Natural-language date suggestion (Phase H). `dateTouched` tracks whether
-  // the user has hand-edited any date/time field or already used Apply — a
-  // suggestion only auto-applies on submit when nothing has, so it never
-  // silently overrides a date the user actually chose.
-  const suggestion = useNlDate(title);
-  const suggestionKey = suggestion ? `${suggestion.matched.index}:${suggestion.matched.text}` : null;
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const dismissed = suggestionKey !== null && suggestionKey === dismissedKey;
-  const showSuggestion = suggestion != null && !dismissed;
+  // Natural-language date suggestion. `dateTouched` tracks whether the user
+  // has hand-edited any date/time field or already used Apply — a suggestion
+  // only auto-applies on submit when nothing has, so it never silently
+  // overrides a date the user actually chose.
+  const { suggestion, dismiss: dismissSuggestion } = useNlSuggestion(title);
   const [dateTouched, setDateTouched] = useState(false);
 
   /** Pure: what Apply (or an auto-apply on submit) would change, without touching state. */
@@ -127,106 +125,11 @@ export function CreateModal({
 
   const cardRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number | null>(null);
-  const heightRef = useRef<number | null>(null);
-  const velocityRef = useRef<number>(0);
-  const targetHeightRef = useRef<number | null>(null);
-  const lastTimeRef = useRef<number>(0);
-  const roRef = useRef<ResizeObserver | null>(null);
-
-  // Spring physics integration
-  const tick = useCallback(() => {
-    if (rafRef.current) return;
-
-    const k = 190 * snappiness;
-    const d = 2 * Math.sqrt(k) * 0.92;
-    lastTimeRef.current = performance.now();
-
-    const step = (now: number) => {
-      const dt = Math.min(0.032, (now - lastTimeRef.current) / 1000);
-      lastTimeRef.current = now;
-
-      if (heightRef.current == null || targetHeightRef.current == null) return;
-
-      const err = targetHeightRef.current - heightRef.current;
-      velocityRef.current += (k * err - d * velocityRef.current) * dt;
-      heightRef.current += velocityRef.current * dt;
-
-      if (cardRef.current) {
-        cardRef.current.style.height = Math.round(heightRef.current) + 'px';
-      }
-
-      // Stop when settled
-      if (Math.abs(targetHeightRef.current - heightRef.current) < 0.4 && Math.abs(velocityRef.current) < 6) {
-        heightRef.current = targetHeightRef.current;
-        velocityRef.current = 0;
-        rafRef.current = null;
-        if (cardRef.current) {
-          cardRef.current.style.height = Math.round(targetHeightRef.current) + 'px';
-        }
-        return;
-      }
-
-      rafRef.current = requestAnimationFrame(step);
-    };
-
-    rafRef.current = requestAnimationFrame(step);
-  }, [snappiness]);
-
-  // Measure content height and start spring animation
-  const measure = useCallback(() => {
-    if (!innerRef.current || !cardRef.current) return;
-
-    const target = Math.min(innerRef.current.scrollHeight, Math.round(window.innerHeight * 0.88));
-    if (target === targetHeightRef.current) return;
-
-    targetHeightRef.current = target;
-
-    if (heightRef.current == null) {
-      heightRef.current = target;
-      velocityRef.current = 0;
-      if (cardRef.current) {
-        cardRef.current.style.height = Math.round(target) + 'px';
-      }
-      return;
-    }
-
-    // Respect prefers-reduced-motion: snap instantly instead of animating
-    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (prefersReduced) {
-      heightRef.current = target;
-      velocityRef.current = 0;
-      if (cardRef.current) {
-        cardRef.current.style.height = Math.round(target) + 'px';
-      }
-      return;
-    }
-
-    tick();
-  }, [tick]);
-
-  // Set up ResizeObserver to measure on content change
-  useEffect(() => {
-    if (typeof ResizeObserver === 'undefined') return;
-
-    roRef.current = new ResizeObserver(() => measure());
-    if (innerRef.current) {
-      roRef.current.observe(innerRef.current);
-    }
-
-    measure();
-
-    return () => {
-      if (roRef.current) {
-        roRef.current.disconnect();
-      }
-    };
-  }, [measure]);
-
-  // Re-measure on content changes
+  const measure = useSpringHeight(cardRef, innerRef, snappiness);
+  // Re-measure as soon as a row set changes, ahead of the observer.
   useEffect(() => {
     measure();
-  }, [type, on, allDay, showSuggestion, measure]);
+  }, [type, on, allDay, suggestion, measure]);
 
   // Leaving with a title saves it — same as the edit modal. Only the Cancel
   // button is an explicit "throw this away". A half-built repeat rule must
@@ -294,7 +197,7 @@ export function CreateModal({
     // (nor already applied) gets folded in here — computed rather than read
     // back from state, since `setState` inside this same call wouldn't be
     // visible until the next render.
-    const applied = !dateTouched && suggestion && !dismissed ? computeApplied(suggestion) : null;
+    const applied = !dateTouched && suggestion ? computeApplied(suggestion) : null;
     const sTitle = applied?.title ?? title;
     const sStartDate = applied?.startDate ?? startDate;
     const sEndDate = applied?.endDate ?? endDate;
@@ -574,36 +477,15 @@ export function CreateModal({
           )}
         </div>
 
-        {/* Natural-language date suggestion (Phase H) — appears the moment
-            a date/time phrase is recognised in the title, disappears the
-            moment it's applied (the phrase is stripped) or dismissed. */}
-        {suggestion && !dismissed && (
-          <div className={cn(FIELD_ROW, 'justify-between -mt-2')}>
-            <span className="text-sm text-ink-muted truncate">
-              {'→ '}
-              <span className="text-accent font-semibold">{describeWhen(suggestion)}</span>
-              {' — from “'}
-              {suggestion.matched.text}
-              {'”'}
-            </span>
-            <span className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => applySuggestion(suggestion)}
-                className="text-sm font-semibold text-accent hover:underline"
-              >
-                Apply
-              </button>
-              <button
-                type="button"
-                onClick={() => setDismissedKey(suggestionKey)}
-                aria-label="Dismiss date suggestion"
-                className="flex items-center text-ink-muted hover:text-ink"
-              >
-                <X size="0.6875rem" strokeWidth={2.4} />
-              </button>
-            </span>
-          </div>
+        {/* Appears the moment a date/time phrase is recognised in the title,
+            disappears the moment it's applied (the phrase is stripped) or dismissed. */}
+        {suggestion && (
+          <NlDateSuggestion
+            suggestion={suggestion}
+            onApply={() => applySuggestion(suggestion)}
+            onDismiss={dismissSuggestion}
+            className={cn(FIELD_ROW, '-mt-2')}
+          />
         )}
 
         {/* Event date/time block */}
@@ -617,10 +499,7 @@ export function CreateModal({
                 value={startDate}
                 onChange={(next) => {
                   // Moving the start drags the end with it, keeping the gap.
-                  if (next && startDate && endDate) {
-                    const shift = diffDays(startDate, next);
-                    if (shift !== 0) setEndDate(addDays(endDate, shift));
-                  }
+                  if (next && startDate && endDate) setEndDate(movedEnd(startDate, next, endDate));
                   setStartDate(next);
                   setDateTouched(true);
                 }}

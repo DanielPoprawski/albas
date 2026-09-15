@@ -1,10 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek } from '../../dates';
-import { isDone } from '../../todoLogic';
-import { colorHex, PILL_BG_ALPHA } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
-import { BarsOverlay, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
+import { BarsOverlay, MonthCell } from './monthParts';
 import { useMonthSwipe } from './useMonthSwipe';
 import type { MonthLayoutProps } from './monthModel';
 
@@ -29,12 +27,6 @@ const SLIDE_CLASS = {
   1: 'animate-[month-slide-next_220ms_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none',
   '-1': 'animate-[month-slide-prev_220ms_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none',
 } as const;
-
-/* See the note in MonthViewDesktop: no ellipsis, no left colour tab. */
-// No horizontal padding and no bold: a phone cell is ~3.5rem wide, and every
-// pixel of chrome here is a letter of the title that doesn't fit. `truncate`
-// ends a clipped title with an ellipsis instead of a hard cut.
-const PILL_CLASS = 'text-xs font-semibold px-px rounded-sm truncate hover:opacity-80';
 
 /**
  * Slides the grid in from the side the new month came from.
@@ -97,98 +89,21 @@ export default function MonthViewMobile({ weeks, onEditEvent, onEditTodo, onDayC
             // filled their row. 4rem is a date line plus one chip plus a bar
             // lane, and six of them are what the dashboard reserves.
             <div key={week.key} className="relative h-16 grid grid-cols-7">
-              {week.days.map((cell) => {
-                const dim = dimCell(cell);
-                return (
-                  <div
-                    key={cell.dateStr}
-                    className={`relative flex flex-col cursor-pointer border-r border-b border-line transition-colors hover:bg-accent-tint px-px py-0.5 overflow-hidden ${
-                      !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : ''
-                    } ${cell.isSelected && !cell.isToday && !cell.background ? 'bg-primary/10' : ''} ${
-                      cell.isToday ? 'today-cell' : ''
-                    }`}
-                    // dynamic: a long span washes its cells in its own colour
-                    style={{ background: cell.background }}
-                    onClick={() => onDayClick(cell.dateStr)}
-                  >
-                    <PeriodCorners cell={cell} />
-
-                    <span
-                      className={`text-xs px-0.5 ${
-                        !cell.isCurrentMonth
-                          ? 'text-outside-ink'
-                          : cell.isPast
-                            ? 'text-past-ink'
-                            : cell.isWeekend
-                              ? 'font-bold text-ink'
-                              : 'text-ink-secondary'
-                      }`}
-                    >
-                      {cell.date.getDate()}
-                    </span>
-
-                    <PeriodTitles cell={cell} onEditEvent={onEditEvent} />
-
-                    {/* space reserved for the spanning bars overlay */}
-                    {week.barLaneCount > 0 && (
-                      // dynamic: one lane-row per bar lane this week carries
-                      <div style={{ height: `calc(var(--spacing-lane-row) * ${week.barLaneCount})` }} />
-                    )}
-
-                    {/* Event + one-time to-do pills. Phone cells are tall enough
-                        that bottom-pinned chips float away from their date, so
-                        these group under it instead of using mt-auto. Not
-                        absolutely positioned, so dimming the group doesn't
-                        disturb BarsOverlay/PeriodCorners painted outside it. */}
-                    <div className={`flex flex-col gap-px overflow-hidden mt-px ${dim ? 'opacity-50' : ''}`}>
-                      {cell.shownOccs.map((o) => {
-                        const hex = colorHex(o.event.colorKey);
-                        return (
-                          <div
-                            key={o.key}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditEvent(o);
-                            }}
-                            title={sharedTitleAttr(o.event)}
-                            className={PILL_CLASS}
-                            // dynamic: the event's own colour
-                            style={{
-                              backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                              color: hex,
-                              opacity: sharedOpacity(o.event),
-                            }}
-                          >
-                            {/* no time prefix — it eats the whole chip at this width */}
-                            {eventTitle(o.event)}
-                          </div>
-                        );
-                      })}
-                      {cell.shownOnce.map((todo) => {
-                        const hex = colorHex(todo.colorKey);
-                        return (
-                          <div
-                            key={todo.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditTodo(todo);
-                            }}
-                            className={`${PILL_CLASS} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
-                            // dynamic: the to-do's own colour
-                            style={{
-                              backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                              color: hex,
-                            }}
-                          >
-                            {todo.name}
-                          </div>
-                        );
-                      })}
-                      {cell.hiddenCount > 0 && <div className="text-xs text-ink-muted pl-0.5">+{cell.hiddenCount}</div>}
-                    </div>
-                  </div>
-                );
-              })}
+              {week.days.map((cell) => (
+                <MonthCell
+                  key={cell.dateStr}
+                  cell={cell}
+                  week={week}
+                  variant="mobile"
+                  className={cn(
+                    'border-r border-b border-line',
+                    cell.isSelected && !cell.isToday && !cell.background && 'bg-primary/10',
+                  )}
+                  onDayClick={onDayClick}
+                  onEditEvent={onEditEvent}
+                  onEditTodo={onEditTodo}
+                />
+              ))}
 
               <BarsOverlay week={week} topClass="top-5" onEditEvent={onEditEvent} />
             </div>

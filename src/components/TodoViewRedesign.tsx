@@ -7,6 +7,7 @@ import { todoKey } from '../itemKeys';
 import { byDashboardOrder, GENERAL, isDone } from '../todoLogic';
 import TaskRow from './todo/TaskRow';
 import AddModal from './AddModal';
+import { useInlineEdit } from './useInlineEdit';
 import QuickAddField from './QuickAddField';
 import SearchPalette from './search/SearchPalette';
 import SelectionBar from './bulk/SelectionBar';
@@ -27,9 +28,7 @@ export default function TodoViewRedesign() {
   const categories = categoriesFor('tasks');
   const today = fmt(new Date());
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const [editingTodo, setEditingTodo] = useState<Todo | undefined>();
-  /** The one row whose inline editor is open. */
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { expandedId, toggleExpanded, setEditing, editModal } = useInlineEdit();
   /** The category id to pre-fill when adding from a category's header bar. */
   const [addingIn, setAddingIn] = useState<string | undefined>();
 
@@ -95,9 +94,9 @@ export default function TodoViewRedesign() {
     task,
     today,
     showCategory: true,
-    onEdit: () => setEditingTodo(task),
+    onEdit: setEditing,
     expanded: expandedId === task.id,
-    onToggleExpand: () => setExpandedId((cur) => (cur === task.id ? null : task.id)),
+    onToggleExpand: () => toggleExpanded(task.id),
     selected: selection.isSelected(todoKey(task)),
     onRowClick: (e: React.MouseEvent) => selection.onRowClick(e, todoKey(task)),
     onContextMenu: selection.onContextMenu,
@@ -256,7 +255,7 @@ export default function TodoViewRedesign() {
         </div>
       </div>
 
-      {editingTodo && <AddModal editTodo={editingTodo} onClose={() => setEditingTodo(undefined)} />}
+      {editModal}
       {addingIn !== undefined && (
         <AddModal defaultType="task" defaultCategory={addingIn} onClose={() => setAddingIn(undefined)} />
       )}

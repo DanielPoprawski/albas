@@ -1,9 +1,191 @@
-import { colorHex } from '../../colors';
+import type { CSSProperties, ReactNode } from 'react';
+import { cn } from '@/lib/utils';
+import { accentNameOf, CATEGORY_CLASSES, colorHex, PILL_BG_ALPHA, tintOf } from '../../colors';
+import { shortTime, type Occurrence } from '../../eventLogic';
 import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
-import type { Occurrence } from '../../eventLogic';
+import { isDone } from '../../todoLogic';
+import type { Todo } from '../../types';
 import type { DayCell, WeekRow } from './monthModel';
 
 /** Layout-independent pieces of the month grid, shared by both variants. */
+
+/** How one chip (an event occurrence or a one-time to-do) is painted. */
+interface ChipPaint {
+  className: string;
+  style?: CSSProperties;
+}
+
+/**
+ * The desktop chip: a category accent draws from its `--t-cat-*` classes (so
+ * it follows dark mode); any other stored colour — the picker offers dozens —
+ * gets a translucent wash of itself rather than silently turning purple.
+ */
+function desktopPaint(hex: string): ChipPaint {
+  const name = accentNameOf(hex);
+  if (name) {
+    const c = CATEGORY_CLASSES[name];
+    return { className: `${c.tint} ${c.line} ${c.ink}` };
+  }
+  return { className: '', style: { background: tintOf(hex), borderColor: tintOf(hex, 0.35), color: hex } };
+}
+
+/** The phone pill: the colour at `PILL_BG_ALPHA` behind itself, no border. */
+function mobilePaint(hex: string): ChipPaint {
+  return { className: '', style: { backgroundColor: `${hex}${PILL_BG_ALPHA}`, color: hex } };
+}
+
+/**
+ * What separates the two month layouts inside a cell. Everything else — the
+ * span corners, the day number's colour ladder, the period titles, the bar
+ * lane spacer, the dimmed chip group and its overflow count — is `MonthCell`.
+ */
+const CELL_VARIANTS = {
+  desktop: {
+    cell: 'px-1.5 py-[0.3125rem]',
+    liveBg: 'bg-surface',
+    dayRow: 'flex items-start justify-between mb-xs',
+    dayNumber: 'text-xs font-semibold',
+    chips: 'gap-[2px] mt-auto text-xs',
+    chip: 'text-xs font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap border',
+    paint: desktopPaint,
+    /* The time prefix only fits at desktop widths. */
+    time: true,
+    more: (n: number) => `+${n} more`,
+    morePad: 'pl-xs',
+  },
+  mobile: {
+    cell: 'px-px py-0.5 transition-colors hover:bg-accent-tint',
+    liveBg: '',
+    dayRow: '',
+    dayNumber: 'text-xs px-0.5',
+    chips: 'gap-px mt-px',
+    chip: 'text-xs font-semibold px-px rounded-sm truncate hover:opacity-80',
+    paint: mobilePaint,
+    time: false,
+    more: (n: number) => `+${n}`,
+    morePad: 'pl-0.5',
+  },
+} as const;
+
+export type MonthCellVariant = keyof typeof CELL_VARIANTS;
+
+/** One day of the month grid: the cell body both layouts draw. */
+export function MonthCell({
+  cell,
+  week,
+  variant,
+  className,
+  onDayClick,
+  onEditEvent,
+  onEditTodo,
+}: {
+  cell: DayCell;
+  week: WeekRow;
+  variant: MonthCellVariant;
+  /** Borders and any layout-specific extras (the phone's selected tint). */
+  className?: string;
+  onDayClick: (dateStr: string) => void;
+  onEditEvent: (o: Occurrence) => void;
+  onEditTodo: (t: Todo) => void;
+}) {
+  const v = CELL_VARIANTS[variant];
+  const dim = dimCell(cell);
+  const chip = (key: string, hex: string, onClick: () => void, extra: string, title?: string, body?: ReactNode) => {
+    const paint = v.paint(hex);
+    return (
+      <div
+        key={key}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        title={title}
+        className={cn(v.chip, paint.className, extra)}
+        // dynamic: the chip's own colour
+        style={paint.style}
+      >
+        {body}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      className={cn(
+        'relative flex flex-col cursor-pointer overflow-hidden',
+        v.cell,
+        !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : v.liveBg,
+        cell.isToday && 'today-cell',
+        className,
+      )}
+      // dynamic: a long span washes its cells in its own colour
+      style={{ background: cell.background }}
+      onClick={() => onDayClick(cell.dateStr)}
+    >
+      <PeriodCorners cell={cell} />
+
+      <div className={v.dayRow}>
+        <span
+          className={cn(
+            v.dayNumber,
+            !cell.isCurrentMonth
+              ? 'text-outside-ink'
+              : cell.isPast
+                ? 'text-past-ink'
+                : cell.isWeekend
+                  ? 'font-bold text-ink'
+                  : 'text-ink-secondary',
+          )}
+        >
+          {cell.date.getDate()}
+        </span>
+      </div>
+
+      <PeriodTitles cell={cell} onEditEvent={onEditEvent} />
+
+      {/* space reserved for the spanning bars overlay */}
+      {week.barLaneCount > 0 && (
+        // dynamic: one lane-row per bar lane this week carries
+        <div style={{ height: `calc(var(--spacing-lane-row) * ${week.barLaneCount})` }} />
+      )}
+
+      {/* Event + one-time to-do chips. Past/outside days dull their chips as
+          one group rather than each chip computing its own dim — the wrapper
+          isn't absolutely positioned, so opacity here doesn't disturb the
+          overlay layers (BarsOverlay/PeriodCorners) painted outside it. */}
+      <div className={cn('flex flex-col overflow-hidden', v.chips, dim && 'opacity-50')}>
+        {cell.shownOccs.map((o) =>
+          chip(
+            o.key,
+            colorHex(o.event.colorKey),
+            () => onEditEvent(o),
+            o.event.sharedBy ? 'opacity-45' : '',
+            sharedTitleAttr(o.event),
+            <>
+              {v.time && o.event.startTime && !o.event.allDay && (
+                <span className="font-normal opacity-70">{shortTime(o.event.startTime)} </span>
+              )}
+              {eventTitle(o.event)}
+            </>,
+          ),
+        )}
+        {cell.shownOnce.map((todo) =>
+          chip(
+            todo.id,
+            colorHex(todo.colorKey),
+            () => onEditTodo(todo),
+            isDone(todo) ? 'line-through opacity-50' : '',
+            undefined,
+            todo.name,
+          ),
+        )}
+        {cell.hiddenCount > 0 && (
+          <div className={cn('text-xs text-ink-muted', v.morePad)}>{v.more(cell.hiddenCount)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Whether a cell's own content (chips, titles, bars) should read as

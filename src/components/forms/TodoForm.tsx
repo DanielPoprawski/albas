@@ -3,9 +3,10 @@ import { StarButton } from '../ui/star';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
 import { samePatch } from '@/lib/utils';
-import { describeWhen, stripMatch, useNlDate } from '../../nlDate';
+import { stripMatch } from '../../nlDate';
 import { GENERAL } from '../../todoLogic';
 import type { Todo, TodoKind } from '../../types';
+import { NlDateSuggestion, useNlSuggestion } from './NlDateSuggestion';
 import {
   CheckboxRow,
   EditActions,
@@ -55,14 +56,11 @@ export default function TodoForm({
   const [reminder, setReminder] = useState(edit?.reminder ?? false);
   const [error, setError] = useState('');
 
-  // Natural-language date suggestion (Phase H). Apply-only here — unlike the
-  // Add modal's create path, this form can be editing an existing to-do, and
+  // Natural-language date suggestion. Apply-only here — unlike the Add
+  // modal's create path, this form can be editing an existing to-do, and
   // silently moving its date on submit just because the title contains a
   // date-shaped phrase would be a surprise, not a convenience.
-  const suggestion = useNlDate(name);
-  const suggestionKey = suggestion ? `${suggestion.matched.index}:${suggestion.matched.text}` : null;
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const dismissed = suggestionKey !== null && suggestionKey === dismissedKey;
+  const { suggestion, dismiss: dismissSuggestion } = useNlSuggestion(name);
 
   function applySuggestion() {
     if (!suggestion) return;
@@ -138,33 +136,13 @@ export default function TodoForm({
             className="size-9"
           />
         </div>
-        {suggestion && !dismissed && (
-          <div className="flex items-center justify-between gap-sm mt-xs">
-            <span className="text-sm text-ink-muted truncate">
-              {'→ '}
-              <span className="text-accent font-semibold">{describeWhen(suggestion)}</span>
-              {' — from “'}
-              {suggestion.matched.text}
-              {'”'}
-            </span>
-            <span className="flex items-center gap-sm flex-shrink-0">
-              <button
-                type="button"
-                onClick={applySuggestion}
-                className="text-sm font-semibold text-accent hover:underline"
-              >
-                Apply
-              </button>
-              <button
-                type="button"
-                onClick={() => setDismissedKey(suggestionKey)}
-                aria-label="Dismiss date suggestion"
-                className="text-ink-muted hover:text-ink"
-              >
-                ×
-              </button>
-            </span>
-          </div>
+        {suggestion && (
+          <NlDateSuggestion
+            suggestion={suggestion}
+            onApply={applySuggestion}
+            onDismiss={dismissSuggestion}
+            className="mt-xs"
+          />
         )}
       </div>
 

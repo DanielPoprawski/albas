@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
-import { addDays, diffDays } from '../dates';
+import { movedEnd } from '../eventLogic';
 import { GENERAL, isRepeating } from '../todoLogic';
 import type { CalendarEvent, Category, Todo } from '../types';
 import DateField from './forms/DateField';
@@ -161,8 +161,7 @@ export function InlineEventEditor({
         value={event.startDate}
         onChange={(startDate) => {
           // Keep the span's length when the start moves.
-          const endDate = addDays(startDate, Math.max(0, diffDays(event.startDate, event.endDate)));
-          updateEvent(event.id, { startDate, endDate });
+          updateEvent(event.id, { startDate, endDate: movedEnd(event.startDate, startDate, event.endDate) });
         }}
         aria-label="Start date"
         className="w-[9rem]"

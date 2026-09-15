@@ -1,13 +1,9 @@
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek, weekdayAt } from '../../dates';
 import { goToday, isThisMonth, stepMonth } from '../../calendarNav';
-import { isDone } from '../../todoLogic';
-import { shortTime } from '../../eventLogic';
-import { CATEGORY_CLASSES, accentNameOf, colorHex, tintOf } from '../../colors';
-import { eventTitle, sharedTitleAttr } from '../../sharedLogic';
-import { BarsOverlay, PeriodCorners, PeriodTitles, dimCell } from './monthParts';
+import { BarsOverlay, MonthCell } from './monthParts';
 import SearchPalette from '../search/SearchPalette';
 import type { MonthLayoutProps } from './monthModel';
 import MonthYearPopover from './MonthYearPopover';
@@ -18,27 +14,7 @@ import { Card } from '../ui/card';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** A desktop cell has room for two chips and a bottom-pinned stack. */
-/*
- * A chip's tint/hairline/ink trio. A category accent draws from its
- * `--t-cat-*` classes (so it follows dark mode); any other stored colour — the
- * desktop picker offers dozens — gets a translucent wash of itself rather than
- * silently turning purple, which is what the old hex-keyed lookup did.
- */
-function chipPaint(hex: string): { className: string; style?: CSSProperties } {
-  const name = accentNameOf(hex);
-  if (name) {
-    const c = CATEGORY_CLASSES[name];
-    return { className: `${c.tint} ${c.line} ${c.ink}` };
-  }
-  return { className: '', style: { background: tintOf(hex), borderColor: tintOf(hex, 0.35), color: hex } };
-}
-
 export const PILL_CAP = 2;
-
-/*
- * Event chip styling: square corners, category-tinted backgrounds
- */
-const CHIP_CLASS = 'text-xs font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap';
 
 /**
  * A day cell wants to be 3 wide by 2 tall. Height is dictated by the window,
@@ -142,103 +118,18 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
           <div key={week.key} className="flex-1 relative min-h-[5.75rem]">
             {/* Day cells */}
             <div className="grid grid-cols-7 h-full">
-              {week.days.map((cell, colIdx) => {
-                const isLastCol = colIdx === 6;
-                const dim = dimCell(cell);
-                return (
-                  <div
-                    key={cell.dateStr}
-                    className={`relative cursor-pointer px-1.5 py-[0.3125rem] ${
-                      !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : 'bg-surface'
-                    } ${!isLastCol ? 'border-r border-line' : ''} border-b border-line ${
-                      cell.isToday ? 'today-cell' : ''
-                    }`}
-                    // dynamic: a long span washes its cells in its own colour
-                    style={{ background: cell.background }}
-                    onClick={() => onDayClick(cell.dateStr)}
-                  >
-                    <PeriodCorners cell={cell} />
-
-                    <div className="flex items-start justify-between mb-xs">
-                      {/* Day number */}
-                      <span
-                        className={`text-xs font-semibold ${
-                          !cell.isCurrentMonth
-                            ? 'text-outside-ink'
-                            : cell.isPast
-                              ? 'text-past-ink'
-                              : cell.isWeekend
-                                ? 'text-ink font-bold'
-                                : 'text-ink-secondary'
-                        }`}
-                      >
-                        {cell.date.getDate()}
-                      </span>
-                    </div>
-
-                    <PeriodTitles cell={cell} onEditEvent={onEditEvent} />
-
-                    {/* space reserved for the spanning bars overlay */}
-                    {week.barLaneCount > 0 && (
-                      // dynamic: one lane-row per bar lane this week carries
-                      <div style={{ height: `calc(var(--spacing-lane-row) * ${week.barLaneCount})` }} />
-                    )}
-
-                    {/* Event + one-time to-do chips, pinned to the bottom of the cell.
-                        Past/outside days dull their chips as one group rather than
-                        each chip computing its own dim — the wrapper isn't absolutely
-                        positioned, so opacity here doesn't disturb the overlay layers
-                        (BarsOverlay/PeriodCorners) painted outside it. */}
-                    <div
-                      className={`flex flex-col gap-[2px] overflow-hidden mt-auto text-xs ${dim ? 'opacity-50' : ''}`}
-                    >
-                      {cell.shownOccs.map((o) => {
-                        const paint = chipPaint(colorHex(o.event.colorKey));
-                        return (
-                          <div
-                            key={o.key}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditEvent(o);
-                            }}
-                            title={sharedTitleAttr(o.event)}
-                            className={`${CHIP_CLASS} border ${paint.className} ${
-                              o.event.sharedBy ? 'opacity-45' : ''
-                            }`}
-                            // dynamic: the chip's own colour
-                            style={paint.style}
-                          >
-                            {o.event.startTime && !o.event.allDay && (
-                              <span className="font-normal opacity-70">{shortTime(o.event.startTime)} </span>
-                            )}
-                            {eventTitle(o.event)}
-                          </div>
-                        );
-                      })}
-                      {cell.shownOnce.map((todo) => {
-                        const paint = chipPaint(colorHex(todo.colorKey));
-                        return (
-                          <div
-                            key={todo.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditTodo(todo);
-                            }}
-                            className={`${CHIP_CLASS} border ${paint.className} ${isDone(todo) ? 'line-through opacity-50' : ''}`}
-                            // dynamic: the chip's own colour
-                            style={paint.style}
-                          >
-                            {todo.name}
-                          </div>
-                        );
-                      })}
-                      {cell.hiddenCount > 0 && (
-                        <div className="text-xs text-ink-muted pl-xs">+{cell.hiddenCount} more</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {week.days.map((cell, colIdx) => (
+                <MonthCell
+                  key={cell.dateStr}
+                  cell={cell}
+                  week={week}
+                  variant="desktop"
+                  className={colIdx === 6 ? 'border-b border-line' : 'border-r border-b border-line'}
+                  onDayClick={onDayClick}
+                  onEditEvent={onEditEvent}
+                  onEditTodo={onEditTodo}
+                />
+              ))}
             </div>
 
             <BarsOverlay week={week} topClass="top-[2.125rem]" onEditEvent={onEditEvent} />

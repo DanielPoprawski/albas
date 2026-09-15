@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { LayoutGrid, ListChecks, Settings as SettingsIcon, Target } from 'lucide-react';
 import { remindDueEvents, remindDueTodos } from '../notifications';
 import MonthView from './calendar/MonthView';
@@ -11,9 +11,8 @@ import HabitsView from './HabitsView';
 import Settings from './Settings';
 import Welcome from './Welcome';
 import AddModal from './AddModal';
-import ResizeHandle from './ResizeHandle';
+import ResizeHandle, { useResizableWidth } from './ResizeHandle';
 import { Logo } from './Logo';
-import { LAYOUT_LIMITS, clampRem } from '../appearance';
 import { goToday, stepMonth, stepYear } from '../calendarNav';
 import { useApp } from '../context/AppContext';
 import { fmt, stampLabel, timeAgo } from '../dates';
@@ -197,8 +196,6 @@ export default function AppShell() {
     selectedDate,
     setSelectedDate,
     setCurrentMonth,
-    getSetting,
-    setSetting,
     setInserting,
     setSelectedKeys,
   } = useApp();
@@ -214,38 +211,8 @@ export default function AppShell() {
   // knows how to render standalone (see the calendar day-click callers).
   const [addRequest, setAddRequest] = useState<{ type: AddType; date?: string } | null>(null);
 
-  // Drag state for the sidebar's resize handle — same pattern as
-  // RightPanel's: a ref (no per-pixel re-render), the var written straight
-  // onto <html> during the drag, `setSetting` only when the drag ends.
-  const dragSidebarRem = useRef<number | null>(null);
-
-  function commitSidebarWidth() {
-    if (dragSidebarRem.current === null) return;
-    setSetting('__layout_sidebar_w', String(dragSidebarRem.current));
-    dragSidebarRem.current = null;
-  }
-
-  function handleSidebarDelta(deltaPx: number) {
-    if (dragSidebarRem.current === null) {
-      const stored = parseFloat(getSetting('__layout_sidebar_w') ?? '');
-      dragSidebarRem.current = Number.isFinite(stored) ? stored : LAYOUT_LIMITS.sidebar.def;
-    }
-    const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    // The handle sits on the sidebar's *right* edge, so dragging right (a
-    // positive clientX delta) widens it.
-    dragSidebarRem.current = clampRem(
-      dragSidebarRem.current + deltaPx / remPx,
-      LAYOUT_LIMITS.sidebar.min,
-      LAYOUT_LIMITS.sidebar.max,
-    );
-    document.documentElement.style.setProperty('--layout-sidebar-w', `${dragSidebarRem.current}rem`);
-  }
-
-  function handleSidebarReset() {
-    dragSidebarRem.current = null;
-    document.documentElement.style.removeProperty('--layout-sidebar-w');
-    setSetting('__layout_sidebar_w', '');
-  }
+  // The handle sits on the sidebar's *right* edge, so dragging right widens it.
+  const sidebarResize = useResizableWidth('sidebar', 1);
 
   useShortcuts({
     newItem() {
@@ -292,13 +259,7 @@ export default function AppShell() {
       <div className="flex flex-1 overflow-hidden max-md:flex-col">
         <Sidebar view={activeView} onNavigate={setActiveView} />
 
-        <ResizeHandle
-          side="right"
-          onDelta={handleSidebarDelta}
-          onEnd={commitSidebarWidth}
-          onReset={handleSidebarReset}
-          ariaLabel="Resize sidebar"
-        />
+        <ResizeHandle side="right" {...sidebarResize} ariaLabel="Resize sidebar" />
 
         {/* The content slot. A flex row, so a two-column screen is simply two
             children of it; single-column screens fill it. */}

@@ -1,9 +1,8 @@
-import { useState } from 'react';
 import { Bell, Pencil } from 'lucide-react';
 import { colorHex } from '../../colors';
 import { useApp } from '../../context/AppContext';
-import AddModal from '../AddModal';
 import InlineEditor from '../InlineEditor';
+import { useInlineEdit } from '../useInlineEdit';
 import HabitCell from './HabitCell';
 import { cycleCell, type HabitData, HISTORY_WEEKS, monthLabels } from './habitModel';
 
@@ -14,7 +13,7 @@ import { cycleCell, type HabitData, HISTORY_WEEKS, monthLabels } from './habitMo
  */
 export default function HabitDrawer({ habit }: { habit: HabitData }) {
   const { toggleTodo, setTodoValue } = useApp();
-  const [editing, setEditing] = useState(false);
+  const { setEditing, editModal } = useInlineEdit();
   const { todo } = habit;
   const color = colorHex(todo.colorKey);
   const labels = monthLabels(habit.cells, HISTORY_WEEKS);
@@ -23,7 +22,7 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
 
   return (
     <div className="flex flex-col gap-4 pl-[3.375rem] pr-3 pt-4 pb-5 bg-surface-hover max-md:pl-3">
-      <InlineEditor todo={todo} onAdvanced={() => setEditing(true)} />
+      <InlineEditor todo={todo} onAdvanced={() => setEditing(todo)} />
       <div className="flex items-start gap-8 max-md:flex-col">
         <div className="flex flex-col gap-1.5 overflow-x-auto scrollbar-hide max-w-full">
           <div className="flex w-max" aria-hidden>
@@ -66,7 +65,7 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
           </span>
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={() => setEditing(todo)}
             className="button-small inline-flex items-center gap-1.5 self-start"
           >
             <Pencil size="0.8125rem" />
@@ -75,7 +74,7 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
         </div>
       </div>
 
-      {editing && <AddModal editTodo={todo} onClose={() => setEditing(false)} />}
+      {editModal}
     </div>
   );
 }
