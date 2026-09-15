@@ -75,4 +75,4 @@ export interface SubmitData {
   fields: Record<string, any>;
 }
 
-export const REPEAT_OPTIONS: EventRepeat[] = ['Never', 'Daily', 'Weekly', 'Monthly'];
+export const REPEAT_OPTIONS: EventRepeat[] = ['Never', 'Daily', 'Weekdays', 'Weekly', 'Monthly', 'Yearly', 'Custom'];

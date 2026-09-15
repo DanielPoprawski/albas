@@ -68,7 +68,7 @@ export default function HabitRow({
       onContextMenu={onContextMenu}
       className={cn(
         'flex items-center gap-5 px-3 py-[0.875rem] cursor-pointer transition-colors duration-150 hover:bg-surface-hover data-[open]:bg-surface-hover max-md:flex-wrap',
-        selected && 'bg-accent-tint data-[open]:bg-accent-tint',
+        selected && 'bg-accent/10 data-[open]:bg-accent/15 ring-1 ring-inset ring-accent/30 border-l-2 border-accent',
       )}
     >
       <button

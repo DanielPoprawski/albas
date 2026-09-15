@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek, weekdayAt } from '../../dates';
 import { goToday, isThisMonth, stepMonth } from '../../calendarNav';
@@ -24,19 +24,8 @@ export const PILL_CAP = 2;
  */
 const CELL_ASPECT = 3 / 2;
 
-/**
- * The grid sits in a `flex-none` column, so nothing downstream can shrink it —
- * it has to refuse to starve the panel itself. Every term is a CSS var so
- * this tracks a live sidebar/right-panel drag (Phase L): the sidebar
- * (`--layout-sidebar-w`), a 1rem gap, the two 0.5rem `ResizeHandle`s either
- * side of the content column, and the right panel (`--layout-right-w`). Each
- * var falls back to its own default, so this is correct even before
- * `applyLayout()` has run.
- */
-const RESERVED = 'var(--layout-sidebar-w, 12.5rem) + 1rem + 0.5rem + 0.5rem + var(--layout-right-w, 20rem)';
-
 export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDayClick }: MonthLayoutProps) {
-  const { firstDayOfWeek, currentMonth, setCurrentMonth, setSelectedDate } = useApp();
+  const { firstDayOfWeek, currentMonth, setCurrentMonth, setSelectedDate, showRightPanel, toggleRightPanel } = useApp();
 
   // Measure the rows area, not the whole sheet: the weekday header's height
   // isn't part of any cell. Width never feeds back into height (that comes from
@@ -57,15 +46,18 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
 
   const nav = { setCurrentMonth, setSelectedDate };
 
+  const reservedRight = showRightPanel ? ' + 0.5rem + var(--layout-right-w, 20rem)' : '';
+  const reserved = `var(--layout-sidebar-w, 12.5rem) + 1rem + 0.5rem${reservedRight}`;
+
   return (
     <Card
       // dynamic: width follows the ResizeObserver, see above
-      style={{ width, maxWidth: `calc(100vw - (${RESERVED}))` }}
+      style={{ width, maxWidth: `calc(100vw - (${reserved}))` }}
       className="flex-1 min-h-0 overflow-hidden flex flex-col"
     >
       {/* Calendar header: Today + month navigation on the left, search
           centred (adding is a click on a day — the "+ Add" button that used
-          to sit here duplicated that). The third column is an empty spacer
+          to sit here duplicated that). The third column toggles the companion panel
           so the search stays centred on the sheet. */}
       <div className="grid grid-cols-[auto_minmax(12.5rem,1fr)_auto] items-center gap-4 px-4 py-3 border-b border-line flex-shrink-0 bg-surface">
         <div className="flex items-center gap-xs">
@@ -89,7 +81,16 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
 
         <SearchPalette scope="calendar" className="w-full max-w-[35rem] justify-self-center" />
 
-        <div className="w-[4.5rem]" aria-hidden />
+        <div className="flex items-center justify-end min-w-[4.5rem]">
+          <IconButton
+            variant="accent2"
+            aria-label={showRightPanel ? 'Hide side panel' : 'Show side panel'}
+            title={showRightPanel ? 'Hide side panel' : 'Show side panel'}
+            onClick={toggleRightPanel}
+          >
+            {showRightPanel ? <PanelRightClose size="0.875rem" /> : <PanelRightOpen size="0.875rem" />}
+          </IconButton>
+        </div>
       </div>
 
       {/* Weekday headers */}

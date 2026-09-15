@@ -2,7 +2,7 @@ import { DEFAULT_COLOR } from './colors';
 import { addMinutes } from './dates';
 import type { AddType, NewEvent, NewTodo, Recurrence, Repeat } from './types';
 
-export type EventRepeat = 'Never' | 'Daily' | 'Weekly' | 'Monthly';
+export type EventRepeat = 'Never' | 'Daily' | 'Weekdays' | 'Weekly' | 'Monthly' | 'Yearly' | 'Custom';
 
 /**
  * Everything a create surface may know about a new item. Every field but
@@ -21,6 +21,8 @@ export interface CreateOptions {
   location?: string;
   description?: string;
   repeat?: EventRepeat;
+  /** Explicit event recurrence, overriding `repeat` when present. */
+  eventRecurrence?: Recurrence;
   /** Habits: the repeat rule (defaults to daily). Ignored for tasks. */
   schedule?: Repeat;
   /** Tasks: starred. */
@@ -35,8 +37,11 @@ export type CreatePayload = { kind: 'event'; event: NewEvent } | { kind: 'todo';
 const RECURRENCE: Record<EventRepeat, Recurrence> = {
   Never: { type: 'none' },
   Daily: { type: 'daily', interval: 1 },
+  Weekdays: { type: 'weekdays' },
   Weekly: { type: 'weekly', interval: 1 },
   Monthly: { type: 'monthly', interval: 1 },
+  Yearly: { type: 'yearly', interval: 1 },
+  Custom: { type: 'daily', interval: 1 },
 };
 
 /** Builds the row a create surface persists; the caller hands it to `addEvent` / `addTodo`. */
@@ -64,7 +69,7 @@ export function buildCreate(type: AddType, title: string, o: CreateOptions): Cre
         startTime,
         endDate,
         endTime,
-        recurrence: RECURRENCE[o.repeat ?? 'Never'],
+        recurrence: o.eventRecurrence ?? RECURRENCE[o.repeat ?? 'Never'],
         reminders: reminderMins,
         category,
       },

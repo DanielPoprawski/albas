@@ -24,3 +24,41 @@ export function useIsMobile(): boolean {
 
   return isMobile;
 }
+
+const COARSE_POINTER_QUERY = '(pointer: coarse)';
+
+export function useIsCoarsePointer(): boolean {
+  const [isCoarse, setIsCoarse] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(COARSE_POINTER_QUERY).matches : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(COARSE_POINTER_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setIsCoarse(e.matches);
+    mq.addEventListener('change', onChange);
+    setIsCoarse(mq.matches);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  return isCoarse;
+}
+
+const WIDE_QUERY = '(min-width: 68.75rem)';
+
+export function useIsWide(): boolean {
+  const [isWide, setIsWide] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(WIDE_QUERY).matches : true,
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(WIDE_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setIsWide(e.matches);
+    mq.addEventListener('change', onChange);
+    setIsWide(mq.matches);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  return isWide;
+}

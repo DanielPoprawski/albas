@@ -37,12 +37,9 @@ export default function HabitStrip({
   const { toggleTodo, setTodoValue } = useApp();
   const grid = cn('grid grid-flow-col auto-cols-max gap-[0.1875rem]', spread && 'justify-between');
   return (
-    // Clicks stop here: the strip always sits in a row whose own click opens
-    // an editor or a drawer, and a tick must not do both.
-    <div
-      className={cn('flex flex-col gap-1 max-w-full overflow-x-auto scrollbar-hide', className)}
-      onClick={(e) => e.stopPropagation()}
-    >
+    // Individual cells stop propagation; clicking elsewhere in the strip area
+    // expands or collapses the habit row as expected.
+    <div className={cn('flex flex-col gap-1 max-w-full overflow-x-auto scrollbar-hide', className)}>
       <div className={grid} role="group" aria-label={`${todo.name}, last ${cells.length} days`}>
         {cells.map((cell) => (
           <HabitCell

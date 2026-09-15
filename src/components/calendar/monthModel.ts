@@ -158,22 +158,30 @@ export interface MonthModelOptions {
  * what this split exists to prevent.
  */
 export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): WeekRow[] {
-  const { currentMonth, selectedDate, todos, allEvents, firstDayOfWeek } = useApp();
+  const { currentMonth, selectedDate, todos, allEvents, firstDayOfWeek, hiddenCategoryIds } = useApp();
 
   const todayStr = fmt(new Date());
   const days = getCalendarDays(currentMonth, firstDayOfWeek, minWeeks);
 
   const rangeStart = fmt(days[0].date);
   const rangeEnd = fmt(days[days.length - 1].date);
+  // Filter out events belonging to hidden categories
+  const visibleEvents = useMemo(
+    () => allEvents.filter((e) => !hiddenCategoryIds.has(e.category ?? '')),
+    [allEvents, hiddenCategoryIds],
+  );
   // Shared events ride the same pipeline (lanes, pills, washes, overflow);
   // each carries `sharedBy`, which the render sites use to dim and de-click.
-  const occurrences = useMemo(() => expandEvents(allEvents, rangeStart, rangeEnd), [allEvents, rangeStart, rangeEnd]);
+  const occurrences = useMemo(
+    () => expandEvents(visibleEvents, rangeStart, rangeEnd),
+    [visibleEvents, rangeStart, rangeEnd],
+  );
 
   return useMemo(() => {
     const weeks: { date: Date; isCurrentMonth: boolean }[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
-    const onceTodos = todos.filter((t) => !isRepeating(t));
+    const onceTodos = todos.filter((t) => !isRepeating(t) && !hiddenCategoryIds.has(t.category ?? ''));
 
     // week-plus spans (trips, programs — the old periods) tint their day cells
     // instead of taking a lane
@@ -229,5 +237,5 @@ export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): Wee
       };
     });
     // `days` is rebuilt each render from currentMonth, so key on that instead
-  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks]);
+  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks, hiddenCategoryIds]);
 }

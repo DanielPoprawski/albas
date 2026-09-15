@@ -6,23 +6,43 @@ import { Segmented } from '../ui/segmented';
 import { Dot } from '../ui/tag';
 import { StarButton } from '../ui/star';
 import { Switch } from '../ui/switch';
-import type { AddType } from '../../types';
+import type { AddType, Recurrence } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { newCategory } from '../../categoryLogic';
 import { colorHex, PALETTE_COMPACT } from '../../colors';
 import { buildCreate, type EventRepeat } from '../../createItem';
 import { REMINDER_QUICK, reminderLabel } from '../../reminders';
-import { addMinutes, fmt, nowFloor15 } from '../../dates';
+import { addMinutes, fmt, nowFloor15, rotateWeek } from '../../dates';
 import { movedEnd } from '../../eventLogic';
 import { stripMatch, type NlDateMatch } from '../../nlDate';
 import DateField from '../forms/DateField';
 import { NlDateSuggestion, useNlSuggestion } from '../forms/NlDateSuggestion';
 import RepeatField, { buildRepeat, draftFromRepeat, repeatError, type RepeatDraft } from '../forms/RepeatField';
-import { ColorPicker } from '../forms/shared';
+import { ColorPicker, Select } from '../forms/shared';
 import { useModalDismiss } from '../ui/useModalDismiss';
 import { useSpringHeight } from '../ui/useSpringHeight';
 import { FIELD_ROW, PLACEHOLDERS, REPEAT_OPTIONS, SCOPE_FOR, SECTIONS, type FieldKey, type Props } from './catalog';
 import { FieldRow, SectionGroup } from './parts';
+
+const REPEAT_LABELS: Record<EventRepeat, string> = {
+  Never: "Doesn't repeat",
+  Daily: 'Daily',
+  Weekdays: 'Every weekday (Mon–Fri)',
+  Weekly: 'Weekly',
+  Monthly: 'Monthly',
+  Yearly: 'Yearly',
+  Custom: 'Custom…',
+};
+
+const WEEKDAY_OPTIONS = [
+  { day: 0, label: 'S' },
+  { day: 1, label: 'M' },
+  { day: 2, label: 'T' },
+  { day: 3, label: 'W' },
+  { day: 4, label: 'T' },
+  { day: 5, label: 'F' },
+  { day: 6, label: 'S' },
+];
 
 export function CreateModal({
   onClose,
@@ -55,11 +75,18 @@ export function CreateModal({
   const [description, setDescription] = useState('');
   const [schedule, setSchedule] = useState<RepeatDraft>(() => draftFromRepeat({ type: 'daily' }));
   const [repeat, setRepeat] = useState<EventRepeat>('Never');
+  const [eventUntil, setEventUntil] = useState('');
+  const [eventInterval, setEventInterval] = useState('1');
+  const [eventUnit, setEventUnit] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');
+  const [eventWeekdays, setEventWeekdays] = useState<number[]>([]);
   const [important, setImportant] = useState(false);
   const [category, setCategory] = useState(defaultCategory ?? '');
   const [target, setTarget] = useState(1);
   /** Lead times (minutes) switched on; 10 minutes to begin with. */
   const [reminders, setReminders] = useState<Record<number, boolean>>({ 10: true });
+  const [customRemOpen, setCustomRemOpen] = useState(false);
+  const [customRemAmount, setCustomRemAmount] = useState('15');
+  const [customRemUnit, setCustomRemUnit] = useState<'minutes' | 'hours' | 'days' | 'weeks'>('minutes');
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState<string>(PALETTE_COMPACT[0]);
@@ -211,7 +238,39 @@ export function CreateModal({
     // A field only reaches the payload if its row is actually showing — an
     // unrevealed chip's state is a default, not a choice the user made.
     const has = (k: FieldKey) => active.has(k);
-    const reminderMins = has('reminder') ? REMINDER_QUICK.filter((m) => reminders[m]) : [];
+    const reminderMins = has('reminder')
+      ? Object.keys(reminders)
+          .map(Number)
+          .filter((m) => reminders[m])
+          .sort((a, b) => a - b)
+      : [];
+
+    let eventRecurrence: Recurrence | undefined;
+    if (type === 'event' && has('repeat')) {
+      const n = parseInt(eventInterval, 10);
+      const safeN = Number.isFinite(n) && n > 0 ? n : 1;
+      const u = eventUntil || null;
+      if (repeat === 'Never') eventRecurrence = { type: 'none' };
+      else if (repeat === 'Daily') eventRecurrence = { type: 'daily', interval: 1, until: u };
+      else if (repeat === 'Weekdays') eventRecurrence = { type: 'weekdays', until: u };
+      else if (repeat === 'Weekly')
+        eventRecurrence = {
+          type: 'weekly',
+          interval: 1,
+          until: u,
+          ...(eventWeekdays.length ? { days: eventWeekdays } : {}),
+        };
+      else if (repeat === 'Monthly') eventRecurrence = { type: 'monthly', interval: 1, until: u };
+      else if (repeat === 'Yearly') eventRecurrence = { type: 'yearly', interval: 1, until: u };
+      else if (repeat === 'Custom') {
+        eventRecurrence = {
+          type: eventUnit,
+          interval: safeN,
+          until: u,
+          ...(eventUnit === 'weekly' && eventWeekdays.length ? { days: eventWeekdays } : {}),
+        };
+      }
+    }
 
     const payload = buildCreate(type, name, {
       startDate: sStartDate,
@@ -223,6 +282,7 @@ export function CreateModal({
       location: has('location') ? location : '',
       description: has('desc') ? description : '',
       repeat: has('repeat') ? repeat : 'Never',
+      eventRecurrence,
       schedule: has('repeat') ? (habitSchedule ?? undefined) : undefined,
       important,
       category: has('category') ? category : '',
@@ -267,24 +327,81 @@ export function CreateModal({
       </FieldRow>
     ),
     repeat: currentOn.has('repeat') && (
-      <FieldRow
-        label="Repeat"
-        align={type === 'habit' ? 'start' : 'center'}
-        onRemove={() => collapseSectionOf('repeat')}
-      >
+      <FieldRow label="Repeat" align="start" onRemove={() => collapseSectionOf('repeat')}>
         {type === 'habit' ? (
           <div className="flex-1">
             <RepeatField value={schedule} onChange={setSchedule} firstDayOfWeek={firstDayOfWeek} repeatingOnly />
           </div>
         ) : (
-          <Segmented
-            fill
-            aria-label="Repeat"
-            className="flex-1"
-            options={REPEAT_OPTIONS.map((r) => ({ value: r, label: r }))}
-            value={repeat}
-            onChange={setRepeat}
-          />
+          <div className="flex-1 flex flex-col gap-2">
+            <Select
+              options={REPEAT_OPTIONS.map((opt) => ({
+                value: opt,
+                label: REPEAT_LABELS[opt],
+              }))}
+              value={repeat}
+              onChange={(val) => setRepeat(val as EventRepeat)}
+            />
+            {(repeat === 'Weekly' || (repeat === 'Custom' && eventUnit === 'weekly')) && (
+              <div className="flex gap-xs">
+                {rotateWeek(WEEKDAY_OPTIONS, firstDayOfWeek).map(({ day, label }) => {
+                  const active = eventWeekdays.includes(day);
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() =>
+                        setEventWeekdays((prev) =>
+                          prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
+                        )
+                      }
+                      className={`flex-1 h-7 text-meta font-bold transition-all cursor-pointer ${
+                        active ? 'bg-accent text-on-accent' : 'bg-subtle-strong text-ink-muted hover:bg-line-strong'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {repeat === 'Custom' && (
+              <div className="flex items-center gap-2 flex-wrap text-sm text-ink-muted">
+                <span>Every</span>
+                <input
+                  type="number"
+                  min="1"
+                  className="field-input w-16 text-center"
+                  value={eventInterval}
+                  onChange={(e) => setEventInterval(e.target.value)}
+                />
+                <Select
+                  options={[
+                    { value: 'daily', label: 'day(s)' },
+                    { value: 'weekly', label: 'week(s)' },
+                    { value: 'monthly', label: 'month(s)' },
+                    { value: 'yearly', label: 'year(s)' },
+                  ]}
+                  value={eventUnit}
+                  onChange={(u) => setEventUnit(u as any)}
+                />
+              </div>
+            )}
+            {repeat !== 'Never' && (
+              <div className="flex items-center gap-2 text-sm text-ink-muted">
+                <span>until</span>
+                <DateField
+                  value={eventUntil}
+                  onChange={setEventUntil}
+                  allowEmpty
+                  placeholder="forever"
+                  className="w-40"
+                  aria-label="Repeat until"
+                />
+              </div>
+            )}
+          </div>
         )}
       </FieldRow>
     ),
@@ -379,25 +496,79 @@ export function CreateModal({
     ),
     reminder: currentOn.has('reminder') && (
       <FieldRow label="Remind" align="start" onRemove={() => collapseSectionOf('reminder')}>
-        <div className="flex-1 flex flex-wrap gap-1.5">
-          {REMINDER_QUICK.map((m) => (
+        <div className="flex-1 flex flex-col gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            {Array.from(new Set([...REMINDER_QUICK, ...Object.keys(reminders).map(Number)]))
+              .sort((a, b) => a - b)
+              .map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setReminders((prev) => {
+                      const next = { ...prev };
+                      if (next[m]) delete next[m];
+                      else next[m] = true;
+                      return next;
+                    });
+                  }}
+                  className="chip border-solid"
+                  data-selected={reminders[m] || undefined}
+                >
+                  {reminderLabel(m, 'short')}
+                </button>
+              ))}
             <button
-              key={m}
               type="button"
-              onClick={() => {
-                setReminders((prev) => {
-                  const next = { ...prev };
-                  if (next[m]) delete next[m];
-                  else next[m] = true;
-                  return next;
-                });
-              }}
-              className="chip border-solid"
-              data-selected={reminders[m] || undefined}
+              onClick={() => setCustomRemOpen((v) => !v)}
+              className="chip"
+              data-selected={customRemOpen || undefined}
             >
-              {reminderLabel(m, 'short')}
+              + Custom…
             </button>
-          ))}
+          </div>
+          {customRemOpen && (
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              <input
+                type="number"
+                min="1"
+                className="field-input w-16 text-center"
+                value={customRemAmount}
+                onChange={(e) => setCustomRemAmount(e.target.value)}
+                placeholder="15"
+              />
+              <Select
+                options={[
+                  { value: 'minutes', label: 'minutes before' },
+                  { value: 'hours', label: 'hours before' },
+                  { value: 'days', label: 'days before' },
+                  { value: 'weeks', label: 'weeks before' },
+                ]}
+                value={customRemUnit}
+                onChange={(u) => setCustomRemUnit(u as 'minutes' | 'hours' | 'days' | 'weeks')}
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  const n = parseInt(customRemAmount, 10);
+                  if (!Number.isFinite(n) || n <= 0) return;
+                  const mult =
+                    customRemUnit === 'weeks'
+                      ? 10080
+                      : customRemUnit === 'days'
+                        ? 1440
+                        : customRemUnit === 'hours'
+                          ? 60
+                          : 1;
+                  const mins = n * mult;
+                  setReminders((prev) => ({ ...prev, [mins]: true }));
+                  setCustomRemOpen(false);
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          )}
         </div>
       </FieldRow>
     ),

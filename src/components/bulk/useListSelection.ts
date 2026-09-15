@@ -50,6 +50,7 @@ export function useListSelection(orderedKeys: ItemKey[], generalKeys: ItemKey[])
         anchor.current = key;
         return 'toggled';
       }
+      anchor.current = key;
       return 'plain';
     },
     [orderedKeys, setSelectedKeys],

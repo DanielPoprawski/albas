@@ -30,7 +30,10 @@ export default function HabitCell({
     <button
       type="button"
       disabled={cell.future}
-      onClick={() => onClick(cell.dateStr)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(cell.dateStr);
+      }}
       title={
         cell.future
           ? cell.dateStr
@@ -38,7 +41,7 @@ export default function HabitCell({
       }
       aria-label={`${cell.dateStr}${cell.done ? ', done' : ''}`}
       aria-pressed={cell.done}
-      className={`p-0 box-border border transition-transform duration-150 disabled:cursor-default disabled:opacity-40 ${offDay ? 'opacity-40' : ''} ${className}`}
+      className={`p-0 box-border border transition-transform duration-150 cursor-pointer disabled:cursor-default disabled:opacity-40 ${offDay ? 'opacity-40' : ''} ${className}`}
       // dynamic: the habit's own colour
       style={{
         background: cell.done

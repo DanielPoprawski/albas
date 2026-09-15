@@ -17,9 +17,13 @@ export function fromFloating(d: Date): string {
 
 const FREQ: Record<Exclude<Recurrence['type'], 'none'>, Frequency> = {
   daily: RRule.DAILY,
+  weekdays: RRule.WEEKLY,
   weekly: RRule.WEEKLY,
   monthly: RRule.MONTHLY,
+  yearly: RRule.YEARLY,
 };
+
+const RRULE_WEEKDAYS = [RRule.SU, RRule.MO, RRule.TU, RRule.WE, RRule.TH, RRule.FR, RRule.SA];
 
 /** One concrete instance of a (possibly recurring) event. Dates inclusive. */
 export interface Occurrence {
@@ -32,12 +36,20 @@ export interface Occurrence {
 
 /** The rrule for a recurring event. Monthly on the 31st skips months without one — rrule's own rule. */
 function ruleFor(event: CalendarEvent, rec: Exclude<Recurrence, { type: 'none' }>): RRule {
-  return new RRule({
+  const options: ConstructorParameters<typeof RRule>[0] = {
     freq: FREQ[rec.type],
-    interval: Math.max(1, rec.interval),
+    interval: Math.max(1, rec.interval ?? 1),
     dtstart: floatingDate(event.startDate),
     until: rec.until ? floatingDate(rec.until) : null,
-  });
+  };
+
+  if (rec.type === 'weekdays') {
+    options.byweekday = [RRule.MO, RRule.TU, RRule.WE, RRule.TH, RRule.FR];
+  } else if (rec.type === 'weekly' && rec.days && rec.days.length > 0) {
+    options.byweekday = rec.days.map((d) => RRULE_WEEKDAYS[d % 7]);
+  }
+
+  return new RRule(options);
 }
 
 /**

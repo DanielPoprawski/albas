@@ -68,8 +68,10 @@ export interface Todo {
 export type Recurrence =
   | { type: 'none' }
   | { type: 'daily'; interval: number; until?: string | null; exdates?: string[] } // every N days
-  | { type: 'weekly'; interval: number; until?: string | null; exdates?: string[] } // every N weeks, on startDate's weekday
-  | { type: 'monthly'; interval: number; until?: string | null; exdates?: string[] }; // every N months, on startDate's day-of-month
+  | { type: 'weekdays'; interval?: number; until?: string | null; exdates?: string[] } // every weekday (Mon-Fri)
+  | { type: 'weekly'; interval: number; until?: string | null; exdates?: string[]; days?: number[] } // every N weeks, on startDate's weekday or picked days
+  | { type: 'monthly'; interval: number; until?: string | null; exdates?: string[] } // every N months, on startDate's day-of-month
+  | { type: 'yearly'; interval: number; until?: string | null; exdates?: string[] }; // every N years, on startDate's day-and-month
 
 /**
  * Anything that's "just there" on the calendar — meetings, trips, and long

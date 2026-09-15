@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_COLOR } from '../../colors';
-import { addDays, addMinutes, fmt, nowFloor15, shortDate } from '../../dates';
+import { addDays, addMinutes, fmt, nowFloor15, rotateWeek, shortDate } from '../../dates';
 import { movedEnd } from '../../eventLogic';
 import { samePatch } from '@/lib/utils';
 import { stripMatch } from '../../nlDate';
@@ -14,7 +14,6 @@ import {
   inputClass,
   labelClass,
   Select,
-  SegmentedControl,
   SubmitButton,
   type CommitRef,
   type CommitResult,
@@ -24,6 +23,16 @@ import RemindersField from './RemindersField';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
 
 type RecType = Recurrence['type'];
+
+const WEEKDAY_OPTIONS = [
+  { day: 0, label: 'S' },
+  { day: 1, label: 'M' },
+  { day: 2, label: 'T' },
+  { day: 3, label: 'W' },
+  { day: 4, label: 'T' },
+  { day: 5, label: 'F' },
+  { day: 6, label: 'S' },
+];
 
 export default function EventForm({
   edit,
@@ -40,7 +49,7 @@ export default function EventForm({
   /** Lets the modal commit on dismiss (scrim, Escape, back) without a submit. */
   commitRef?: CommitRef;
 }) {
-  const { addEvent, updateEvent, deleteEvent, selectedDate, categoriesFor } = useApp();
+  const { addEvent, updateEvent, deleteEvent, selectedDate, categoriesFor, firstDayOfWeek } = useApp();
   const categoryOptions = [
     { value: '', label: GENERAL },
     ...categoriesFor('calendar').map((c) => ({ value: c.id, label: c.name })),
@@ -61,9 +70,14 @@ export default function EventForm({
   const [endTime, setEndTime] = useState(edit?.endTime ?? addMinutes(initialStartTime, 60));
   const [recType, setRecType] = useState<RecType>(edit?.recurrence.type ?? 'none');
   const [interval, setInterval_] = useState(
-    edit && edit.recurrence.type !== 'none' ? String(edit.recurrence.interval) : '1',
+    edit && edit.recurrence.type !== 'none' && 'interval' in edit.recurrence
+      ? String(edit.recurrence.interval ?? 1)
+      : '1',
   );
   const [until, setUntil] = useState(edit && edit.recurrence.type !== 'none' ? (edit.recurrence.until ?? '') : '');
+  const [weekdays, setWeekdays] = useState<number[]>(
+    edit && edit.recurrence.type === 'weekly' && edit.recurrence.days ? edit.recurrence.days : [],
+  );
   const [reminders, setReminders] = useState<number[]>(edit?.reminders ?? []);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -107,17 +121,34 @@ export default function EventForm({
     }
 
     const n = parseInt(interval, 10);
+    const safeN = Number.isFinite(n) && n > 0 ? n : 1;
     // individually-deleted occurrences survive edits to the rest of the series
     const prevExdates = edit && edit.recurrence.type !== 'none' ? edit.recurrence.exdates : undefined;
-    const recurrence: Recurrence =
-      recType === 'none'
-        ? { type: 'none' }
-        : {
-            type: recType,
-            interval: Number.isFinite(n) && n > 0 ? n : 1,
-            until: until || null,
-            ...(prevExdates?.length ? { exdates: prevExdates } : {}),
-          };
+    let recurrence: Recurrence;
+    if (recType === 'none') {
+      recurrence = { type: 'none' };
+    } else if (recType === 'weekdays') {
+      recurrence = {
+        type: 'weekdays',
+        until: until || null,
+        ...(prevExdates?.length ? { exdates: prevExdates } : {}),
+      };
+    } else if (recType === 'weekly') {
+      recurrence = {
+        type: 'weekly',
+        interval: safeN,
+        until: until || null,
+        ...(weekdays.length ? { days: weekdays } : {}),
+        ...(prevExdates?.length ? { exdates: prevExdates } : {}),
+      };
+    } else {
+      recurrence = {
+        type: recType,
+        interval: safeN,
+        until: until || null,
+        ...(prevExdates?.length ? { exdates: prevExdates } : {}),
+      };
+    }
     // No `colorKey`: see TodoForm — the category paints the row, and the
     // painted value must not be persisted as a choice.
     const fields = {
@@ -259,29 +290,63 @@ export default function EventForm({
 
       <div>
         <label className={labelClass}>Repeats</label>
-        <SegmentedControl
+        <Select
           options={[
-            { value: 'none', label: 'Never' },
+            { value: 'none', label: "Doesn't repeat" },
             { value: 'daily', label: 'Daily' },
+            { value: 'weekdays', label: 'Every weekday (Mon–Fri)' },
             { value: 'weekly', label: 'Weekly' },
             { value: 'monthly', label: 'Monthly' },
+            { value: 'yearly', label: 'Yearly' },
           ]}
           value={recType}
-          onChange={setRecType}
+          onChange={(val) => setRecType(val as RecType)}
         />
+        {recType === 'weekly' && (
+          <div className="flex gap-xs mt-sm">
+            {rotateWeek(WEEKDAY_OPTIONS, firstDayOfWeek).map(({ day, label }) => {
+              const active = weekdays.includes(day);
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() =>
+                    setWeekdays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
+                  }
+                  className={`flex-1 h-8 text-meta font-bold transition-all cursor-pointer ${
+                    active ? 'bg-accent text-on-accent' : 'bg-subtle-strong text-ink-muted hover:bg-line-strong'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {recType !== 'none' && (
           <div className="flex items-center gap-sm mt-sm flex-wrap">
-            <span className="text-sm text-ink-muted">Every</span>
-            <input
-              type="number"
-              min="1"
-              className={`${inputClass} text-center w-16`}
-              value={interval}
-              onChange={(e) => setInterval_(e.target.value)}
-            />
-            <span className="text-sm text-ink-muted">
-              {recType === 'daily' ? 'day(s)' : recType === 'weekly' ? 'week(s)' : 'month(s)'}
-            </span>
+            {recType !== 'weekdays' && (
+              <>
+                <span className="text-sm text-ink-muted">Every</span>
+                <input
+                  type="number"
+                  min="1"
+                  className={`${inputClass} text-center w-16`}
+                  value={interval}
+                  onChange={(e) => setInterval_(e.target.value)}
+                />
+                <span className="text-sm text-ink-muted">
+                  {recType === 'daily'
+                    ? 'day(s)'
+                    : recType === 'weekly'
+                      ? 'week(s)'
+                      : recType === 'monthly'
+                        ? 'month(s)'
+                        : 'year(s)'}
+                </span>
+              </>
+            )}
             <span className="text-sm text-ink-muted ml-sm">until</span>
             <DateField
               value={until}

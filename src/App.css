@@ -101,9 +101,6 @@
      that should read as "ours" without competing with the accent proper. */
   --t-accent-2: color-mix(in srgb, var(--t-accent) 55%, var(--t-ink));
   --t-on-accent-2: #ffffff;
-  /* The importance star: amber fill, darker amber outline. */
-  --t-star: var(--t-cat-amber);
-  --t-star-line: var(--t-cat-amber-ink);
 
   /* Text */
   --t-ink: #1a202c;
@@ -216,7 +213,7 @@
  * validates against those two.
  *
  * This block redefines only the `--t-*` properties whose *value* changes; a
- * `var()` alias in `:root` (`--t-star`, the status roles, `--t-selection*`)
+ * `var()` alias in `:root` (the status roles, `--t-selection*`)
  * follows its target and is not restated. The three font stacks don't change
  * at all.
  *
@@ -384,8 +381,6 @@
   --color-accent-tint: var(--t-accent-tint);
   --color-accent-2: var(--t-accent-2);
   --color-on-accent-2: var(--t-on-accent-2);
-  --color-star: var(--t-star);
-  --color-star-line: var(--t-star-line);
 
   --color-ink: var(--t-ink);
   --color-ink-secondary: var(--t-ink-secondary);

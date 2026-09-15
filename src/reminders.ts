@@ -3,10 +3,10 @@
 // chips, the bulk-edit panel, and the event form's picker.
 
 /** Lead times offered as one tap in the full picker. */
-export const REMINDER_PRESETS = [0, 5, 10, 30, 60, 120, 1440, 2880, 10080] as const;
+export const REMINDER_PRESETS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080] as const;
 
 /** The short list the chip surfaces (create modal, bulk panel) show. */
-export const REMINDER_QUICK = [0, 10, 60, 1440] as const;
+export const REMINDER_QUICK = [0, 5, 10, 15, 30, 60, 1440, 10080] as const;
 
 /** A bulk-edit choice: no reminder, or one lead time. To-dos only know on/off. */
 export type ReminderChoice = 'none' | number;

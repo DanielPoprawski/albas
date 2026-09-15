@@ -23,28 +23,12 @@ import { useEditorMode, useShortcuts } from '../shortcuts';
 import SidebarCategories from './sidebar/SidebarCategories';
 import type { ActiveView, AddType } from '../types';
 
-/* ── Sidebar ─────────────────────────────────────────────────────────────*/
-
-/** A titled group of rows inside the sidebar (Menu, the page's slot). */
-const SIDEBAR_SECTION = 'flex flex-col gap-2';
-
-/**
- * The full-width content column: a padded, independently scrolling flex child
- * of the content slot. 2rem, dropping to 1.25rem under the breakpoint.
- */
-const MAIN_COLUMN = 'min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5';
-
-/** The sidebar's destinations — `ActiveView`, the app's one vocabulary for screens. */
 const NAV: { view: ActiveView; label: string; icon: ReactNode }[] = [
   { view: 'calendar', label: 'Dashboard', icon: <LayoutGrid size="1rem" /> },
   { view: 'todos', label: 'To-Dos', icon: <ListChecks size="1rem" /> },
   { view: 'habits', label: 'Habits', icon: <Target size="1rem" /> },
   { view: 'settings', label: 'Settings', icon: <SettingsIcon size="1rem" /> },
 ];
-
-/** The three content screens; Settings is drawn on its own at the foot of the sidebar. */
-const CONTENT_NAV = NAV.filter((n) => n.view !== 'settings');
-const SETTINGS_NAV = NAV[NAV.length - 1];
 
 function NavLink({
   item,
@@ -88,20 +72,25 @@ function Sidebar({ view, onNavigate }: { view: ActiveView; onNavigate: (view: Ac
         Albas
       </div>
 
-      <div className={SIDEBAR_SECTION}>
+      <div className={'flex flex-col gap-2'}>
         <div className="sidebar-title">Menu</div>
-        {CONTENT_NAV.map((item) => (
+        {NAV.filter((n) => n.view !== 'settings').map((item) => (
           <NavLink key={item.view} item={item} current={view} onNavigate={onNavigate} />
         ))}
       </div>
 
-      {/* Categories sit directly under the screens they filter, on every route. */}
-      <div className={SIDEBAR_SECTION}>
-        <SidebarCategories showCompletedRow={view === 'todos'} />
-      </div>
+      {/* Categories show only when viewing a tab that categories apply to */}
+      {view !== 'settings' && (
+        <div className={'flex flex-col gap-2'}>
+          <SidebarCategories
+            showCompletedRow={view === 'todos'}
+            currentScope={view === 'calendar' ? 'calendar' : view === 'todos' ? 'tasks' : 'habits'}
+          />
+        </div>
+      )}
 
-      <div className={cn(SIDEBAR_SECTION, 'mt-auto')}>
-        <NavLink item={SETTINGS_NAV} current={view} onNavigate={onNavigate} />
+      <div className={'flex flex-col gap-2 mt-auto'}>
+        <NavLink item={NAV[NAV.length - 1]} current={view} onNavigate={onNavigate} />
       </div>
     </aside>
   );
@@ -198,6 +187,7 @@ export default function AppShell() {
     setCurrentMonth,
     setInserting,
     setSelectedKeys,
+    showRightPanel,
   } = useApp();
   const calNav = { setCurrentMonth, setSelectedDate };
 
@@ -292,20 +282,20 @@ export default function AppShell() {
               <HomeView />
             ) : (
               // No navigation row here: the desktop header lives in MonthViewDesktop.
-              <div className="flex flex-col h-full min-h-0 bg-surface">
+              <div className="flex-1 min-w-0 flex flex-col h-full min-h-0 bg-surface">
                 {calendarMode === 'month' && <MonthView />}
                 {calendarMode === 'week' && <WeekView />}
                 {calendarMode === 'day' && <DayView />}
               </div>
             ))}
-          {activeView === 'calendar' && !isMobile && <RightPanel />}
+          {activeView === 'calendar' && !isMobile && showRightPanel && <RightPanel />}
 
           {activeView === 'todos' && <TodoViewRedesign />}
 
           {activeView === 'habits' && <HabitsView />}
 
           {activeView === 'settings' && (
-            <div className={MAIN_COLUMN}>
+            <div className={'min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5'}>
               <Settings />
             </div>
           )}

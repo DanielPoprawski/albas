@@ -14,7 +14,7 @@ export const SCOPE_OPTIONS: { value: CategoryScope; label: string }[] = [
 
 /** The sidebar's hover-revealed "…" trigger: laid out always, painted on hover/focus/open. */
 const TRIGGER =
-  'flex size-5 shrink-0 cursor-pointer items-center justify-center text-ink-muted opacity-0 transition-opacity hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 data-[state=open]:text-ink';
+  'flex size-5 shrink-0 cursor-pointer items-center justify-center text-ink-muted opacity-0 transition-opacity hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 data-[state=open]:text-ink [@media(pointer:coarse)]:opacity-100';
 
 /** The menu surface: the `panel` hairline + `pop` shadow, as `ui/popover.tsx` paints it. */
 const CONTENT =

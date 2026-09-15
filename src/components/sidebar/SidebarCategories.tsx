@@ -4,8 +4,8 @@ import { cn } from '@/lib/utils';
 import { byCategoryOrder, moveCategory, newCategory, nextColor, toggleScope } from '../../categoryLogic';
 import { colorHex, DEFAULT_COLOR } from '../../colors';
 import { useApp } from '../../context/AppContext';
-import { GENERAL, isDone } from '../../todoLogic';
-import type { Category } from '../../types';
+import { GENERAL, isDone, isRepeating } from '../../todoLogic';
+import type { Category, CategoryScope } from '../../types';
 import { CategoryMenu, ColorPopover } from './CategoryMenu';
 
 /** The tick box at the head of a category row; `checked` fills it in. */
@@ -27,16 +27,21 @@ function onRowKey(e: KeyboardEvent<HTMLDivElement>, action: () => void) {
 }
 
 /**
- * The sidebar's Categories section, on every route: a tick per category (and
+ * The sidebar's Categories section: a tick per category (and
  * one for General) that hides or shows it in whichever list is on screen,
- * via the shared hidden set in `UiContext`. The To-Do route adds a Completed
- * row, since only it has a Completed section. Each category row also carries
- * its management (rename, color, order, scopes, delete) behind a hover "…"
- * or a right-click, so Settings is not the only place a category is edited.
+ * via the shared hidden set in `UiContext`. Shows only categories that apply
+ * to the current surface (Calendar, Tasks, Habits).
  */
-export default function SidebarCategories({ showCompletedRow }: { showCompletedRow: boolean }) {
+export default function SidebarCategories({
+  showCompletedRow,
+  currentScope,
+}: {
+  showCompletedRow: boolean;
+  currentScope: CategoryScope;
+}) {
   const {
     todos,
+    events,
     categories,
     addCategory,
     updateCategory,
@@ -47,7 +52,7 @@ export default function SidebarCategories({ showCompletedRow }: { showCompletedR
     showCompleted,
     setShowCompleted,
   } = useApp();
-  const sorted = categories.slice().sort(byCategoryOrder);
+  const sorted = categories.filter((c) => c.scopes.includes(currentScope)).sort(byCategoryOrder);
 
   const [open, setOpen] = useState(true);
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -59,12 +64,29 @@ export default function SidebarCategories({ showCompletedRow }: { showCompletedR
   const [newColor, setNewColor] = useState(DEFAULT_COLOR);
   const [newColorOpen, setNewColorOpen] = useState(false);
 
-  // Open to-dos per category, General included.
-  const openCount = (catId: string): number => todos.filter((t) => !isDone(t) && t.category === catId).length;
+  // Open count per category (General included), appropriate to currentScope
+  const openCount = (catId: string): number => {
+    if (currentScope === 'calendar') {
+      return events.filter((e) => e.category === catId).length;
+    }
+    if (currentScope === 'habits') {
+      return todos.filter((t) => isRepeating(t) && t.category === catId).length;
+    }
+    return todos.filter((t) => !isRepeating(t) && !isDone(t) && t.category === catId).length;
+  };
   const completedCount = todos.filter((t) => t.schedule.type === 'once' && isDone(t)).length;
 
-  const allChecked = hiddenCategoryIds.size === 0;
-  const toggleAll = () => setHiddenCategoryIds(allChecked ? new Set(['', ...sorted.map((c) => c.id)]) : new Set());
+  const allChecked = !hiddenCategoryIds.has('') && sorted.every((c) => !hiddenCategoryIds.has(c.id));
+  const toggleAll = () => {
+    const next = new Set(hiddenCategoryIds);
+    const catIds = ['', ...sorted.map((c) => c.id)];
+    if (allChecked) {
+      for (const id of catIds) next.add(id);
+    } else {
+      for (const id of catIds) next.delete(id);
+    }
+    setHiddenCategoryIds(next);
+  };
 
   function move(id: string, dir: -1 | 1) {
     const swap = moveCategory(sorted, id, dir);
@@ -87,7 +109,7 @@ export default function SidebarCategories({ showCompletedRow }: { showCompletedR
   function commitAdd() {
     const name = newName.trim();
     if (!name) return;
-    addCategory(newCategory(name, newColor, categories));
+    addCategory(newCategory(name, newColor, categories, [currentScope]));
     setAdding(false);
     setNewColorOpen(false);
   }

@@ -2,15 +2,16 @@ import { Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * The importance toggle, one drawing for every surface: a lucide star that
- * is a hollow border-grey outline when off and a gold fill with a darker
- * gold outline when on. Stops propagation itself, since it always sits
- * inside a row that has its own click.
+ * The importance toggle, one drawing for every surface. It follows the
+ * checkbox beside it: a hollow `line-strong` outline at rest, the accent on
+ * hover, and solid accent when on — so it reads as one of the app's marks
+ * rather than a stock gold star. Stops propagation itself, since it always
+ * sits inside a row that has its own click.
  */
 export function StarButton({
   important,
   onToggle,
-  size = '1rem',
+  size = '1.125rem',
   className,
 }: {
   important: boolean;
@@ -28,12 +29,16 @@ export function StarButton({
         onToggle();
       }}
       className={cn(
-        'flex shrink-0 items-center justify-center transition-colors',
-        important ? 'text-star-line' : 'text-line-strong hover:text-ink-muted',
+        'flex size-5 shrink-0 items-center justify-center p-0 cursor-pointer transition-colors',
+        important ? 'text-accent hover:text-accent-hover' : 'text-line-strong hover:text-accent',
         className,
       )}
     >
-      <Star size={size} strokeWidth={2} className={important ? 'fill-star' : 'fill-none'} />
+      <Star
+        size={size}
+        strokeWidth={1}
+        className={cn('transition-transform duration-100 active:scale-90', important ? 'fill-current' : 'fill-none')}
+      />
     </button>
   );
 }

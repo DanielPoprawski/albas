@@ -11,7 +11,7 @@ import HourGrid from './HourGrid';
 import type { CalendarEvent } from '../../types';
 
 export default function DayView() {
-  const { selectedDate, setSelectedDate, todos, allEvents, toggleTodo, firstDayOfWeek } = useApp();
+  const { selectedDate, setSelectedDate, todos, allEvents, toggleTodo, firstDayOfWeek, hiddenCategoryIds } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);
   // Shared events are read-only — every edit path funnels through here.
@@ -23,12 +23,18 @@ export default function DayView() {
   const todayStr = fmt(new Date());
   const dateStr = selectedDate ?? todayStr;
 
-  const occurrences = useMemo(() => expandEvents(allEvents, dateStr, dateStr), [allEvents, dateStr]);
+  const visibleEvents = useMemo(
+    () => allEvents.filter((e) => !hiddenCategoryIds.has(e.category ?? '')),
+    [allEvents, hiddenCategoryIds],
+  );
+  const occurrences = useMemo(() => expandEvents(visibleEvents, dateStr, dateStr), [visibleEvents, dateStr]);
   const longOccs = occurrences.filter(isLongOccurrence);
   const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
   const timedOccs = occurrences.filter((o) => !isBarOccurrence(o));
 
-  const dayTodos = todos.filter((t) => isDueOn(t, dateStr, firstDayOfWeek) || valueOn(t, dateStr) > 0);
+  const dayTodos = todos.filter(
+    (t) => !hiddenCategoryIds.has(t.category ?? '') && (isDueOn(t, dateStr, firstDayOfWeek) || valueOn(t, dateStr) > 0),
+  );
   const hasAllDayContent = longOccs.length > 0 || barOccs.length > 0 || dayTodos.length > 0;
 
   return (

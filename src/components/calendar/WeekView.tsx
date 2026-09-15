@@ -14,7 +14,7 @@ import type { CalendarEvent, Todo } from '../../types';
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 export default function WeekView() {
-  const { selectedDate, setSelectedDate, todos, allEvents, firstDayOfWeek } = useApp();
+  const { selectedDate, setSelectedDate, todos, allEvents, firstDayOfWeek, hiddenCategoryIds } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [editTodo, setEditTodo] = useState<Todo | null>(null);
   const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);
@@ -31,7 +31,14 @@ export default function WeekView() {
   const weekEnd = weekDays[6];
   const dayLabels = rotateWeek(DAY_NAMES, firstDayOfWeek);
 
-  const occurrences = useMemo(() => expandEvents(allEvents, weekStart, weekEnd), [allEvents, weekStart, weekEnd]);
+  const visibleEvents = useMemo(
+    () => allEvents.filter((e) => !hiddenCategoryIds.has(e.category ?? '')),
+    [allEvents, hiddenCategoryIds],
+  );
+  const occurrences = useMemo(
+    () => expandEvents(visibleEvents, weekStart, weekEnd),
+    [visibleEvents, weekStart, weekEnd],
+  );
   const longOccs = occurrences.filter(isLongOccurrence);
   const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
   const timedOccs = occurrences.filter((o) => !isBarOccurrence(o));
@@ -43,7 +50,7 @@ export default function WeekView() {
   // to-do chips sit in the single grid row below every bar lane
   const todoRow = nLongLanes + nEventLanes + 1;
 
-  const onceTodos = todos.filter((t) => !isRepeating(t));
+  const onceTodos = todos.filter((t) => !isRepeating(t) && !hiddenCategoryIds.has(t.category ?? ''));
   const dayOnce = (dateStr: string) => onceTodos.filter((t) => isDueOn(t, dateStr, firstDayOfWeek));
   const hasAllDayContent =
     longLanes.length > 0 ||

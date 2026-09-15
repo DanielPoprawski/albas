@@ -7,6 +7,7 @@ import { colorHex } from '../../colors';
 import type { Todo } from '../../types';
 import InlineEditor from '../InlineEditor';
 import type { RowClickResult } from '../bulk/useListSelection';
+import { useIsCoarsePointer } from '../../useMedia';
 
 interface TaskRowProps {
   task: Todo;
@@ -84,7 +85,7 @@ export default function TaskRow({
       className={cn(
         'group row-hover flex flex-wrap items-center gap-2.5 px-3 py-2.5 cursor-pointer',
         done && 'opacity-55',
-        selected && 'bg-accent-tint',
+        selected && 'bg-accent/10 ring-1 ring-inset ring-accent/30 border-l-2 border-accent',
         className,
       )}
     >
@@ -165,8 +166,14 @@ const ACTION = 'micro-label transition-colors';
 
 export function RowActions({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
   const { deleteTodo } = useApp();
+  const isCoarse = useIsCoarsePointer();
   return (
-    <span className="flex items-center gap-xs flex-shrink-0 opacity-0 max-md:opacity-100 group-hover:opacity-100 transition-opacity">
+    <span
+      className={cn(
+        'flex items-center gap-xs flex-shrink-0 opacity-0 max-md:opacity-100 [@media(pointer:coarse)]:opacity-100 group-hover:opacity-100 transition-opacity',
+        isCoarse && 'opacity-100',
+      )}
+    >
       <button
         type="button"
         onClick={(e) => {

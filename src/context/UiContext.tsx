@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { fmt } from '../dates';
 import type { ActiveView, CalendarMode, ItemKey } from '../types';
+import { useIsWide } from '../useMedia';
 
 /**
  * The bottom bar's mode, Vim-style. NORMAL: nothing is being typed in and
@@ -36,6 +37,10 @@ export interface UiContextType {
   inserting: boolean;
   setInserting: (v: boolean) => void;
   mode: EditorMode;
+  /** Whether the desktop dashboard's companion right-panel (habits/tasks) is open. */
+  showRightPanel: boolean;
+  setShowRightPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  toggleRightPanel: () => void;
 }
 
 const UiContext = createContext<UiContextType | null>(null);
@@ -53,6 +58,17 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
   const [showCompleted, setShowCompleted] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<Set<ItemKey>>(() => new Set());
   const [inserting, setInserting] = useState(false);
+
+  const isWide = useIsWide();
+  const [showRightPanel, setShowRightPanel] = useState(isWide);
+
+  useEffect(() => {
+    setShowRightPanel(isWide);
+  }, [isWide]);
+
+  const toggleRightPanel = useCallback(() => {
+    setShowRightPanel((prev) => !prev);
+  }, []);
 
   const toggleHiddenCategory = useCallback((id: string) => {
     setHiddenCategoryIds((prev) => {
@@ -85,6 +101,9 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
       inserting,
       setInserting,
       mode,
+      showRightPanel,
+      setShowRightPanel,
+      toggleRightPanel,
     }),
     [
       selectedDate,
@@ -97,6 +116,8 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
       selectedKeys,
       inserting,
       mode,
+      showRightPanel,
+      toggleRightPanel,
     ],
   );
 

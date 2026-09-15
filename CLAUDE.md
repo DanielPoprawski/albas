@@ -9,6 +9,11 @@ DBs and keep `SCHEMA` at the current shape so a fresh DB skips it (new tables = 
 EXISTS`, replay-safe). Server: `ensure_column()` in `schema.rs` `init_db`. Never drop or rename a column
 or table without a data-preserving path, and never leave old rows unreadable.
 
+**The codebase is already too big for what it does.** Every change should hold the line or shrink it:
+prefer the simplest component, module, and architecture that works, cut corners where the cost is
+only theoretical, don't add an abstraction/type/helper for one caller, and delete what a change makes
+unnecessary. A new file or dependency needs a reason a smaller edit couldn't cover.
+
 ## Commands (package manager is **bun**)
 - `bun run tauri dev` = desktop dev. `bun run build` is **frontend only**; `bun run app:desktop` builds
   the Tauri binary and installs it to `~/.local/bin/albas` (the launcher's Exec target — never point it
@@ -76,6 +81,12 @@ or table without a data-preserving path, and never leave old rows unreadable.
   unlayered resets → `@layer components` (multi-file classes only) → keyframes. Component classes lose
   to utilities on the same element. Reuse `components/ui/` (no barrel) and `forms/shared.tsx` before
   inlining; recipes are `@utility` blocks (`micro-label`, `panel`, `icon-btn`, `field-input`, `chip`, …).
+- **Where classes live**: a Tailwind combination that recurs across files (radius, font stacks, panel
+  chrome, …) goes in `App.css` as a `@utility` recipe or `@layer base` rule — not repeated inline. Anything
+  local to one element stays as inline Tailwind on that element. No raw CSS (`style={}`, per-component
+  stylesheets) beyond the `// dynamic:` exception. Don't lift `className` strings into `const`s; if a set
+  of classes must be shared, express the variation as a small JS map (`variant → classes`), and only when
+  the string would otherwise sit far from its element or is reused 5+ times — otherwise keep the literal.
 - **rem, not px**: Settings › Text size scales `html` font-size, so lucide icons take `size="1rem"`,
   calendar geometry is `@theme` `--spacing-hour-h/gutter-w/lane-h/lane-row`, text sizes are Tailwind's
   `text-xs`…`text-lg` or `text-micro/meta/ui/h1`. px only for 1–2px hairlines. Radius 0, no focus
