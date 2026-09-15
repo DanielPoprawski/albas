@@ -1,9 +1,160 @@
-//! Schema creation and upgrade: `init_db` and the `ensure_column` helpers it
-//! runs on every boot (see `SCHEMA` in `main.rs` for the tables themselves).
+//! The database: the tables (`SCHEMA`), how a connection is opened (`open`),
+//! and the upgrade steps `init_db` runs on every boot.
 
 use rusqlite::{params, Connection};
+use std::time::Duration;
 
-use crate::{now_ms, token_hash, OWNER, SCHEMA, TOKEN_TTL_MS};
+use crate::auth::{token_hash, TOKEN_TTL_MS};
+use crate::now_ms;
+
+pub(crate) const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS accounts (
+  id             INTEGER PRIMARY KEY,
+  name           TEXT    NOT NULL UNIQUE,
+  created_at     INTEGER NOT NULL,
+  grant_rev      INTEGER NOT NULL DEFAULT 0,
+  -- Argon2id PHC string, or NULL when no password is set. Optional by design:
+  -- passkeys remain the primary credential and an account may never gain one.
+  password_hash  TEXT,
+  -- Base32 TOTP secret, set at enrollment. `totp_confirmed` only flips once a
+  -- code generated from it has verified, so a half-finished enrollment can
+  -- never lock anyone out.
+  totp_secret    TEXT,
+  totp_confirmed INTEGER NOT NULL DEFAULT 0,
+  -- The verified email address Google last signed this account in as, or
+  -- NULL. Not declared UNIQUE: SQLite's `ALTER TABLE ADD COLUMN` (what
+  -- `ensure_column` must use for databases that predate this column) cannot
+  -- add a UNIQUE constraint, and a fresh database must end up with the same
+  -- schema as an upgraded one. `google.rs`'s `find_or_create_account` is the
+  -- only writer and enforces uniqueness itself by looking up before it
+  -- inserts.
+  google_email   TEXT
+);
+CREATE TABLE IF NOT EXISTS tokens (
+  id           INTEGER PRIMARY KEY,
+  account_id   INTEGER NOT NULL REFERENCES accounts(id),
+  token_hash   TEXT    NOT NULL UNIQUE,
+  label        TEXT    NOT NULL DEFAULT '',
+  created_at   INTEGER NOT NULL,
+  -- Sliding 90-day expiry (see `auth::account_for_token`). Databases from
+  -- before these columns get them from `ensure_token_columns`, backfilled to
+  -- 0 = expired.
+  expires_at   INTEGER NOT NULL DEFAULT 0,
+  last_used_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS passkeys (
+  id           INTEGER PRIMARY KEY,
+  account_id   INTEGER NOT NULL REFERENCES accounts(id),
+  cred_id      TEXT    NOT NULL UNIQUE,
+  passkey_json TEXT    NOT NULL,
+  created_at   INTEGER NOT NULL,
+  -- Admin-set display name, or NULL to derive one from cred_id. Nullable
+  -- because `ensure_column` backfills it into older databases and SQLite
+  -- cannot ADD COLUMN NOT NULL without a default.
+  label        TEXT
+);
+CREATE TABLE IF NOT EXISTS invites (
+  id         INTEGER PRIMARY KEY,
+  code_hash  TEXT    NOT NULL UNIQUE,
+  name       TEXT,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER
+);
+CREATE TABLE IF NOT EXISTS app_sessions (
+  -- SHA-256 of the nonce, never the nonce itself: a database read must not
+  -- yield something that can be polled for a token.
+  nonce_hash TEXT    PRIMARY KEY,
+  -- NULL until the browser claims it; that is what 'pending' means.
+  account_id INTEGER REFERENCES accounts(id),
+  -- The minted app token, held in the clear only between claim and collection.
+  token      TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shares (
+  owner_id   INTEGER NOT NULL REFERENCES accounts(id),
+  grantee_id INTEGER NOT NULL REFERENCES accounts(id),
+  calendar   INTEGER NOT NULL DEFAULT 0,
+  todos      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (owner_id, grantee_id)
+);
+CREATE TABLE IF NOT EXISTS rows (
+  account_id INTEGER NOT NULL REFERENCES accounts(id),
+  tbl        TEXT    NOT NULL,
+  pk         TEXT    NOT NULL,
+  payload    TEXT    NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted    INTEGER NOT NULL DEFAULT 0,
+  seq        INTEGER NOT NULL,
+  PRIMARY KEY (account_id, tbl, pk)
+);
+CREATE INDEX IF NOT EXISTS rows_account_seq ON rows(account_id, seq);
+-- Per-account brute-force lockout (see lockout.rs). `kind` is 'password' or
+-- 'totp' so a lockout on one credential never blocks the other.
+CREATE TABLE IF NOT EXISTS auth_failures (
+  account_id   INTEGER NOT NULL REFERENCES accounts(id),
+  kind         TEXT    NOT NULL,
+  count        INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, kind)
+);
+-- TOTP replay protection: a (account, 30s step) pair that has already
+-- verified once can never verify again. Swept in totp.rs as steps age out.
+CREATE TABLE IF NOT EXISTS totp_used (
+  account_id INTEGER NOT NULL REFERENCES accounts(id),
+  step       INTEGER NOT NULL,
+  PRIMARY KEY (account_id, step)
+);
+-- One-time TOTP recovery codes, SHA-256 hashed (see totp.rs) — never stored
+-- or logged in the clear. `used_at` makes each one single-use.
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  id         INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id),
+  code_hash  TEXT    NOT NULL,
+  created_at INTEGER NOT NULL,
+  used_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS recovery_codes_account ON recovery_codes(account_id);
+";
+
+/// The account every pre-account database's rows are assigned to, and the one
+/// `ALBAS_SYNC_TOKEN` keeps pointing at.
+pub(crate) const OWNER: &str = "owner";
+
+/// Opens the database file the server and the admin CLI share, upgrades it,
+/// and returns a connection ready to serve: WAL (the CLI, `sqlite3` and
+/// Litestream all read this file while the server runs), a five-second busy
+/// timeout instead of `SQLITE_BUSY` on a short write lock, and foreign keys
+/// enforced — see `enforce_foreign_keys` for why that comes last.
+pub(crate) fn open(path: &str, owner_token: Option<&str>) -> Result<Connection, String> {
+    let mut conn = Connection::open(path).map_err(|e| format!("cannot open {path}: {e}"))?;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|e| e.to_string())?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
+    init_db(&mut conn, owner_token)?;
+    enforce_foreign_keys(&conn)?;
+    Ok(conn)
+}
+
+/// `PRAGMA foreign_keys` is per connection. The bundled SQLite happens to
+/// default it on (`SQLITE_DEFAULT_FOREIGN_KEYS`), a system one does not, and
+/// `init_db` turns it off for the duration of the upgrade — so the serving
+/// connection sets it explicitly, after `init_db`, rather than relying on a
+/// build flag for every `REFERENCES` in `SCHEMA` to mean anything.
+fn enforce_foreign_keys(conn: &Connection) -> Result<(), String> {
+    conn.pragma_update(None, "foreign_keys", true)
+        .map_err(|e| e.to_string())
+}
+
+/// An in-memory database in the exact state `open` leaves a real one in.
+#[cfg(test)]
+pub(crate) fn test_db(owner_token: Option<&str>) -> Connection {
+    let mut conn = Connection::open_in_memory().unwrap();
+    init_db(&mut conn, owner_token).unwrap();
+    enforce_foreign_keys(&conn).unwrap();
+    conn
+}
 
 pub(crate) fn table_columns(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
@@ -52,6 +203,31 @@ pub(crate) fn init_db(conn: &mut Connection, owner_token: Option<&str>) -> Resul
     let accounts_cols = table_columns(conn, "accounts")?;
     let legacy_v2 = accounts_cols.iter().any(|n| n == "token_hash");
 
+    // `ALTER TABLE … RENAME` rewrites every `REFERENCES` clause that points
+    // at the renamed table (always since SQLite 3.26; before that, and under
+    // `legacy_alter_table`, whenever foreign keys are on). The v2 rebuild's
+    // `accounts → accounts_v2` would then leave `rows`, `tokens` and the rest
+    // referencing a table that is dropped a few statements later, and the
+    // drop itself would trip the foreign-key check. Both pragmas together
+    // are what keeps the clauses naming `accounts`; `foreign_keys` is a no-op
+    // inside a transaction, hence set here rather than in `upgrade`.
+    // `open` turns enforcement back on once the schema is current.
+    conn.pragma_update(None, "foreign_keys", false)
+        .map_err(|e| e.to_string())?;
+    conn.pragma_update(None, "legacy_alter_table", true)
+        .map_err(|e| e.to_string())?;
+    let result = upgrade(conn, legacy_v1, legacy_v2, owner_token);
+    conn.pragma_update(None, "legacy_alter_table", false)
+        .map_err(|e| e.to_string())?;
+    result
+}
+
+fn upgrade(
+    conn: &mut Connection,
+    legacy_v1: bool,
+    legacy_v2: bool,
+    owner_token: Option<&str>,
+) -> Result<(), String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     if legacy_v1 {
         let token = owner_token.ok_or(

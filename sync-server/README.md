@@ -413,7 +413,7 @@ works well).
 | `ALBAS_SYNC_DB`             | `/data/albas-sync.db` | SQLite file, shared by the server and `albas-sync admin`. Back this up (`.backup` under "Admin CLI"). |
 | `ALBAS_SYNC_ADDR`           | `0.0.0.0:8787`        | Listen address.                                                          |
 | `ALBAS_SYNC_GOOGLE_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URI` | *(unset)* | Google OAuth (server-side confidential client, `google.rs`). All three or none; unset hides the Google button (`GET /auth/config`). |
-| `ALBAS_SYNC_KEK`            | *(unset)*             | Base64 of exactly 32 raw bytes — the key TOTP secrets are encrypted under at rest (AES-256-GCM). Generate with `openssl rand -base64 32`. Unset means `POST /totp/enroll` refuses with 503 rather than storing a secret in the clear; an *existing* encrypted secret that can't be decrypted (unset/rotated/corrupted) fails TOTP verification closed, logging the reason server-side rather than exposing it. Losing or rotating this key without a plan makes every enrolled account's TOTP unverifiable — `albas-sync admin totp clear <name>` is the recovery, same as a lost authenticator. |
+| `ALBAS_SYNC_KEK`            | *(unset)*             | Base64 of exactly 32 raw bytes — the key TOTP secrets are encrypted under at rest (AES-256-GCM). Generate with `openssl rand -base64 32`. Unset means `POST /totp/enroll` refuses with 503 rather than storing a secret in the clear; set but not 32 base64 bytes refuses to boot; an *existing* encrypted secret that can't be decrypted (unset/rotated/corrupted) fails TOTP verification closed, logging the reason server-side rather than exposing it. Losing or rotating this key without a plan makes every enrolled account's TOTP unverifiable — `albas-sync admin totp clear <name>` is the recovery, same as a lost authenticator. |
 
 On a fresh database the startup guard insists on *some* way to end up with an
 account — `ALBAS_SYNC_ORIGIN` or `ALBAS_SYNC_TOKEN`, or one created beforehand
@@ -502,17 +502,24 @@ it to `TABLES` in `src-tauri/src/sync.rs`, keeping the `__` prefix excluded.
 
 ## Source layout
 
-`src/main.rs` holds the router, `AppState`, the `*_db` helpers the CLI shares,
-and the startup guard. Everything else is one module per concern: `schema.rs`
-(`init_db`, `ensure_column`, legacy migrations), `sync.rs` (`POST /sync`, the
-merge rule), `shares.rs`, `tokens.rs`, `account.rs` (delete/export),
-`passkey.rs`, `password.rs`, `totp.rs`, `google.rs`, `app_session.rs` (the
-browser → app handoff), `lockout.rs`, `admin.rs` (the CLI), `tests.rs`.
+`src/main.rs` is the process: `Config` in, router out, plus `AppState` and its
+`db()` (every handler's SQLite and Argon2 work runs on tokio's blocking pool
+under the one connection lock). The cross-cutting pieces have a module each:
+`config.rs` (every environment variable, read once), `schema.rs` (the tables,
+`open`, `init_db`, `ensure_column`, legacy migrations), `auth.rs` (tokens and
+the `Authed` extractor that guards every authenticated route), `error.rs` (the
+one `(StatusCode, String)` shape every handler returns; 500s log the cause and
+send a generic line), `admin_db.rs` (the `*_db` helpers the CLI shares). The
+rest is one module per route group: `sync.rs` (`POST /sync` and its wire
+types, the merge rule), `shares.rs`, `tokens.rs`, `account.rs` (name rules,
+delete/export), `passkey.rs`, `password.rs`, `totp.rs`, `google.rs`,
+`app_session.rs` (the browser → app handoff), `lockout.rs`, `admin.rs` (the
+CLI), `tests.rs`.
 
 ## Tests
 
 ```bash
-cargo test                     # src/tests.rs: merge rule, sharing, tokens, lockout, schema
+cargo test                     # src/tests.rs: merge rule, sharing, tokens, routes, schema; per-module handler tests
 ```
 
 The client's half, including a live two-device round trip:

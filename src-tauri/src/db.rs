@@ -896,4 +896,206 @@ mod tests {
         wipe_events(&c).unwrap();
         assert!(live(&c, "events", "id").is_empty());
     }
+
+    /// A database file `open()` can be pointed at, deleted with its WAL
+    /// sidecars when the test ends.
+    struct TempDb(std::path::PathBuf);
+
+    impl TempDb {
+        fn new(tag: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("albas-db-test-{}-{tag}.sqlite", std::process::id()));
+            for suffix in ["", "-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+            }
+            TempDb(path)
+        }
+    }
+
+    impl Drop for TempDb {
+        fn drop(&mut self) {
+            for suffix in ["", "-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{}{suffix}", self.0.display()));
+            }
+        }
+    }
+
+    /// The schema as it shipped at `user_version` 1: before to-dos gained
+    /// `due_date`/`time` (v2) and `category`/`important` (v4), before the
+    /// shared-rows cache (v5), events' `category` and the categories table
+    /// (v6), and while weight tracking still had a table (dropped in v7).
+    const SCHEMA_V1: &str = "
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'General', completed INTEGER NOT NULL DEFAULT 0,
+  date TEXT, updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE habits (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, color_key TEXT NOT NULL DEFAULT 'primary',
+  kind TEXT NOT NULL, unit TEXT NOT NULL DEFAULT '', target REAL NOT NULL DEFAULT 1,
+  schedule TEXT NOT NULL, created_at TEXT NOT NULL, reminder INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE habit_completions (
+  habit_id TEXT NOT NULL, date TEXT NOT NULL, value REAL NOT NULL,
+  updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (habit_id, date));
+CREATE TABLE events (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  color_key TEXT NOT NULL DEFAULT 'primary', all_day INTEGER NOT NULL DEFAULT 0,
+  start_date TEXT NOT NULL, start_time TEXT, end_date TEXT NOT NULL, end_time TEXT,
+  recurrence TEXT NOT NULL DEFAULT '{\"type\":\"none\"}',
+  reminders TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE periods (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, color_key TEXT NOT NULL DEFAULT 'primary',
+  start_date TEXT NOT NULL, end_date TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+  habit_ids TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE weights (date TEXT PRIMARY KEY, kg REAL NOT NULL, updated_at INTEGER NOT NULL);
+PRAGMA user_version = 1;
+";
+
+    fn columns(conn: &Connection, table: &str) -> Vec<String> {
+        conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    fn tables(conn: &Connection) -> Vec<String> {
+        conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap()
+    }
+
+    const CURRENT_VERSION: i64 = 7;
+
+    /// Every table an upgraded database has, with the columns it has, must
+    /// match a database created fresh from `SCHEMA` — the CLAUDE.md rule that
+    /// `SCHEMA` stays at the current shape and the `ALTER`s reproduce it.
+    /// Column *order* legitimately differs (`ADD COLUMN` appends, `SCHEMA`
+    /// groups), and nothing here selects `*` or inserts positionally.
+    fn assert_same_shape(upgraded: &Connection, fresh: &Connection) {
+        assert_eq!(tables(upgraded), tables(fresh));
+        for table in tables(fresh) {
+            let mut have = columns(upgraded, &table);
+            let mut want = columns(fresh, &table);
+            have.sort();
+            want.sort();
+            assert_eq!(have, want, "columns of {table}");
+        }
+    }
+
+    #[test]
+    fn fresh_database_is_at_the_current_version() {
+        let db = TempDb::new("fresh");
+        let c = open(&db.0).unwrap();
+        assert_eq!(user_version(&c), CURRENT_VERSION);
+        assert!(tables(&c).contains(&"categories".to_string()));
+        assert!(!tables(&c).contains(&"weights".to_string()));
+        // Reopening neither re-runs an ALTER (which would fail on a duplicate
+        // column) nor moves the version.
+        drop(c);
+        let c = open(&db.0).unwrap();
+        assert_eq!(user_version(&c), CURRENT_VERSION);
+    }
+
+    #[test]
+    fn a_version_1_database_upgrades_to_the_fresh_shape_keeping_its_rows() {
+        let old = TempDb::new("v1");
+        {
+            let c = Connection::open(&old.0).unwrap();
+            c.execute_batch(SCHEMA_V1).unwrap();
+            c.execute_batch(
+                "INSERT INTO habits (id, name, kind, schedule, created_at, updated_at)
+                 VALUES ('h1', 'run', 'yesno', '{\"type\":\"daily\"}', '2026-01-01', 1);
+                 INSERT INTO habit_completions (habit_id, date, value, updated_at)
+                 VALUES ('h1', '2026-01-02', 1, 1);
+                 INSERT INTO events (id, title, start_date, end_date, updated_at)
+                 VALUES ('e1', 'dentist', '2026-01-03', '2026-01-03', 1);
+                 INSERT INTO weights VALUES ('2026-01-01', 80.5, 1);
+                 INSERT INTO meta VALUES ('legacy_import_done', '1');",
+            )
+            .unwrap();
+        }
+        let fresh = TempDb::new("v1-fresh");
+        let fresh = open(&fresh.0).unwrap();
+
+        let c = open(&old.0).unwrap();
+        assert_eq!(user_version(&c), CURRENT_VERSION);
+        assert_same_shape(&c, &fresh);
+
+        // Rows survive with the new columns at their defaults.
+        let (name, category, important, due): (String, String, i64, Option<String>) = c
+            .query_row(
+                "SELECT name, category, important, due_date FROM habits WHERE id = 'h1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (name.as_str(), category.as_str(), important, due),
+            ("run", "", 0, None)
+        );
+        let event_category: String = c
+            .query_row("SELECT category FROM events WHERE id = 'e1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(event_category, "");
+        assert_eq!(live(&c, "habit_completions", "habit_id"), ["h1"]);
+        assert_eq!(read_meta(&c, "legacy_import_done").as_deref(), Some("1"));
+
+        // A second open is a no-op.
+        drop(c);
+        let c = open(&old.0).unwrap();
+        assert_eq!(user_version(&c), CURRENT_VERSION);
+        assert_same_shape(&c, &fresh);
+    }
+
+    /// The v5/v6 steps are `CREATE TABLE IF NOT EXISTS` and column adds; a
+    /// database that already took the v2 and v4 steps must get only what it
+    /// still lacks.
+    #[test]
+    fn a_version_4_database_gets_only_the_later_steps() {
+        let old = TempDb::new("v4");
+        {
+            let c = Connection::open(&old.0).unwrap();
+            c.execute_batch(SCHEMA_V1).unwrap();
+            c.execute_batch(
+                "ALTER TABLE habits ADD COLUMN due_date TEXT;
+                 ALTER TABLE habits ADD COLUMN time TEXT;
+                 ALTER TABLE habits ADD COLUMN category TEXT NOT NULL DEFAULT '';
+                 ALTER TABLE habits ADD COLUMN important INTEGER NOT NULL DEFAULT 0;
+                 INSERT INTO habits (id, name, kind, schedule, created_at, updated_at, due_date, important)
+                 VALUES ('t1', 'milk', 'yesno', '{\"type\":\"once\"}', '2026-01-01', 1, '2026-02-01', 1);
+                 PRAGMA user_version = 4;",
+            )
+            .unwrap();
+        }
+        let fresh = TempDb::new("v4-fresh");
+        let fresh = open(&fresh.0).unwrap();
+
+        let c = open(&old.0).unwrap();
+        assert_eq!(user_version(&c), CURRENT_VERSION);
+        assert_same_shape(&c, &fresh);
+        let (due, important): (Option<String>, i64) = c
+            .query_row(
+                "SELECT due_date, important FROM habits WHERE id = 't1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((due.as_deref(), important), (Some("2026-02-01"), 1));
+    }
 }

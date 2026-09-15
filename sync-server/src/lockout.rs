@@ -11,19 +11,11 @@
 use axum::http::StatusCode;
 use rusqlite::{params, Connection, OptionalExtension};
 
+use crate::error::{internal, Rejection};
 use crate::now_ms;
-
-type Rejection = (StatusCode, String);
 
 const MAX_FAILURES: i64 = 10;
 const LOCKOUT_MS: i64 = 15 * 60 * 1000;
-
-fn internal(e: impl std::fmt::Display) -> Rejection {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        format!("Database error: {e}"),
-    )
-}
 
 /// `Err((423 Locked, _))` when this account/kind is currently locked out.
 pub(crate) fn check(conn: &Connection, account_id: i64, kind: &str) -> Result<(), Rejection> {
@@ -91,9 +83,7 @@ mod tests {
     use super::*;
 
     fn mem() -> Connection {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::init_db(&mut c, None).unwrap();
-        c
+        crate::schema::test_db(None)
     }
 
     #[test]

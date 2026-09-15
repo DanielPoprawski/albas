@@ -22,17 +22,18 @@
 //!                                 secret. Returns pending / ready / expired,
 //!                                 and a ready read consumes the session.
 
-use crate::{account_for, mint_token, now_ms, random_token, token_hash, AppState};
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     Json,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-type Rejection = (StatusCode, String);
+use crate::auth::{mint_token, random_token, token_hash, Authed};
+use crate::error::{internal, Rejection};
+use crate::{now_ms, AppState};
 
 /// Matches the WebAuthn ceremony TTL in `passkey.rs`. Long enough to pick a
 /// password out of a manager, short enough that an abandoned session is not a
@@ -47,13 +48,6 @@ const TTL_MS: i64 = 5 * 60 * 1000;
 /// is nowhere near this many; hitting it means something is abusing the
 /// endpoint, not that real traffic needs more room.
 const MAX_PENDING: i64 = 1000;
-
-fn internal(e: impl std::fmt::Display) -> Rejection {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        format!("Database error: {e}"),
-    )
-}
 
 /// The four characters shown in both the app and the browser so the user can
 /// see they are completing *their* login. Derived from the nonce's hash rather
@@ -79,28 +73,31 @@ fn sweep(conn: &Connection) -> rusqlite::Result<()> {
 /// Opens a pending session. Unauthenticated by necessity: the app has no
 /// credential yet — that is the entire point of the flow.
 pub(crate) async fn create(State(state): State<Arc<AppState>>) -> Result<Json<Value>, Rejection> {
-    let conn = state.conn.lock().unwrap();
-    sweep(&conn).map_err(internal)?;
+    state
+        .db(|conn| {
+            sweep(conn).map_err(internal)?;
 
-    let pending: i64 = conn
-        .query_row("SELECT COUNT(*) FROM app_sessions", [], |r| r.get(0))
-        .map_err(internal)?;
-    if pending >= MAX_PENDING {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Too many sign-in requests are pending right now. Try again shortly.".into(),
-        ));
-    }
+            let pending: i64 = conn
+                .query_row("SELECT COUNT(*) FROM app_sessions", [], |r| r.get(0))
+                .map_err(internal)?;
+            if pending >= MAX_PENDING {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Too many sign-in requests are pending right now. Try again shortly.".into(),
+                ));
+            }
 
-    let nonce = random_token();
-    let hash = token_hash(&nonce);
-    conn.execute(
-        "INSERT INTO app_sessions (nonce_hash, created_at) VALUES (?1, ?2)",
-        params![hash, now_ms()],
-    )
-    .map_err(internal)?;
+            let nonce = random_token();
+            let hash = token_hash(&nonce);
+            conn.execute(
+                "INSERT INTO app_sessions (nonce_hash, created_at) VALUES (?1, ?2)",
+                params![hash, now_ms()],
+            )
+            .map_err(internal)?;
 
-    Ok(Json(json!({ "nonce": nonce, "code": confirm_code(&hash) })))
+            Ok(Json(json!({ "nonce": nonce, "code": confirm_code(&hash) })))
+        })
+        .await
 }
 
 /// Binds a pending session to the account the browser is signed in as. The
@@ -108,68 +105,75 @@ pub(crate) async fn create(State(state): State<Arc<AppState>>) -> Result<Json<Va
 /// revoking one later never disturbs the other.
 pub(crate) async fn claim(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, Rejection> {
     let nonce = body
         .get("nonce")
         .and_then(|v| v.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "A nonce is required.".into()))?;
+        .ok_or((StatusCode::BAD_REQUEST, "A nonce is required.".into()))?
+        .to_string();
 
-    let conn = state.conn.lock().unwrap();
-    sweep(&conn).map_err(internal)?;
+    state
+        .db(move |conn| {
+            sweep(conn).map_err(internal)?;
+            let account_id = auth.account_id;
 
-    let account_id =
-        account_for(&conn, &headers).ok_or((StatusCode::UNAUTHORIZED, "Sign in first.".into()))?;
+            let hash = token_hash(&nonce);
+            // Expired and never-existed are the same answer on purpose: the
+            // nonce is a secret, and distinguishing them tells a guesser their
+            // guess was once real.
+            let claimed: Option<Option<i64>> = conn
+                .query_row(
+                    "SELECT account_id FROM app_sessions WHERE nonce_hash = ?1",
+                    [&hash],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(internal)?;
 
-    let hash = token_hash(nonce);
-    // Expired and never-existed are the same answer on purpose: the nonce is a
-    // secret, and distinguishing them tells a guesser their guess was once real.
-    let claimed: Option<Option<i64>> = conn
-        .query_row(
-            "SELECT account_id FROM app_sessions WHERE nonce_hash = ?1",
-            [&hash],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(internal)?;
+            match claimed {
+                None => {
+                    return Err((
+                        StatusCode::NOT_FOUND,
+                        "That sign-in request has expired.".into(),
+                    ))
+                }
+                Some(Some(_)) => {
+                    return Err((
+                        StatusCode::CONFLICT,
+                        "That sign-in request was already used.".into(),
+                    ))
+                }
+                Some(None) => {}
+            }
 
-    match claimed {
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                "That sign-in request has expired.".into(),
+            let name: String = conn
+                .query_row(
+                    "SELECT name FROM accounts WHERE id = ?1",
+                    [account_id],
+                    |r| r.get(0),
+                )
+                .map_err(internal)?;
+
+            // Stored in the clear, unavoidably: the app must receive the raw
+            // token. Mitigated by the 5-minute TTL and by the single-use
+            // delete in `poll`. One transaction, so a minted token can never
+            // outlive a failed claim.
+            let tx = conn.transaction().map_err(internal)?;
+            let token = mint_token(&tx, account_id, "browser").map_err(internal)?;
+            tx.execute(
+                "UPDATE app_sessions SET account_id = ?1, token = ?2 WHERE nonce_hash = ?3",
+                params![account_id, token, hash],
+            )
+            .map_err(internal)?;
+            tx.commit().map_err(internal)?;
+
+            Ok(Json(
+                json!({ "code": confirm_code(&hash), "account": name }),
             ))
-        }
-        Some(Some(_)) => {
-            return Err((
-                StatusCode::CONFLICT,
-                "That sign-in request was already used.".into(),
-            ))
-        }
-        Some(None) => {}
-    }
-
-    let name: String = conn
-        .query_row(
-            "SELECT name FROM accounts WHERE id = ?1",
-            [account_id],
-            |r| r.get(0),
-        )
-        .map_err(internal)?;
-
-    // Stored in the clear, unavoidably: the app must receive the raw token.
-    // Mitigated by the 5-minute TTL and by the single-use delete in `poll`.
-    let token = mint_token(&conn, account_id, "browser").map_err(internal)?;
-    conn.execute(
-        "UPDATE app_sessions SET account_id = ?1, token = ?2 WHERE nonce_hash = ?3",
-        params![account_id, token, hash],
-    )
-    .map_err(internal)?;
-
-    Ok(Json(
-        json!({ "code": confirm_code(&hash), "account": name }),
-    ))
+        })
+        .await
 }
 
 /// The app's poll. A ready session is consumed by the read, so a leaked nonce
@@ -178,41 +182,45 @@ pub(crate) async fn poll(
     State(state): State<Arc<AppState>>,
     Path(nonce): Path<String>,
 ) -> Result<Json<Value>, Rejection> {
-    let conn = state.conn.lock().unwrap();
-    sweep(&conn).map_err(internal)?;
+    state
+        .db(move |conn| {
+            sweep(conn).map_err(internal)?;
 
-    let hash = token_hash(&nonce);
-    let row: Option<(Option<i64>, Option<String>)> = conn
-        .query_row(
-            "SELECT account_id, token FROM app_sessions WHERE nonce_hash = ?1",
-            [&hash],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()
-        .map_err(internal)?;
-
-    match row {
-        // Swept, never created, or already collected — all "start over".
-        None => Ok(Json(json!({ "status": "expired" }))),
-        Some((None, _)) => Ok(Json(json!({ "status": "pending" }))),
-        Some((Some(account_id), Some(token))) => {
-            conn.execute("DELETE FROM app_sessions WHERE nonce_hash = ?1", [&hash])
-                .map_err(internal)?;
-            let name: String = conn
+            let hash = token_hash(&nonce);
+            let row: Option<(Option<i64>, Option<String>)> = conn
                 .query_row(
-                    "SELECT name FROM accounts WHERE id = ?1",
-                    [account_id],
-                    |r| r.get(0),
+                    "SELECT account_id, token FROM app_sessions WHERE nonce_hash = ?1",
+                    [&hash],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
                 )
+                .optional()
                 .map_err(internal)?;
-            Ok(Json(
-                json!({ "status": "ready", "token": token, "account": name }),
-            ))
-        }
-        // account_id set with no token cannot happen: `claim` writes both in one
-        // statement. Treat it as pending rather than handing out a half-state.
-        Some((Some(_), None)) => Ok(Json(json!({ "status": "pending" }))),
-    }
+
+            match row {
+                // Swept, never created, or already collected — all "start over".
+                None => Ok(Json(json!({ "status": "expired" }))),
+                Some((None, _)) => Ok(Json(json!({ "status": "pending" }))),
+                Some((Some(account_id), Some(token))) => {
+                    conn.execute("DELETE FROM app_sessions WHERE nonce_hash = ?1", [&hash])
+                        .map_err(internal)?;
+                    let name: String = conn
+                        .query_row(
+                            "SELECT name FROM accounts WHERE id = ?1",
+                            [account_id],
+                            |r| r.get(0),
+                        )
+                        .map_err(internal)?;
+                    Ok(Json(
+                        json!({ "status": "ready", "token": token, "account": name }),
+                    ))
+                }
+                // account_id set with no token cannot happen: `claim` writes
+                // both in one statement. Treat it as pending rather than
+                // handing out a half-state.
+                Some((Some(_), None)) => Ok(Json(json!({ "status": "pending" }))),
+            }
+        })
+        .await
 }
 
 #[cfg(test)]
@@ -220,36 +228,28 @@ mod tests {
     use super::*;
     use axum::extract::State;
 
-    fn state_with(c: Connection) -> Arc<AppState> {
-        Arc::new(AppState {
-            conn: std::sync::Mutex::new(c),
-            signups: crate::Signups::Open,
-            webauthn: None,
-            assetlinks: None,
-            pending: Default::default(),
-            google: None,
-            google_pending: Default::default(),
-        })
-    }
-
-    /// Returns (state, browser token, account name).
-    fn signed_in() -> (Arc<AppState>, String, String) {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::init_db(&mut c, None).unwrap();
+    /// Returns (state, the browser's `Authed`).
+    fn signed_in() -> (Arc<AppState>, Authed) {
+        let c = crate::schema::test_db(None);
         c.execute(
             "INSERT INTO accounts (name, created_at) VALUES ('alice', 0)",
             [],
         )
         .unwrap();
         let id = c.last_insert_rowid();
-        let token = crate::mint_token(&c, id, "password").unwrap();
-        (state_with(c), token, "alice".to_string())
+        let token = mint_token(&c, id, "password").unwrap();
+        let auth = Authed {
+            account_id: id,
+            token_hash: token_hash(&token),
+        };
+        (Arc::new(AppState::for_test(c)), auth)
     }
 
-    fn headers_for(token: &str) -> HeaderMap {
-        let mut h = HeaderMap::new();
-        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
-        h
+    fn browser(auth: &Authed) -> Authed {
+        Authed {
+            account_id: auth.account_id,
+            token_hash: auth.token_hash.clone(),
+        }
     }
 
     async fn open_session(state: &Arc<AppState>) -> (String, String) {
@@ -264,7 +264,7 @@ mod tests {
     /// out until the browser claims, and then exactly one token is.
     #[tokio::test]
     async fn pending_until_claimed_then_ready() {
-        let (state, browser, account) = signed_in();
+        let (state, auth) = signed_in();
         let (nonce, code) = open_session(&state).await;
 
         let before = poll(State(state.clone()), Path(nonce.clone()))
@@ -276,7 +276,7 @@ mod tests {
 
         let claimed = claim(
             State(state.clone()),
-            headers_for(&browser),
+            browser(&auth),
             axum::Json(json!({ "nonce": nonce })),
         )
         .await
@@ -284,25 +284,26 @@ mod tests {
         .0;
         // Both sides must show the user the same code or it proves nothing.
         assert_eq!(claimed["code"].as_str().unwrap(), code);
-        assert_eq!(claimed["account"].as_str().unwrap(), account);
+        assert_eq!(claimed["account"].as_str().unwrap(), "alice");
 
         let after = poll(State(state.clone()), Path(nonce)).await.unwrap().0;
         assert_eq!(after["status"], "ready");
-        assert_eq!(after["account"].as_str().unwrap(), account);
-        assert!(!after["token"].as_str().unwrap().is_empty());
+        assert_eq!(after["account"].as_str().unwrap(), "alice");
+        let app_token = after["token"].as_str().unwrap();
+        assert!(!app_token.is_empty());
         // The app's token is its own, not a share of the browser's.
-        assert_ne!(after["token"].as_str().unwrap(), browser);
+        assert_ne!(token_hash(app_token), auth.token_hash);
     }
 
     /// A collected session is gone. Without this a leaked nonce would be a
     /// standing credential rather than a one-shot handoff.
     #[tokio::test]
     async fn a_ready_session_cannot_be_collected_twice() {
-        let (state, browser, _) = signed_in();
+        let (state, auth) = signed_in();
         let (nonce, _) = open_session(&state).await;
         let _ = claim(
             State(state.clone()),
-            headers_for(&browser),
+            browser(&auth),
             axum::Json(json!({ "nonce": nonce })),
         )
         .await
@@ -320,11 +321,11 @@ mod tests {
     /// Two browsers racing the same nonce must not mint two tokens.
     #[tokio::test]
     async fn claiming_twice_is_a_conflict() {
-        let (state, browser, _) = signed_in();
+        let (state, auth) = signed_in();
         let (nonce, _) = open_session(&state).await;
         let _ = claim(
             State(state.clone()),
-            headers_for(&browser),
+            browser(&auth),
             axum::Json(json!({ "nonce": nonce })),
         )
         .await
@@ -332,7 +333,7 @@ mod tests {
 
         let again = claim(
             State(state.clone()),
-            headers_for(&browser),
+            browser(&auth),
             axum::Json(json!({ "nonce": nonce })),
         )
         .await;
@@ -342,7 +343,7 @@ mod tests {
     /// An abandoned sign-in must not stay claimable overnight.
     #[tokio::test]
     async fn expired_sessions_are_swept() {
-        let (state, browser, _) = signed_in();
+        let (state, auth) = signed_in();
         let (nonce, _) = open_session(&state).await;
         {
             let conn = state.conn.lock().unwrap();
@@ -361,35 +362,18 @@ mod tests {
 
         let claimed = claim(
             State(state.clone()),
-            headers_for(&browser),
+            browser(&auth),
             axum::Json(json!({ "nonce": nonce })),
         )
         .await;
         assert_eq!(claimed.unwrap_err().0, StatusCode::NOT_FOUND);
     }
 
-    /// The claim is what carries identity; an unauthenticated caller holding
-    /// only the nonce must not be able to bind it to anything.
-    #[tokio::test]
-    async fn claim_requires_a_signed_in_browser() {
-        let (state, _, _) = signed_in();
-        let (nonce, _) = open_session(&state).await;
-
-        let err = claim(
-            State(state.clone()),
-            HeaderMap::new(),
-            axum::Json(json!({ "nonce": nonce })),
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
-    }
-
     /// A guessed nonce reads the same as an expired one, so probing the poll
     /// endpoint never confirms that a nonce was ever real.
     #[tokio::test]
     async fn an_unknown_nonce_looks_expired() {
-        let (state, _, _) = signed_in();
+        let (state, _) = signed_in();
         let v = poll(State(state), Path("not-a-real-nonce".to_string()))
             .await
             .unwrap()

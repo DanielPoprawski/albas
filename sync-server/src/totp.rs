@@ -4,10 +4,10 @@
 //! required to have.** A passkey ceremony is already possession plus user
 //! verification (PIN/biometric at the authenticator); bolting a typed code
 //! onto that adds friction without adding a factor, and the passkey ceremony
-//! runs through the OS authenticator via `tauri-plugin-webauthn`
-//! (`src/auth.ts`), which has nowhere to prompt for a code anyway. Password
-//! login is the one flow here where a second factor genuinely adds something,
-//! so `password::login_password` is the sole caller of `verify_if_enrolled`.
+//! runs in the system browser (`web/`), which has nowhere to prompt the app
+//! for a code anyway. Password login is the one flow here where a second
+//! factor genuinely adds something, so `password::login_password` is the sole
+//! caller of `verify_if_enrolled`.
 //!
 //! Contract:
 //!   `GET    /totp`         — authenticated. `{ enrolled, confirmed }` — never
@@ -35,8 +35,8 @@
 //! ## Secret at rest
 //!
 //! `accounts.totp_secret` never holds the raw base32 secret — it holds
-//! `base64(nonce || AES-256-GCM(secret))`, keyed by `ALBAS_SYNC_KEK` (a
-//! 32-byte key, base64-encoded in the env var). Without a KEK configured,
+//! `base64(nonce || AES-256-GCM(secret))`, keyed by `ALBAS_SYNC_KEK`
+//! (`Config::kek`, held on `AppState`). Without a KEK configured,
 //! `enroll_start` refuses outright (503) rather than falling back to
 //! plaintext, and if a KEK-encrypted row somehow can't be decrypted (KEK
 //! missing, rotated, or corrupted) verification fails closed — a logged
@@ -51,23 +51,20 @@
 //! out — otherwise a code sniffed off the wire (or over someone's shoulder)
 //! stays usable for its entire 30-second window.
 
-use crate::AppState;
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use totp_rs::{Algorithm, Secret, TOTP};
 
-type Rejection = (StatusCode, String);
+use crate::auth::{to_hex, Authed};
+use crate::error::{internal, Rejection};
+use crate::{lockout, now_ms, password, AppState};
 
 /// The message the password client matches to know it must ask for a code and
 /// retry. Keep this string stable — it is load-bearing for that other flow.
@@ -80,35 +77,16 @@ const REPLAY_WINDOW_STEPS: i64 = 10;
 /// TOTP's own step length: `TOTP::new(..., 30, ...)` below.
 const STEP_SECONDS: i64 = 30;
 
-fn internal<E: std::fmt::Display>(e: E) -> Rejection {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-}
-
-fn unauthorized() -> Rejection {
-    (StatusCode::UNAUTHORIZED, "Not signed in.".into())
-}
+/// The secret-at-rest key, as `AppState` carries it.
+type Kek = Option<[u8; 32]>;
 
 // --- Secret encryption at rest ---
-
-/// Reads and decodes `ALBAS_SYNC_KEK` (32 raw bytes, base64-encoded). `None`
-/// when unset, empty, or not exactly 32 bytes after decoding — all treated as
-/// "no key available" rather than panicking, so a misconfigured deployment
-/// fails closed on this one feature instead of refusing to boot at all.
-fn kek() -> Option<[u8; 32]> {
-    let raw = std::env::var("ALBAS_SYNC_KEK").ok()?;
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let bytes = B64.decode(raw).ok()?;
-    bytes.try_into().ok()
-}
 
 /// Encrypts a plaintext base32 TOTP secret for storage. 503s (not 500) when
 /// no KEK is configured — this is a deployment gap the operator can fix by
 /// setting the env var, not a server bug.
-fn encrypt_secret(plain_b32: &str) -> Result<String, Rejection> {
-    let Some(key_bytes) = kek() else {
+fn encrypt_secret(kek: Kek, plain_b32: &str) -> Result<String, Rejection> {
+    let Some(key_bytes) = kek else {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             "Two-factor authentication is not available on this server: no encryption key \
@@ -130,14 +108,14 @@ fn encrypt_secret(plain_b32: &str) -> Result<String, Rejection> {
 /// wrong/rotated key, corrupted row) is logged server-side with detail and
 /// returned to the caller as a generic, non-revealing failure — this must
 /// never be mistaken by a caller for "not enrolled".
-fn decrypt_secret(stored: &str) -> Result<String, Rejection> {
+fn decrypt_secret(kek: Kek, stored: &str) -> Result<String, Rejection> {
     let fail = || {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             "Two-factor verification is temporarily unavailable.".into(),
         )
     };
-    let Some(key_bytes) = kek() else {
+    let Some(key_bytes) = kek else {
         tracing::error!("totp: ALBAS_SYNC_KEK is not set but an encrypted TOTP secret exists");
         return Err(fail());
     };
@@ -185,7 +163,7 @@ fn totp_from_secret(secret_b32: &str) -> Result<TOTP, Rejection> {
 }
 
 fn current_step() -> i64 {
-    crate::now_ms() / 1000 / STEP_SECONDS
+    now_ms() / 1000 / STEP_SECONDS
 }
 
 /// Length-then-bytes comparison that does not short-circuit on the first
@@ -211,11 +189,7 @@ fn matching_step(totp: &TOTP, code: &str) -> Option<i64> {
 
 /// Rejects (and does *not* record) a code already accepted for this exact
 /// step; otherwise records it and sweeps entries outside the replay window.
-fn check_and_record_replay(
-    conn: &rusqlite::Connection,
-    account_id: i64,
-    step: i64,
-) -> Result<(), Rejection> {
+fn check_and_record_replay(conn: &Connection, account_id: i64, step: i64) -> Result<(), Rejection> {
     let already: Option<i64> = conn
         .query_row(
             "SELECT 1 FROM totp_used WHERE account_id = ?1 AND step = ?2",
@@ -271,17 +245,13 @@ fn normalize_recovery_code(code: &str) -> String {
 }
 
 fn hash_recovery_code(code: &str) -> String {
-    crate::to_hex(&Sha256::digest(normalize_recovery_code(code).as_bytes()))
+    to_hex(&Sha256::digest(normalize_recovery_code(code).as_bytes()))
 }
 
 /// Consumes one unused recovery code for this account, if `code` matches one.
 /// Single-use: the matching row's `used_at` is stamped so it can never verify
 /// again, recovery-code or otherwise.
-fn verify_recovery_code(
-    conn: &rusqlite::Connection,
-    account_id: i64,
-    code: &str,
-) -> Result<(), Rejection> {
+fn verify_recovery_code(conn: &Connection, account_id: i64, code: &str) -> Result<(), Rejection> {
     let hash = hash_recovery_code(code);
     let id: Option<i64> = conn
         .query_row(
@@ -296,7 +266,7 @@ fn verify_recovery_code(
     };
     conn.execute(
         "UPDATE recovery_codes SET used_at = ?1 WHERE id = ?2",
-        params![crate::now_ms(), id],
+        params![now_ms(), id],
     )
     .map_err(internal)?;
     Ok(())
@@ -318,7 +288,8 @@ fn verify_recovery_code(
 /// in-progress enrollment) is treated the same as no secret at all — a
 /// half-finished enrollment must never lock anyone out of password login.
 pub(crate) fn verify_if_enrolled(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
+    kek: Kek,
     account_id: i64,
     code: Option<&str>,
     recovery_code: Option<&str>,
@@ -339,14 +310,14 @@ pub(crate) fn verify_if_enrolled(
     }
 
     if let Some(rc) = recovery_code.map(str::trim).filter(|c| !c.is_empty()) {
-        crate::lockout::check(conn, account_id, "totp")?;
+        lockout::check(conn, account_id, "totp")?;
         return match verify_recovery_code(conn, account_id, rc) {
             Ok(()) => {
-                crate::lockout::reset(conn, account_id, "totp")?;
+                lockout::reset(conn, account_id, "totp")?;
                 Ok(())
             }
             Err(e) => {
-                crate::lockout::record_failure(conn, account_id, "totp")?;
+                lockout::record_failure(conn, account_id, "totp")?;
                 Err(e)
             }
         };
@@ -356,37 +327,39 @@ pub(crate) fn verify_if_enrolled(
         return Err((StatusCode::UNAUTHORIZED, CODE_REQUIRED.into()));
     };
 
-    crate::lockout::check(conn, account_id, "totp")?;
-    let secret_b32 = decrypt_secret(&secret_enc)?;
+    lockout::check(conn, account_id, "totp")?;
+    let secret_b32 = decrypt_secret(kek, &secret_enc)?;
     let totp = totp_from_secret(&secret_b32)?;
     let Some(step) = matching_step(&totp, code) else {
-        crate::lockout::record_failure(conn, account_id, "totp")?;
+        lockout::record_failure(conn, account_id, "totp")?;
         return Err((StatusCode::UNAUTHORIZED, CODE_WRONG.into()));
     };
     if let Err(e) = check_and_record_replay(conn, account_id, step) {
-        crate::lockout::record_failure(conn, account_id, "totp")?;
+        lockout::record_failure(conn, account_id, "totp")?;
         return Err(e);
     }
-    crate::lockout::reset(conn, account_id, "totp")?;
+    lockout::reset(conn, account_id, "totp")?;
     Ok(())
 }
 
 pub(crate) async fn totp_status(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
 ) -> Result<Json<Value>, Rejection> {
-    let guard = state.conn.lock().map_err(internal)?;
-    let account_id = crate::account_for(&guard, &headers).ok_or_else(unauthorized)?;
-    let (enrolled, confirmed): (bool, bool) = guard
-        .query_row(
-            "SELECT totp_secret IS NOT NULL, totp_confirmed != 0 FROM accounts WHERE id = ?1",
-            [account_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .map_err(internal)?;
-    Ok(Json(
-        json!({ "enrolled": enrolled, "confirmed": confirmed }),
-    ))
+    state
+        .db(move |conn| {
+            let (enrolled, confirmed): (bool, bool) = conn
+                .query_row(
+                    "SELECT totp_secret IS NOT NULL, totp_confirmed != 0 FROM accounts WHERE id = ?1",
+                    [auth.account_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(internal)?;
+            Ok(Json(
+                json!({ "enrolled": enrolled, "confirmed": confirmed }),
+            ))
+        })
+        .await
 }
 
 #[derive(Deserialize)]
@@ -413,47 +386,49 @@ pub(crate) struct EnrollReq {
 /// secret — nothing depends on it yet.
 pub(crate) async fn enroll_start(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
     Json(body): Json<EnrollReq>,
 ) -> Result<Json<Value>, Rejection> {
-    let guard = state.conn.lock().map_err(internal)?;
-    let account_id = crate::account_for(&guard, &headers).ok_or_else(unauthorized)?;
-    crate::password::verify_account_password(&guard, account_id, &body.password)?;
-    let (name, confirmed): (String, i64) = guard
-        .query_row(
-            "SELECT name, totp_confirmed FROM accounts WHERE id = ?1",
-            [account_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .map_err(internal)?;
-    if confirmed != 0 {
-        return Err((
-            StatusCode::CONFLICT,
-            "Two-factor authentication is already turned on. Turn it off before setting it up again."
-                .into(),
-        ));
-    }
-    let secret = Secret::generate_secret();
-    let totp = TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1,
-        STEP_SECONDS as u64,
-        secret.to_bytes().map_err(internal)?,
-        Some("Albas".to_string()),
-        name,
-    )
-    .map_err(|e| internal(format!("could not build TOTP: {e}")))?;
-    let secret_b32 = totp.get_secret_base32();
-    let uri = totp.get_url();
-    let stored = encrypt_secret(&secret_b32)?;
-    guard
-        .execute(
-            "UPDATE accounts SET totp_secret = ?1 WHERE id = ?2",
-            params![stored, account_id],
-        )
-        .map_err(internal)?;
-    Ok(Json(json!({ "secret": secret_b32, "uri": uri })))
+    let kek = state.kek;
+    state
+        .db(move |conn| {
+            password::verify_account_password(conn, auth.account_id, &body.password)?;
+            let (name, confirmed): (String, i64) = conn
+                .query_row(
+                    "SELECT name, totp_confirmed FROM accounts WHERE id = ?1",
+                    [auth.account_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(internal)?;
+            if confirmed != 0 {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Two-factor authentication is already turned on. Turn it off before setting it up again."
+                        .into(),
+                ));
+            }
+            let secret = Secret::generate_secret();
+            let totp = TOTP::new(
+                Algorithm::SHA1,
+                6,
+                1,
+                STEP_SECONDS as u64,
+                secret.to_bytes().map_err(internal)?,
+                Some("Albas".to_string()),
+                name,
+            )
+            .map_err(|e| internal(format!("could not build TOTP: {e}")))?;
+            let secret_b32 = totp.get_secret_base32();
+            let uri = totp.get_url();
+            let stored = encrypt_secret(kek, &secret_b32)?;
+            conn.execute(
+                "UPDATE accounts SET totp_secret = ?1 WHERE id = ?2",
+                params![stored, auth.account_id],
+            )
+            .map_err(internal)?;
+            Ok(Json(json!({ "secret": secret_b32, "uri": uri })))
+        })
+        .await
 }
 
 #[derive(Deserialize)]
@@ -461,119 +436,106 @@ pub(crate) struct ConfirmReq {
     code: String,
 }
 
+/// Confirms a pending enrollment with its first code and hands out the
+/// recovery codes. One transaction: the flag and the codes appear together
+/// or not at all, and an already-confirmed account is refused rather than
+/// having its recovery codes silently regenerated by any session that can
+/// produce a current code.
 pub(crate) async fn enroll_confirm(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
     Json(body): Json<ConfirmReq>,
 ) -> Result<Json<Value>, Rejection> {
-    let guard = state.conn.lock().map_err(internal)?;
-    let account_id = crate::account_for(&guard, &headers).ok_or_else(unauthorized)?;
-    let secret_enc: Option<String> = guard
-        .query_row(
-            "SELECT totp_secret FROM accounts WHERE id = ?1",
-            [account_id],
-            |r| r.get(0),
-        )
-        .map_err(internal)?;
-    let Some(secret_enc) = secret_enc else {
-        return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "Start enrollment before confirming a code.".into(),
-        ));
-    };
-    let secret_b32 = decrypt_secret(&secret_enc)?;
-    let totp = totp_from_secret(&secret_b32)?;
-    let code = body.code.trim();
-    let ok = totp.check_current(code).map_err(internal)?;
-    if !ok {
-        return Err((StatusCode::UNAUTHORIZED, CODE_WRONG.into()));
-    }
-    guard
-        .execute(
-            "UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1",
-            [account_id],
-        )
-        .map_err(internal)?;
+    let kek = state.kek;
+    state
+        .db(move |conn| {
+            let row: Option<(Option<String>, i64)> = conn
+                .query_row(
+                    "SELECT totp_secret, totp_confirmed FROM accounts WHERE id = ?1",
+                    [auth.account_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .map_err(internal)?;
+            let Some((Some(secret_enc), confirmed)) = row else {
+                return Err((
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "Start enrollment before confirming a code.".into(),
+                ));
+            };
+            if confirmed != 0 {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Two-factor authentication is already turned on.".into(),
+                ));
+            }
+            let secret_b32 = decrypt_secret(kek, &secret_enc)?;
+            let totp = totp_from_secret(&secret_b32)?;
+            let code = body.code.trim();
+            let ok = totp.check_current(code).map_err(internal)?;
+            if !ok {
+                return Err((StatusCode::UNAUTHORIZED, CODE_WRONG.into()));
+            }
 
-    // Fresh codes replace any left over from a previous enrollment.
-    guard
-        .execute(
-            "DELETE FROM recovery_codes WHERE account_id = ?1",
-            [account_id],
-        )
-        .map_err(internal)?;
-    let codes = generate_recovery_codes();
-    let now = crate::now_ms();
-    for c in &codes {
-        guard
-            .execute(
-                "INSERT INTO recovery_codes (account_id, code_hash, created_at) VALUES (?1, ?2, ?3)",
-                params![account_id, hash_recovery_code(c), now],
+            let tx = conn.transaction().map_err(internal)?;
+            tx.execute(
+                "UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1",
+                [auth.account_id],
             )
             .map_err(internal)?;
-    }
+            // Fresh codes replace any left over from a previous enrollment.
+            tx.execute(
+                "DELETE FROM recovery_codes WHERE account_id = ?1",
+                [auth.account_id],
+            )
+            .map_err(internal)?;
+            let codes = generate_recovery_codes();
+            let now = now_ms();
+            for c in &codes {
+                tx.execute(
+                    "INSERT INTO recovery_codes (account_id, code_hash, created_at) VALUES (?1, ?2, ?3)",
+                    params![auth.account_id, hash_recovery_code(c), now],
+                )
+                .map_err(internal)?;
+            }
+            tx.commit().map_err(internal)?;
 
-    Ok(Json(json!({ "confirmed": true, "recoveryCodes": codes })))
+            Ok(Json(json!({ "confirmed": true, "recoveryCodes": codes })))
+        })
+        .await
 }
 
 pub(crate) async fn disable_totp(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
 ) -> Result<Json<Value>, Rejection> {
-    let guard = state.conn.lock().map_err(internal)?;
-    let account_id = crate::account_for(&guard, &headers).ok_or_else(unauthorized)?;
-    guard
-        .execute(
-            "UPDATE accounts SET totp_secret = NULL, totp_confirmed = 0 WHERE id = ?1",
-            [account_id],
-        )
-        .map_err(internal)?;
-    guard
-        .execute(
-            "DELETE FROM recovery_codes WHERE account_id = ?1",
-            [account_id],
-        )
-        .map_err(internal)?;
-    guard
-        .execute("DELETE FROM totp_used WHERE account_id = ?1", [account_id])
-        .map_err(internal)?;
-    Ok(Json(json!({ "disabled": true })))
+    state
+        .db(move |conn| {
+            let tx = conn.transaction().map_err(internal)?;
+            for sql in [
+                "UPDATE accounts SET totp_secret = NULL, totp_confirmed = 0 WHERE id = ?1",
+                "DELETE FROM recovery_codes WHERE account_id = ?1",
+                "DELETE FROM totp_used WHERE account_id = ?1",
+            ] {
+                tx.execute(sql, [auth.account_id]).map_err(internal)?;
+            }
+            tx.commit().map_err(internal)?;
+            Ok(Json(json!({ "disabled": true })))
+        })
+        .await
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use rusqlite::Connection;
+    use crate::auth::{mint_token, token_hash};
 
-    /// Serializes every test below that reads or writes `ALBAS_SYNC_KEK` —
-    /// `cargo test` runs tests in parallel by default and env vars are
-    /// process-global (the same caveat `google.rs`'s tests document for
-    /// their own env vars), so two such tests running concurrently would
-    /// race. Every test that touches this var acquires the lock for its
-    /// *entire* body (an async test holds it directly rather than through a
-    /// higher-order function, since dropping it early — e.g. right after
-    /// constructing but before awaiting a future — would defeat the point).
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn set_test_kek() {
-        // SAFETY: test-only, and the caller holds `ENV_LOCK` for as long as
-        // this value matters.
-        unsafe { std::env::set_var("ALBAS_SYNC_KEK", B64.encode([7u8; 32])) };
-    }
-
-    /// Tests that exercise real crypto need a KEK in the environment; process
-    /// env vars are shared across the whole test binary, so every such test
-    /// sets the same fixed key rather than relying on load order.
-    fn with_kek<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        set_test_kek();
-        f()
-    }
+    /// The fixed key every test encrypts under — a value on `AppState`, not an
+    /// environment variable, so tests need no serialisation between them.
+    pub(crate) const KEK: [u8; 32] = [7u8; 32];
 
     fn mem() -> Connection {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::init_db(&mut c, None).unwrap();
-        c
+        crate::schema::test_db(None)
     }
 
     fn add_account(c: &Connection, name: &str) -> i64 {
@@ -586,7 +548,7 @@ mod tests {
     }
 
     fn store_secret(c: &Connection, id: i64, secret_b32: &str) {
-        let stored = encrypt_secret(secret_b32).unwrap();
+        let stored = encrypt_secret(Some(KEK), secret_b32).unwrap();
         c.execute(
             "UPDATE accounts SET totp_secret = ?1 WHERE id = ?2",
             params![stored, id],
@@ -594,101 +556,113 @@ mod tests {
         .unwrap();
     }
 
+    /// Puts the account in the state a finished enrollment leaves it in,
+    /// under `KEK` — what `password.rs`'s 428 test needs.
+    pub(crate) fn enroll_confirmed(c: &Connection, id: i64, secret_b32: &str) {
+        store_secret(c, id, secret_b32);
+        c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
+            .unwrap();
+    }
+
     /// Generates a code from the same secret+time totp-rs itself would use, so
     /// tests exercise real verification rather than a hardcoded digit string.
-    fn code_for(secret_b32: &str) -> String {
+    pub(crate) fn code_for(secret_b32: &str) -> String {
         totp_from_secret(secret_b32)
             .unwrap()
             .generate_current()
             .unwrap()
     }
 
+    /// A secret long enough for `totp-rs` (it refuses anything under 128
+    /// bits), base32-encoded as an authenticator would receive it.
+    pub(crate) fn fresh_secret() -> String {
+        match Secret::generate_secret().to_encoded() {
+            Secret::Encoded(s) => s,
+            _ => unreachable!(),
+        }
+    }
+
     #[test]
     fn encrypt_decrypt_round_trips_and_fails_closed_without_a_kek() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        set_test_kek();
-
-        let enc = encrypt_secret("JBSWY3DPEHPK3PXP").unwrap();
+        let enc = encrypt_secret(Some(KEK), "JBSWY3DPEHPK3PXP").unwrap();
         assert_ne!(
             enc, "JBSWY3DPEHPK3PXP",
             "must not store the secret in the clear"
         );
-        assert_eq!(decrypt_secret(&enc).unwrap(), "JBSWY3DPEHPK3PXP");
+        assert_eq!(decrypt_secret(Some(KEK), &enc).unwrap(), "JBSWY3DPEHPK3PXP");
 
-        // SAFETY: test-only; still holding ENV_LOCK.
-        unsafe { std::env::remove_var("ALBAS_SYNC_KEK") };
         assert_eq!(
-            encrypt_secret("JBSWY3DPEHPK3PXP").unwrap_err().0,
+            encrypt_secret(None, "JBSWY3DPEHPK3PXP").unwrap_err().0,
             StatusCode::SERVICE_UNAVAILABLE,
             "enrollment must refuse rather than store a plaintext secret"
+        );
+        assert_eq!(
+            decrypt_secret(None, &enc).unwrap_err().0,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "a secret that cannot be read must not read as 'not enrolled'"
+        );
+        assert!(
+            decrypt_secret(Some([8u8; 32]), &enc).is_err(),
+            "rotated key"
         );
     }
 
     #[test]
     fn recovery_codes_are_case_and_dash_insensitive_and_single_use() {
-        with_kek(|| {
-            let c = mem();
-            let id = add_account(&c, "sarah");
-            let code = generate_recovery_code();
-            c.execute(
-                "INSERT INTO recovery_codes (account_id, code_hash, created_at) VALUES (?1, ?2, 0)",
-                params![id, hash_recovery_code(&code)],
-            )
-            .unwrap();
+        let c = mem();
+        let id = add_account(&c, "sarah");
+        let code = generate_recovery_code();
+        c.execute(
+            "INSERT INTO recovery_codes (account_id, code_hash, created_at) VALUES (?1, ?2, 0)",
+            params![id, hash_recovery_code(&code)],
+        )
+        .unwrap();
 
-            let typed_loose = code.to_uppercase().replace('-', " ");
-            assert!(verify_recovery_code(&c, id, &typed_loose).is_ok());
+        let typed_loose = code.to_uppercase().replace('-', " ");
+        assert!(verify_recovery_code(&c, id, &typed_loose).is_ok());
 
-            // Second use of the same code must fail — it was burned.
-            let err = verify_recovery_code(&c, id, &code).unwrap_err();
-            assert_eq!(err.0, StatusCode::UNAUTHORIZED);
-        });
+        // Second use of the same code must fail — it was burned.
+        let err = verify_recovery_code(&c, id, &code).unwrap_err();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
     }
 
     #[test]
     fn unenrolled_account_passes_through() {
         let c = mem();
         let id = add_account(&c, "sarah");
-        assert!(verify_if_enrolled(&c, id, None, None).is_ok());
-        assert!(verify_if_enrolled(&c, id, Some("000000"), None).is_ok());
+        assert!(verify_if_enrolled(&c, None, id, None, None).is_ok());
+        assert!(verify_if_enrolled(&c, None, id, Some("000000"), None).is_ok());
     }
 
     #[test]
     fn unconfirmed_enrollment_does_not_gate_login() {
-        with_kek(|| {
-            let c = mem();
-            let id = add_account(&c, "sarah");
-            store_secret(&c, id, "JBSWY3DPEHPK3PXP");
-            // totp_confirmed is still 0 — an abandoned enrollment must not lock
-            // out password login.
-            assert!(verify_if_enrolled(&c, id, None, None).is_ok());
-        });
+        let c = mem();
+        let id = add_account(&c, "sarah");
+        store_secret(&c, id, "JBSWY3DPEHPK3PXP");
+        // totp_confirmed is still 0 — an abandoned enrollment must not lock
+        // out password login.
+        assert!(verify_if_enrolled(&c, Some(KEK), id, None, None).is_ok());
     }
 
     #[test]
     fn enroll_then_confirm_then_verify_accepts_a_generated_code_once() {
-        with_kek(|| {
-            let c = mem();
-            let id = add_account(&c, "sarah");
-            let secret = Secret::generate_secret();
-            let totp_rs::Secret::Encoded(secret_b32) = secret.to_encoded() else {
-                unreachable!()
-            };
-            store_secret(&c, id, &secret_b32);
+        let c = mem();
+        let id = add_account(&c, "sarah");
+        let secret_b32 = fresh_secret();
+        store_secret(&c, id, &secret_b32);
 
-            // Not confirmed yet: still passes through with no code.
-            assert!(verify_if_enrolled(&c, id, None, None).is_ok());
-            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
-                .unwrap();
+        // Not confirmed yet: still passes through with no code.
+        assert!(verify_if_enrolled(&c, Some(KEK), id, None, None).is_ok());
+        c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
+            .unwrap();
 
-            let code = code_for(&secret_b32);
-            assert!(verify_if_enrolled(&c, id, Some(&code), None).is_ok());
+        let code = code_for(&secret_b32);
+        assert!(verify_if_enrolled(&c, Some(KEK), id, Some(&code), None).is_ok());
 
-            // Replaying the exact same code within its own step must fail even
-            // though the code is still numerically correct.
-            let err = verify_if_enrolled(&c, id, Some(&code), None).unwrap_err();
-            assert_eq!(err.0, StatusCode::UNAUTHORIZED);
-        });
+        // Replaying the exact same code within its own step must fail even
+        // though the code is still numerically correct.
+        let err = verify_if_enrolled(&c, Some(KEK), id, Some(&code), None).unwrap_err();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
     }
 
     /// A code from the previous step is still valid (skew), but only once:
@@ -696,126 +670,91 @@ mod tests {
     /// on whatever step the server happened to be in when it checked it.
     #[test]
     fn a_skewed_code_is_single_use_too() {
-        with_kek(|| {
-            let c = mem();
-            let id = add_account(&c, "skew");
-            let secret = Secret::generate_secret();
-            let totp_rs::Secret::Encoded(secret_b32) = secret.to_encoded() else {
-                unreachable!()
-            };
-            store_secret(&c, id, &secret_b32);
-            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
-                .unwrap();
-            let totp = totp_from_secret(&secret_b32).unwrap();
+        let c = mem();
+        let id = add_account(&c, "skew");
+        let secret_b32 = fresh_secret();
+        enroll_confirmed(&c, id, &secret_b32);
+        let totp = totp_from_secret(&secret_b32).unwrap();
 
-            // Mint for "one step ago", re-minting if the clock rolled over
-            // between reading the step and generating.
-            let previous = loop {
-                let step = current_step() - 1;
-                let code = totp.generate((step * STEP_SECONDS) as u64);
-                if current_step() - 1 == step {
-                    break (step, code);
-                }
-            };
-            assert!(verify_if_enrolled(&c, id, Some(&previous.1), None).is_ok());
-            let recorded: i64 = c
-                .query_row(
-                    "SELECT step FROM totp_used WHERE account_id = ?1",
-                    [id],
-                    |r| r.get(0),
-                )
-                .unwrap();
-            assert_eq!(
-                recorded, previous.0,
-                "replay record keys on the matched step"
-            );
+        // Mint for "one step ago", re-minting if the clock rolled over
+        // between reading the step and generating.
+        let previous = loop {
+            let step = current_step() - 1;
+            let code = totp.generate((step * STEP_SECONDS) as u64);
+            if current_step() - 1 == step {
+                break (step, code);
+            }
+        };
+        assert!(verify_if_enrolled(&c, Some(KEK), id, Some(&previous.1), None).is_ok());
+        let recorded: i64 = c
+            .query_row(
+                "SELECT step FROM totp_used WHERE account_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            recorded, previous.0,
+            "replay record keys on the matched step"
+        );
 
-            let err = verify_if_enrolled(&c, id, Some(&previous.1), None).unwrap_err();
-            assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        let err = verify_if_enrolled(&c, Some(KEK), id, Some(&previous.1), None).unwrap_err();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
 
-            // The current step's code is a different code and still works.
-            assert!(verify_if_enrolled(&c, id, Some(&code_for(&secret_b32)), None).is_ok());
-        });
+        // The current step's code is a different code and still works.
+        assert!(verify_if_enrolled(&c, Some(KEK), id, Some(&code_for(&secret_b32)), None).is_ok());
     }
 
     #[test]
     fn confirmed_totp_rejects_wrong_code_and_locks_out_after_ten() {
-        with_kek(|| {
-            let c = mem();
-            let id = add_account(&c, "sarah");
-            let secret = Secret::generate_secret();
-            let secret_b32 = match secret.to_encoded() {
-                Secret::Encoded(s) => s,
-                _ => unreachable!(),
-            };
-            store_secret(&c, id, &secret_b32);
-            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
-                .unwrap();
+        let c = mem();
+        let id = add_account(&c, "sarah");
+        let secret_b32 = fresh_secret();
+        enroll_confirmed(&c, id, &secret_b32);
 
-            let real = code_for(&secret_b32);
-            let mut wrong: Vec<char> = real.chars().collect();
-            let d = wrong[0].to_digit(10).unwrap();
-            wrong[0] = std::char::from_digit((d + 1) % 10, 10).unwrap();
-            let wrong: String = wrong.into_iter().collect();
-            assert_ne!(wrong, real);
+        let real = code_for(&secret_b32);
+        let mut wrong: Vec<char> = real.chars().collect();
+        let d = wrong[0].to_digit(10).unwrap();
+        wrong[0] = std::char::from_digit((d + 1) % 10, 10).unwrap();
+        let wrong: String = wrong.into_iter().collect();
+        assert_ne!(wrong, real);
 
-            // Ten wrong attempts, each individually a plain 401 — the account
-            // only becomes locked out *after* the 10th is recorded.
-            for _ in 0..10 {
-                let err = verify_if_enrolled(&c, id, Some(&wrong), None).unwrap_err();
-                assert_eq!(err.0, StatusCode::UNAUTHORIZED);
-            }
+        // Ten wrong attempts, each individually a plain 401 — the account
+        // only becomes locked out *after* the 10th is recorded.
+        for _ in 0..10 {
+            let err = verify_if_enrolled(&c, Some(KEK), id, Some(&wrong), None).unwrap_err();
+            assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        }
 
-            // The 11th attempt is refused as locked before the code is even
-            // looked at — even the *correct* code is refused while locked out.
-            let err = verify_if_enrolled(&c, id, Some(&real), None).unwrap_err();
-            assert_eq!(
-                err.0,
-                StatusCode::LOCKED,
-                "11th attempt must see the lockout from the 10th failure"
-            );
-        });
+        // The 11th attempt is refused as locked before the code is even
+        // looked at — even the *correct* code is refused while locked out.
+        let err = verify_if_enrolled(&c, Some(KEK), id, Some(&real), None).unwrap_err();
+        assert_eq!(
+            err.0,
+            StatusCode::LOCKED,
+            "11th attempt must see the lockout from the 10th failure"
+        );
     }
 
     #[test]
     fn confirmed_totp_requires_a_code_or_recovery_code() {
-        with_kek(|| {
-            let c = mem();
-            let id = add_account(&c, "sarah");
-            let secret = Secret::generate_secret();
-            let secret_b32 = match secret.to_encoded() {
-                Secret::Encoded(s) => s,
-                _ => unreachable!(),
-            };
-            store_secret(&c, id, &secret_b32);
-            c.execute("UPDATE accounts SET totp_confirmed = 1 WHERE id = ?1", [id])
-                .unwrap();
+        let c = mem();
+        let id = add_account(&c, "sarah");
+        enroll_confirmed(&c, id, &fresh_secret());
 
-            let err = verify_if_enrolled(&c, id, None, None).unwrap_err();
-            assert_eq!(err.0, StatusCode::UNAUTHORIZED);
-            assert_eq!(err.1, CODE_REQUIRED);
+        let err = verify_if_enrolled(&c, Some(KEK), id, None, None).unwrap_err();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1, CODE_REQUIRED);
 
-            let err = verify_if_enrolled(&c, id, Some(""), None).unwrap_err();
-            assert_eq!(err.1, CODE_REQUIRED);
-        });
+        let err = verify_if_enrolled(&c, Some(KEK), id, Some(""), None).unwrap_err();
+        assert_eq!(err.1, CODE_REQUIRED);
     }
 
-    fn headers_for(token: &str) -> HeaderMap {
-        let mut h = HeaderMap::new();
-        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
-        h
-    }
-
-    fn state_with(c: Connection) -> Arc<AppState> {
-        Arc::new(AppState {
-            conn: std::sync::Mutex::new(c),
-            signups: crate::Signups::Open,
-            webauthn: None,
-            assetlinks: None,
-            pending: Default::default(),
-            google: None,
-            google_pending: Default::default(),
-        })
+    fn again(auth: &Authed) -> Authed {
+        Authed {
+            account_id: auth.account_id,
+            token_hash: auth.token_hash.clone(),
+        }
     }
 
     /// End-to-end through the real handlers: enroll (with password
@@ -823,132 +762,124 @@ mod tests {
     /// secret (receiving recovery codes), check `/totp`, sign in with one of
     /// those recovery codes in place of a TOTP code, and re-enroll.
     #[tokio::test]
-    // Held for the whole async body, not via `with_kek` — that helper would
-    // drop the guard right after constructing this future, before any of it
-    // actually runs. `#[tokio::test]` defaults to a current-thread runtime,
-    // so a non-`Send` `std::sync::MutexGuard` living across `.await` points
-    // here is fine — nothing ever moves this future to another thread.
-    #[allow(clippy::await_holding_lock)]
     async fn enroll_confirm_recovery_and_reenroll_via_handlers() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        set_test_kek();
-        {
-            let c = mem();
-            let id = add_account(&c, "sarah");
-            c.execute(
-                "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
-                params![
-                    crate::password::hash_password("CorrectHorseBattery1").unwrap(),
-                    id
-                ],
-            )
-            .unwrap();
-            let token = crate::mint_token(&c, id, "device").unwrap();
-            let headers = headers_for(&token);
-            let state = state_with(c);
-
-            let status = totp_status(State(state.clone()), headers.clone())
-                .await
-                .unwrap()
-                .0;
-            assert_eq!(status["enrolled"], false);
-
-            let wrong_password = enroll_start(
+        let c = mem();
+        let id = add_account(&c, "sarah");
+        c.execute(
+            "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
+            params![password::hash_password("CorrectHorseBattery1").unwrap(), id],
+        )
+        .unwrap();
+        let token = mint_token(&c, id, "device").unwrap();
+        let auth = Authed {
+            account_id: id,
+            token_hash: token_hash(&token),
+        };
+        let state = Arc::new(AppState {
+            kek: Some(KEK),
+            ..AppState::for_test(c)
+        });
+        let enroll = |password: &str| {
+            enroll_start(
                 State(state.clone()),
-                headers.clone(),
+                again(&auth),
                 Json(EnrollReq {
-                    password: "not-it".into(),
+                    password: password.into(),
                 }),
             )
-            .await;
-            assert_eq!(wrong_password.unwrap_err().0, StatusCode::UNAUTHORIZED);
+        };
 
-            let enrolled = enroll_start(
-                State(state.clone()),
-                headers.clone(),
-                Json(EnrollReq {
-                    password: "CorrectHorseBattery1".into(),
-                }),
-            )
+        let status = totp_status(State(state.clone()), again(&auth))
             .await
             .unwrap()
             .0;
-            let secret_b32 = enrolled["secret"].as_str().unwrap().to_string();
-            let uri = enrolled["uri"].as_str().unwrap();
-            assert!(uri.starts_with("otpauth://totp/"));
-            assert!(uri.contains(&secret_b32));
+        assert_eq!(status["enrolled"], false);
 
-            let status = totp_status(State(state.clone()), headers.clone())
-                .await
-                .unwrap()
-                .0;
-            assert_eq!(status["enrolled"], true);
-            assert_eq!(status["confirmed"], false);
+        let wrong_password = enroll("not-it").await;
+        assert_eq!(wrong_password.unwrap_err().0, StatusCode::UNAUTHORIZED);
 
-            let bad = enroll_confirm(
+        let enrolled = enroll("CorrectHorseBattery1").await.unwrap().0;
+        let secret_b32 = enrolled["secret"].as_str().unwrap().to_string();
+        let uri = enrolled["uri"].as_str().unwrap();
+        assert!(uri.starts_with("otpauth://totp/"));
+        assert!(uri.contains(&secret_b32));
+
+        let status = totp_status(State(state.clone()), again(&auth))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(status["enrolled"], true);
+        assert_eq!(status["confirmed"], false);
+
+        let confirm = |code: String| {
+            enroll_confirm(
                 State(state.clone()),
-                headers.clone(),
-                Json(ConfirmReq {
-                    code: "000000".into(),
-                }),
-            )
-            .await;
-            assert!(bad.is_err());
-
-            let code = code_for(&secret_b32);
-            let confirmed = enroll_confirm(
-                State(state.clone()),
-                headers.clone(),
+                again(&auth),
                 Json(ConfirmReq { code }),
             )
+        };
+        assert!(confirm("000000".into()).await.is_err());
+
+        let confirmed = confirm(code_for(&secret_b32)).await.unwrap().0;
+        assert_eq!(confirmed["confirmed"], true);
+        let codes: Vec<String> = confirmed["recoveryCodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(codes.len(), 8);
+
+        // Confirming again must not mint a second set of recovery codes.
+        let again_err = confirm(code_for(&secret_b32)).await.unwrap_err();
+        assert_eq!(again_err.0, StatusCode::CONFLICT);
+
+        // A recovery code stands in for a TOTP code at login.
+        {
+            let guard = state.conn.lock().unwrap();
+            assert!(verify_if_enrolled(&guard, Some(KEK), id, None, Some(&codes[0])).is_ok());
+            // Single-use.
+            assert!(verify_if_enrolled(&guard, Some(KEK), id, None, Some(&codes[0])).is_err());
+        }
+
+        let err = enroll("CorrectHorseBattery1").await.unwrap_err();
+        assert_eq!(err.0, StatusCode::CONFLICT);
+
+        let _ = disable_totp(State(state.clone()), again(&auth))
+            .await
+            .unwrap();
+        let status = totp_status(State(state.clone()), again(&auth))
             .await
             .unwrap()
             .0;
-            assert_eq!(confirmed["confirmed"], true);
-            let codes: Vec<String> = confirmed["recoveryCodes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_str().unwrap().to_string())
-                .collect();
-            assert_eq!(codes.len(), 8);
+        assert_eq!(status["enrolled"], false);
+        assert!(enroll("CorrectHorseBattery1").await.is_ok());
+    }
 
-            // A recovery code stands in for a TOTP code at login.
-            {
-                let guard = state.conn.lock().unwrap();
-                assert!(verify_if_enrolled(&guard, id, None, Some(&codes[0])).is_ok());
-                // Single-use.
-                assert!(verify_if_enrolled(&guard, id, None, Some(&codes[0])).is_err());
-            }
-
-            let err = enroll_start(
-                State(state.clone()),
-                headers.clone(),
-                Json(EnrollReq {
-                    password: "CorrectHorseBattery1".into(),
-                }),
-            )
-            .await
-            .unwrap_err();
-            assert_eq!(err.0, StatusCode::CONFLICT);
-
-            let _ = disable_totp(State(state.clone()), headers.clone())
-                .await
-                .unwrap();
-            let status = totp_status(State(state.clone()), headers.clone())
-                .await
-                .unwrap()
-                .0;
-            assert_eq!(status["enrolled"], false);
-            assert!(enroll_start(
-                State(state),
-                headers,
-                Json(EnrollReq {
-                    password: "CorrectHorseBattery1".into()
-                })
-            )
-            .await
-            .is_ok());
-        }
+    /// Without a KEK the server must refuse to enroll, not store plaintext.
+    #[tokio::test]
+    async fn enrollment_needs_a_kek() {
+        let c = mem();
+        let id = add_account(&c, "nokek");
+        c.execute(
+            "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
+            params![password::hash_password("CorrectHorseBattery1").unwrap(), id],
+        )
+        .unwrap();
+        let token = mint_token(&c, id, "device").unwrap();
+        let state = Arc::new(AppState::for_test(c));
+        let err = enroll_start(
+            State(state),
+            Authed {
+                account_id: id,
+                token_hash: token_hash(&token),
+            },
+            Json(EnrollReq {
+                password: "CorrectHorseBattery1".into(),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.0, StatusCode::SERVICE_UNAVAILABLE);
     }
 }

@@ -1,15 +1,69 @@
-//! `POST /sync`: the pull-then-push transaction and the share filtering that
-//! decides which of another account's rows ride along.
+//! `POST /sync`: the wire shapes, the pull-then-push transaction and the
+//! share filtering that decides which of another account's rows ride along.
 
-use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    Json,
-};
+use axum::{extract::State, Json};
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::{account_for, AppState, Change, SharedChange, SyncReq, SyncRes};
+use crate::auth::Authed;
+use crate::error::{internal, Rejection};
+use crate::AppState;
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Change {
+    pub(crate) tbl: String,
+    pub(crate) pk: String,
+    /// Every non-key, non-bookkeeping column, as a JSON object.
+    pub(crate) payload: serde_json::Value,
+    pub(crate) updated_at: i64,
+    pub(crate) deleted: bool,
+    /// Server sequence number, set on rows a pull returns so a client can
+    /// resume just before one it could not apply. Ignored on a push (the
+    /// server assigns it), and absent from older clients' requests.
+    #[serde(default)]
+    pub(crate) seq: i64,
+}
+
+/// A row belonging to another account that shared it with this one.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SharedChange {
+    /// The sharing account's name.
+    pub(crate) from: String,
+    pub(crate) tbl: String,
+    pub(crate) pk: String,
+    pub(crate) payload: serde_json::Value,
+    pub(crate) updated_at: i64,
+    pub(crate) deleted: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SyncReq {
+    /// Highest `seq` this client has already applied. 0 on first sync.
+    pub(crate) since: i64,
+    pub(crate) changes: Vec<Change>,
+    /// Highest `seq` seen among *shared* rows. Defaults keep old clients working.
+    #[serde(default)]
+    pub(crate) shared_since: i64,
+    /// The grant revision the client last saw; a mismatch means its shared
+    /// cache may contain revoked rows, so it gets a full snapshot instead.
+    #[serde(default)]
+    pub(crate) grant_rev: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SyncRes {
+    /// New watermark for the client to store and send as `since` next time.
+    pub(crate) seq: i64,
+    pub(crate) changes: Vec<Change>,
+    pub(crate) shared: Vec<SharedChange>,
+    pub(crate) shared_seq: i64,
+    pub(crate) grant_rev: i64,
+}
 
 /// The tables a grant exposes. Todos and habits live in the same tables, hence
 /// one combined group.
@@ -26,20 +80,17 @@ fn granted_tables(calendar: bool, todos: bool) -> Vec<&'static str> {
 
 pub(crate) async fn sync(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
     Json(req): Json<SyncReq>,
-) -> Result<Json<SyncRes>, StatusCode> {
-    let mut guard = state
-        .conn
-        .lock()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let account_id = account_for(&guard, &headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let tx = guard
-        .transaction()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let res = apply_sync(&tx, account_id, &req).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    tx.commit().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(res))
+) -> Result<Json<SyncRes>, Rejection> {
+    state
+        .db(move |conn| {
+            let tx = conn.transaction().map_err(internal)?;
+            let res = apply_sync(&tx, auth.account_id, &req).map_err(internal)?;
+            tx.commit().map_err(internal)?;
+            Ok(Json(res))
+        })
+        .await
 }
 
 pub(crate) fn apply_sync(
@@ -166,15 +217,15 @@ pub(crate) fn apply_sync(
         )?;
     }
 
-    let watermark: i64 =
-        tx.query_row("SELECT COALESCE(MAX(seq), 0) FROM rows", [], |r| r.get(0))?;
-    // The shared snapshot was taken in this same transaction, so the one
-    // watermark covers both streams: any later shared write gets a higher seq.
+    // The push's last seq is the watermark; a fresh MAX(seq) query would say
+    // the same thing, since nothing else writes inside this transaction.
     Ok(SyncRes {
-        seq: watermark,
+        seq,
         changes,
         shared,
-        shared_seq: watermark,
+        // The shared snapshot was taken in this same transaction, so the one
+        // watermark covers both streams: any later shared write gets a higher seq.
+        shared_seq: seq,
         grant_rev: my_rev,
     })
 }

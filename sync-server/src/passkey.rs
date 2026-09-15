@@ -15,12 +15,7 @@
 //! Pending ceremony states live in memory (single process); every access
 //! sweeps expired entries, so there is no background task.
 
-use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -28,15 +23,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use webauthn_rs::prelude::*;
 
-use crate::{
-    mint_token, name_ok, now_ms, random_token, token_hash, AdminError, AppState, Signups, NAME_RULE,
-};
+use crate::account::{name_ok, NAME_RULE};
+use crate::admin_db::AdminError;
+use crate::auth::{mint_token, random_token, to_hex, token_hash, Authed};
+use crate::config::Signups;
+use crate::error::{internal, unauthorized, Rejection};
+use crate::{now_ms, AppState};
 
 const REG_TTL_MS: i64 = 5 * 60 * 1000;
 const AUTH_TTL_MS: i64 = 5 * 60 * 1000;
 const INVITE_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
-
-type Rejection = (StatusCode, String);
 
 /// What a registration ceremony will do once the credential comes back.
 #[derive(Debug)]
@@ -104,18 +100,18 @@ impl Pending {
     }
 }
 
-/// Builds the `Webauthn` verifier from `ALBAS_SYNC_ORIGIN` (the public URL the
-/// relying-party id is derived from). `ALBAS_SYNC_ANDROID_ORIGIN` additionally
-/// allows the `android:apk-key-hash:…` origin that Android's Credential
-/// Manager asserts instead of an https origin. Unset origin = passkeys off.
-pub(crate) fn build_webauthn() -> Result<Option<Webauthn>, String> {
-    let Some(origin) = std::env::var("ALBAS_SYNC_ORIGIN")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-    else {
+/// Builds the `Webauthn` verifier from `Config::origin` (the public URL the
+/// relying-party id is derived from). `android_origin` additionally allows
+/// the `android:apk-key-hash:…` origin that Android's Credential Manager
+/// asserts instead of an https origin. No origin = passkeys off.
+pub(crate) fn build_webauthn(
+    origin: Option<&str>,
+    android_origin: Option<&str>,
+) -> Result<Option<Webauthn>, String> {
+    let Some(origin) = origin else {
         return Ok(None);
     };
-    let url = Url::parse(origin.trim()).map_err(|e| format!("ALBAS_SYNC_ORIGIN invalid: {e}"))?;
+    let url = Url::parse(origin).map_err(|e| format!("ALBAS_SYNC_ORIGIN invalid: {e}"))?;
     let rp_id = url
         .host_str()
         .ok_or("ALBAS_SYNC_ORIGIN has no host")?
@@ -123,12 +119,9 @@ pub(crate) fn build_webauthn() -> Result<Option<Webauthn>, String> {
     let mut builder = WebauthnBuilder::new(&rp_id, &url)
         .map_err(|e| format!("ALBAS_SYNC_ORIGIN rejected: {e:?}"))?
         .rp_name("Albas");
-    if let Some(android) = std::env::var("ALBAS_SYNC_ANDROID_ORIGIN")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-    {
-        let au = Url::parse(android.trim())
-            .map_err(|e| format!("ALBAS_SYNC_ANDROID_ORIGIN invalid: {e}"))?;
+    if let Some(android) = android_origin {
+        let au =
+            Url::parse(android).map_err(|e| format!("ALBAS_SYNC_ANDROID_ORIGIN invalid: {e}"))?;
         builder = builder.append_allowed_origin(&au);
     }
     builder
@@ -142,10 +135,6 @@ fn webauthn_of(state: &AppState) -> Result<&Webauthn, Rejection> {
         StatusCode::SERVICE_UNAVAILABLE,
         "Passkeys are not configured on this server (ALBAS_SYNC_ORIGIN is unset).".into(),
     ))
-}
-
-fn internal<E: std::fmt::Display>(e: E) -> Rejection {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
 
 fn random_uuid() -> Uuid {
@@ -305,10 +294,10 @@ pub(crate) async fn register_start(
     Json(req): Json<RegisterStartReq>,
 ) -> Result<Json<Value>, Rejection> {
     let webauthn = webauthn_of(&state)?;
-    let info = {
-        let guard = state.conn.lock().map_err(internal)?;
-        resolve_registration(&guard, state.signups, req.invite.as_deref(), &req.name)?
-    };
+    let signups = state.signups;
+    let info = state
+        .db(move |conn| resolve_registration(conn, signups, req.invite.as_deref(), &req.name))
+        .await?;
     let (options, reg_state) = webauthn
         .start_passkey_registration(random_uuid(), &info.name, &info.name, None)
         .map_err(|e| internal(format!("could not start registration: {e:?}")))?;
@@ -343,13 +332,13 @@ pub(crate) async fn register_finish(
                 format!("registration rejected: {e:?}"),
             )
         })?;
-    let cred_id_hex = crate::to_hex(passkey.cred_id().as_ref());
+    let cred_id_hex = to_hex(passkey.cred_id().as_ref());
     let passkey_json = serde_json::to_string(&passkey).map_err(internal)?;
-    let label = req.label.as_deref().unwrap_or("passkey");
+    let label = req.label.unwrap_or_else(|| "passkey".into());
 
-    let mut guard = state.conn.lock().map_err(internal)?;
-    let (name, token) =
-        complete_registration(&mut guard, &info, &cred_id_hex, &passkey_json, label)?;
+    let (name, token) = state
+        .db(move |conn| complete_registration(conn, &info, &cred_id_hex, &passkey_json, &label))
+        .await?;
     Ok(Json(json!({ "name": name, "token": token })))
 }
 
@@ -360,23 +349,17 @@ pub(crate) async fn register_finish(
 // bearer token `/sync` uses, so no admin is involved.
 // ---------------------------------------------------------------------------
 
-fn unauthorized() -> Rejection {
-    (StatusCode::UNAUTHORIZED, "Not signed in.".into())
-}
-
-/// The account behind the presented bearer token, plus its name.
-fn signed_in(conn: &Connection, headers: &HeaderMap) -> Result<(i64, String), Rejection> {
-    let account_id = crate::account_for(conn, headers).ok_or_else(unauthorized)?;
-    let name: String = conn
-        .query_row(
-            "SELECT name FROM accounts WHERE id = ?1",
-            [account_id],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(internal)?
-        .ok_or_else(unauthorized)?;
-    Ok((account_id, name))
+/// The signed-in account's name — 401 rather than 500 if the row vanished
+/// between the token check and this read (a deletion racing a request).
+fn account_name(conn: &Connection, account_id: i64) -> Result<String, Rejection> {
+    conn.query_row(
+        "SELECT name FROM accounts WHERE id = ?1",
+        [account_id],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(internal)?
+    .ok_or_else(unauthorized)
 }
 
 /// Credential ids already on the account, read back out of the stored
@@ -408,22 +391,23 @@ fn existing_credentials(
 
 pub(crate) async fn add_passkey_start(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
 ) -> Result<Json<Value>, Rejection> {
     let webauthn = webauthn_of(&state)?;
-    let (info, exclude) = {
-        let guard = state.conn.lock().map_err(internal)?;
-        let (account_id, name) = signed_in(&guard, &headers)?;
-        let existing = existing_credentials(&guard, account_id)?;
-        (
-            RegInfo {
-                name,
-                invite_id: None,
-                account_id: Some(account_id),
-            },
-            (!existing.is_empty()).then_some(existing),
-        )
-    };
+    let (info, exclude) = state
+        .db(move |conn| {
+            let name = account_name(conn, auth.account_id)?;
+            let existing = existing_credentials(conn, auth.account_id)?;
+            Ok((
+                RegInfo {
+                    name,
+                    invite_id: None,
+                    account_id: Some(auth.account_id),
+                },
+                (!existing.is_empty()).then_some(existing),
+            ))
+        })
+        .await?;
     let (options, reg_state) = webauthn
         .start_passkey_registration(random_uuid(), &info.name, &info.name, exclude)
         .map_err(|e| internal(format!("could not start registration: {e:?}")))?;
@@ -451,7 +435,7 @@ pub(crate) struct AddPasskeyFinishReq {
 /// in with the new key mints its own.
 pub(crate) async fn add_passkey_finish(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
     Json(req): Json<AddPasskeyFinishReq>,
 ) -> Result<Json<Value>, Rejection> {
     let webauthn = webauthn_of(&state)?;
@@ -467,22 +451,25 @@ pub(crate) async fn add_passkey_finish(
                 format!("registration rejected: {e:?}"),
             )
         })?;
-    let cred_id_hex = crate::to_hex(passkey.cred_id().as_ref());
+    let cred_id_hex = to_hex(passkey.cred_id().as_ref());
     let passkey_json = serde_json::to_string(&passkey).map_err(internal)?;
-
-    let mut guard = state.conn.lock().map_err(internal)?;
-    let (account_id, _) = signed_in(&guard, &headers)?;
-    if info.account_id != Some(account_id) {
+    if info.account_id != Some(auth.account_id) {
         return Err(unauthorized());
     }
-    let (name, token) =
-        complete_registration(&mut guard, &info, &cred_id_hex, &passkey_json, "passkey")?;
-    guard
-        .execute(
-            "DELETE FROM tokens WHERE token_hash = ?1",
-            [token_hash(&token)],
-        )
-        .map_err(internal)?;
+
+    let cred_id = cred_id_hex.clone();
+    let name = state
+        .db(move |conn| {
+            let (name, token) =
+                complete_registration(conn, &info, &cred_id, &passkey_json, "passkey")?;
+            conn.execute(
+                "DELETE FROM tokens WHERE token_hash = ?1",
+                [token_hash(&token)],
+            )
+            .map_err(internal)?;
+            Ok(name)
+        })
+        .await?;
     Ok(Json(json!({ "name": name, "credId": cred_id_hex })))
 }
 
@@ -494,34 +481,37 @@ pub(crate) async fn add_passkey_finish(
 /// one here would be inventing a fact.
 pub(crate) async fn list_passkeys(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    auth: Authed,
 ) -> Result<Json<Value>, Rejection> {
-    let guard = state.conn.lock().map_err(internal)?;
-    let (account_id, _) = signed_in(&guard, &headers)?;
-    let mut stmt = guard
-        .prepare(
-            "SELECT cred_id, created_at, label FROM passkeys WHERE account_id = ?1 ORDER BY created_at",
-        )
-        .map_err(internal)?;
-    let rows = stmt
-        .query_map([account_id], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, Option<String>>(2)?,
-            ))
+    state
+        .db(move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT cred_id, created_at, label FROM passkeys WHERE account_id = ?1 ORDER BY created_at",
+                )
+                .map_err(internal)?;
+            let rows = stmt
+                .query_map([auth.account_id], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .map_err(internal)?
+                .collect::<rusqlite::Result<Vec<(String, i64, Option<String>)>>>()
+                .map_err(internal)?;
+            let out: Vec<Value> = rows
+                .into_iter()
+                .map(|(cred_id, created_at, label)| {
+                    let label =
+                        label.unwrap_or_else(|| format!("Passkey {}", short_cred(&cred_id)));
+                    json!({ "credId": cred_id, "label": label, "createdAt": created_at })
+                })
+                .collect();
+            Ok(Json(json!(out)))
         })
-        .map_err(internal)?
-        .collect::<rusqlite::Result<Vec<(String, i64, Option<String>)>>>()
-        .map_err(internal)?;
-    let out: Vec<Value> = rows
-        .into_iter()
-        .map(|(cred_id, created_at, label)| {
-            let label = label.unwrap_or_else(|| format!("Passkey {}", short_cred(&cred_id)));
-            json!({ "credId": cred_id, "label": label, "createdAt": created_at })
-        })
-        .collect();
-    Ok(Json(json!(out)))
+        .await
 }
 
 /// A credential id is long and opaque; the first few characters are enough to
@@ -568,19 +558,28 @@ pub(crate) async fn login_finish(
                 format!("credential rejected: {e:?}"),
             )
         })?;
-    let cred_id_hex = crate::to_hex(cred_id);
+    let cred_id_hex = to_hex(cred_id);
 
-    let mut guard = state.conn.lock().map_err(internal)?;
-    let row: Option<(i64, i64, String, String)> = guard
-        .query_row(
-            "SELECT p.id, p.account_id, p.passkey_json, a.name
-             FROM passkeys p JOIN accounts a ON a.id = p.account_id
-             WHERE p.cred_id = ?1",
-            [&cred_id_hex],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
-        .optional()
-        .map_err(internal)?;
+    let row = state
+        .db(move |conn| {
+            conn.query_row(
+                "SELECT p.id, p.account_id, p.passkey_json, a.name
+                 FROM passkeys p JOIN accounts a ON a.id = p.account_id
+                 WHERE p.cred_id = ?1",
+                [&cred_id_hex],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(internal)
+        })
+        .await?;
     let Some((passkey_row, account_id, passkey_json, name)) = row else {
         return Err((StatusCode::UNAUTHORIZED, "Unknown passkey.".into()));
     };
@@ -594,20 +593,26 @@ pub(crate) async fn login_finish(
         )
         .map_err(|e| (StatusCode::UNAUTHORIZED, format!("sign-in rejected: {e:?}")))?;
 
-    let tx = guard.transaction().map_err(internal)?;
-    if passkey.update_credential(&result) == Some(true) {
-        tx.execute(
-            "UPDATE passkeys SET passkey_json = ?1 WHERE id = ?2",
-            params![
-                serde_json::to_string(&passkey).map_err(internal)?,
-                passkey_row
-            ],
-        )
+    let updated = (passkey.update_credential(&result) == Some(true))
+        .then(|| serde_json::to_string(&passkey))
+        .transpose()
         .map_err(internal)?;
-    }
-    let label = req.label.as_deref().unwrap_or("passkey");
-    let token = mint_token(&tx, account_id, label).map_err(internal)?;
-    tx.commit().map_err(internal)?;
+    let label = req.label.unwrap_or_else(|| "passkey".into());
+    let token = state
+        .db(move |conn| {
+            let tx = conn.transaction().map_err(internal)?;
+            if let Some(json) = updated {
+                tx.execute(
+                    "UPDATE passkeys SET passkey_json = ?1 WHERE id = ?2",
+                    params![json, passkey_row],
+                )
+                .map_err(internal)?;
+            }
+            let token = mint_token(&tx, account_id, &label).map_err(internal)?;
+            tx.commit().map_err(internal)?;
+            Ok(token)
+        })
+        .await?;
     Ok(Json(json!({ "name": name, "token": token })))
 }
 
@@ -661,9 +666,7 @@ mod tests {
     use super::*;
 
     fn mem() -> Connection {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::init_db(&mut c, None).unwrap();
-        c
+        crate::schema::test_db(None)
     }
 
     fn add_account(c: &Connection, name: &str) -> i64 {
@@ -856,27 +859,13 @@ mod tests {
         assert_eq!(n, 1);
     }
 
-    fn headers_for(token: &str) -> HeaderMap {
-        let mut h = HeaderMap::new();
-        h.insert("authorization", format!("Bearer {token}").parse().unwrap());
-        h
-    }
-
     #[test]
-    fn signed_in_resolves_the_token_and_rejects_strangers() {
+    fn account_name_reads_the_row_and_401s_a_missing_one() {
         let c = mem();
         let owner = add_account(&c, "owner");
-        let token = mint_token(&c, owner, "device").unwrap();
+        assert_eq!(account_name(&c, owner).unwrap(), "owner");
         assert_eq!(
-            signed_in(&c, &headers_for(&token)).unwrap(),
-            (owner, "owner".to_string())
-        );
-        assert_eq!(
-            signed_in(&c, &headers_for("not-a-token")).unwrap_err().0,
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            signed_in(&c, &HeaderMap::new()).unwrap_err().0,
+            account_name(&c, owner + 1).unwrap_err().0,
             StatusCode::UNAUTHORIZED
         );
     }

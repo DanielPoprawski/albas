@@ -1,11 +1,16 @@
 use super::*;
-use crate::schema::table_columns;
-use crate::sync::apply_sync;
+use crate::admin_db::*;
+use crate::auth::{account_for, mint_token, token_hash, Authed};
+use crate::schema::{init_db, table_columns, test_db, OWNER};
+use crate::sync::{apply_sync, Change, SyncReq};
+use axum::extract::{Path, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::Json;
+use rusqlite::{params, OptionalExtension};
+use std::sync::Arc;
 
 fn mem(owner_token: Option<&str>) -> Connection {
-    let mut c = Connection::open_in_memory().unwrap();
-    init_db(&mut c, owner_token).unwrap();
-    c
+    test_db(owner_token)
 }
 
 fn make_account(c: &Connection, name: &str) -> i64 {
@@ -430,7 +435,7 @@ fn legacy_v2_accounts_schema_migrates_tokens_out() {
            id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
            token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
          CREATE TABLE rows (
-           account_id INTEGER NOT NULL, tbl TEXT NOT NULL, pk TEXT NOT NULL,
+           account_id INTEGER NOT NULL REFERENCES accounts(id), tbl TEXT NOT NULL, pk TEXT NOT NULL,
            payload TEXT NOT NULL, updated_at INTEGER NOT NULL,
            deleted INTEGER NOT NULL DEFAULT 0, seq INTEGER NOT NULL,
            PRIMARY KEY (account_id, tbl, pk));
@@ -476,6 +481,24 @@ fn legacy_v2_accounts_schema_migrates_tokens_out() {
         .query_row("SELECT seq FROM rows WHERE pk = 'h1'", [], |r| r.get(0))
         .unwrap();
     assert_eq!(seq, 3);
+    // The rebuild renamed `accounts` away and dropped it; the child tables'
+    // REFERENCES clauses must still name `accounts`, or every insert fails
+    // the moment foreign keys are enforced.
+    let parent: String = c
+        .query_row(
+            "SELECT \"table\" FROM pragma_foreign_key_list('rows')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(parent, "accounts");
+    c.pragma_update(None, "foreign_keys", true).unwrap();
+    c.execute(
+        "INSERT INTO rows (account_id, tbl, pk, payload, updated_at, deleted, seq)
+         VALUES (2, 'habits', 'h2', '{}', 101, 0, 4)",
+        [],
+    )
+    .unwrap();
 }
 
 /// Sharing exposes exactly the granted table groups, to exactly the
@@ -852,4 +875,467 @@ fn label_revoke_and_clear_totp_are_scoped_to_the_named_account() {
         )
         .unwrap();
     assert!(secret.is_none() && confirmed == 0);
+}
+
+// ---------------------------------------------------------------------------
+// Handler-level tests: the routes `auth::Authed` guards, driven directly.
+// ---------------------------------------------------------------------------
+
+fn state_for(c: Connection) -> Arc<AppState> {
+    Arc::new(AppState::for_test(c))
+}
+
+/// An `Authed` as the extractor would have produced it for `token`.
+fn authed(account_id: i64, token: &str) -> Authed {
+    Authed {
+        account_id,
+        token_hash: token_hash(token),
+    }
+}
+
+async fn extract(state: &Arc<AppState>, headers: HeaderMap) -> Result<Authed, StatusCode> {
+    use axum::extract::FromRequestParts;
+    let mut req = axum::http::Request::builder().body(()).unwrap();
+    *req.headers_mut() = headers;
+    let (mut parts, _) = req.into_parts();
+    Authed::from_request_parts(&mut parts, state)
+        .await
+        .map_err(|(status, _)| status)
+}
+
+/// The one place a bearer token turns into an identity: a real token
+/// resolves (with the hash the session routes key on), and a missing,
+/// unknown or expired one is a 401 before any handler runs.
+#[tokio::test]
+async fn authed_extractor_resolves_tokens_and_rejects_the_rest() {
+    let c = mem(None);
+    let alice = make_account(&c, "alice");
+    let token = mint_token(&c, alice, "laptop").unwrap();
+    let expired = mint_token(&c, alice, "old").unwrap();
+    c.execute(
+        "UPDATE tokens SET expires_at = ?1 WHERE token_hash = ?2",
+        params![now_ms() - 1, token_hash(&expired)],
+    )
+    .unwrap();
+    let state = state_for(c);
+
+    let ok = extract(&state, auth_headers(&token)).await.unwrap();
+    assert_eq!(ok.account_id, alice);
+    assert_eq!(ok.token_hash, token_hash(&token));
+
+    for headers in [
+        HeaderMap::new(),
+        auth_headers("not-a-token"),
+        auth_headers(&expired),
+    ] {
+        assert_eq!(
+            extract(&state, headers).await.unwrap_err(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+}
+
+/// The sliding window: a token is refused once past `expires_at`, and a
+/// use more than an hour after the last touch pushes both stamps forward —
+/// while a use within the hour leaves them alone (no write per `/sync`).
+#[test]
+fn tokens_expire_and_slide_on_use() {
+    let c = mem(None);
+    let alice = make_account(&c, "alice");
+    let token = mint_token(&c, alice, "laptop").unwrap();
+    let hash = token_hash(&token);
+    let stamps = |c: &Connection| -> (i64, i64) {
+        c.query_row(
+            "SELECT expires_at, last_used_at FROM tokens WHERE token_hash = ?1",
+            [&hash],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    };
+    let now = now_ms();
+
+    // Fresh: no touch within the hour.
+    let before = stamps(&c);
+    assert_eq!(account_for(&c, &auth_headers(&token)), Some(alice));
+    assert_eq!(stamps(&c), before, "a recent token is not rewritten on use");
+
+    // Idle for two hours: touched, expiry pushed out to a full window again.
+    c.execute(
+        "UPDATE tokens SET last_used_at = ?1, expires_at = ?2 WHERE token_hash = ?3",
+        params![now - 2 * 60 * 60 * 1000, now + 1000, &hash],
+    )
+    .unwrap();
+    assert_eq!(account_for(&c, &auth_headers(&token)), Some(alice));
+    let (expires_at, last_used_at) = stamps(&c);
+    assert!(last_used_at >= now);
+    assert!(expires_at >= now + crate::auth::TOKEN_TTL_MS - 1000);
+
+    // Past its expiry: gone, and never touched back to life.
+    c.execute(
+        "UPDATE tokens SET expires_at = ?1 WHERE token_hash = ?2",
+        params![now - 1, &hash],
+    )
+    .unwrap();
+    assert_eq!(account_for(&c, &auth_headers(&token)), None);
+    assert_eq!(stamps(&c).0, now - 1);
+}
+
+/// Settings → Sessions: the list flags the calling session, revoking by id
+/// is scoped to the caller's own account, "this device" and "everywhere
+/// else" each leave exactly the right tokens behind.
+#[tokio::test]
+async fn token_routes_list_current_and_revoke_scoped() {
+    use crate::tokens::*;
+    let c = mem(None);
+    let alice = make_account(&c, "alice");
+    let bob = make_account(&c, "bob");
+    let laptop = mint_token(&c, alice, "laptop").unwrap();
+    let phone = mint_token(&c, alice, "phone").unwrap();
+    let tablet = mint_token(&c, alice, "tablet").unwrap();
+    let bobs = mint_token(&c, bob, "bob-laptop").unwrap();
+    let id_of = |c: &Connection, token: &str| -> i64 {
+        c.query_row(
+            "SELECT id FROM tokens WHERE token_hash = ?1",
+            [token_hash(token)],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    let phone_id = id_of(&c, &phone);
+    let bobs_id = id_of(&c, &bobs);
+    let state = state_for(c);
+
+    let listed = tokens_list(State(state.clone()), authed(alice, &laptop))
+        .await
+        .unwrap()
+        .0;
+    let json = serde_json::to_value(&listed).unwrap();
+    let rows = json.as_array().unwrap();
+    assert_eq!(rows.len(), 3, "only alice's tokens, never bob's");
+    let current: Vec<&str> = rows
+        .iter()
+        .filter(|r| r["current"] == true)
+        .map(|r| r["label"].as_str().unwrap())
+        .collect();
+    assert_eq!(current, ["laptop"]);
+
+    // Another account's token id reads as not found, not as revoked.
+    let err = tokens_delete_one(State(state.clone()), authed(alice, &laptop), Path(bobs_id))
+        .await
+        .unwrap_err();
+    assert_eq!(err.0, StatusCode::NOT_FOUND);
+    let ok = tokens_delete_one(State(state.clone()), authed(alice, &laptop), Path(phone_id))
+        .await
+        .unwrap();
+    assert_eq!(ok, StatusCode::NO_CONTENT);
+
+    let others = tokens_delete_others(State(state.clone()), authed(alice, &laptop))
+        .await
+        .unwrap();
+    assert_eq!(others, StatusCode::NO_CONTENT);
+    {
+        let c = state.conn.lock().unwrap();
+        assert_eq!(account_for(&c, &auth_headers(&laptop)), Some(alice));
+        assert_eq!(account_for(&c, &auth_headers(&tablet)), None);
+        assert_eq!(
+            account_for(&c, &auth_headers(&bobs)),
+            Some(bob),
+            "bob untouched"
+        );
+    }
+
+    let current = tokens_delete_current(State(state.clone()), authed(alice, &laptop))
+        .await
+        .unwrap();
+    assert_eq!(current, StatusCode::NO_CONTENT);
+    let c = state.conn.lock().unwrap();
+    assert_eq!(account_for(&c, &auth_headers(&laptop)), None);
+}
+
+/// `/shares`: an unknown grantee is `{ok:false}` with a 200 (no name
+/// probing), sharing with yourself is refused, and the two lists show each
+/// side of a grant.
+#[tokio::test]
+async fn shares_routes_hide_unknown_names_and_refuse_self() {
+    use crate::shares::*;
+    let c = mem(None);
+    let alice = make_account(&c, "alice");
+    let bob = make_account(&c, "bob");
+    let alice_token = mint_token(&c, alice, "t").unwrap();
+    let bob_token = mint_token(&c, bob, "t").unwrap();
+    let state = state_for(c);
+    let body = |calendar: bool, todos: bool| Json(ShareBody { calendar, todos });
+
+    let unknown = shares_put(
+        State(state.clone()),
+        authed(alice, &alice_token),
+        Path("nobody".into()),
+        body(true, true),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(unknown["ok"], false);
+
+    let me = shares_put(
+        State(state.clone()),
+        authed(alice, &alice_token),
+        Path("alice".into()),
+        body(true, true),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(me.0, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let granted = shares_put(
+        State(state.clone()),
+        authed(alice, &alice_token),
+        Path("bob".into()),
+        body(true, false),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(granted["ok"], true);
+
+    let alices = serde_json::to_value(
+        shares_get(State(state.clone()), authed(alice, &alice_token))
+            .await
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    assert_eq!(alices["outgoing"][0]["name"], "bob");
+    assert_eq!(alices["outgoing"][0]["calendar"], true);
+    assert_eq!(alices["outgoing"][0]["todos"], false);
+    assert!(alices["incoming"].as_array().unwrap().is_empty());
+    let bobs = serde_json::to_value(
+        shares_get(State(state.clone()), authed(bob, &bob_token))
+            .await
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    assert_eq!(bobs["incoming"][0]["name"], "alice");
+
+    let removed = shares_delete(
+        State(state.clone()),
+        authed(alice, &alice_token),
+        Path("bob".into()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(removed["ok"], true);
+    let c = state.conn.lock().unwrap();
+    let n: i64 = c
+        .query_row("SELECT COUNT(*) FROM shares", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+/// The export hands back only live rows with their payloads; deleting the
+/// account needs the password re-typed and then leaves nothing behind.
+#[tokio::test]
+async fn self_delete_needs_the_password_and_export_returns_live_rows() {
+    use crate::account::*;
+    let c = mem(None);
+    let alice = make_account(&c, "alice");
+    c.execute(
+        "UPDATE accounts SET password_hash = ?1 WHERE id = ?2",
+        params![
+            crate::password::hash_password("CorrectHorseBattery1").unwrap(),
+            alice
+        ],
+    )
+    .unwrap();
+    let token = mint_token(&c, alice, "t").unwrap();
+    apply_sync(
+        &c,
+        alice,
+        &req(vec![
+            change("habits", "h1", r#"{"name":"run"}"#, 1),
+            change("tasks", "t1", r#"{"title":"milk"}"#, 1),
+        ]),
+    )
+    .unwrap();
+    c.execute("UPDATE rows SET deleted = 1 WHERE pk = 't1'", [])
+        .unwrap();
+    let state = state_for(c);
+
+    let export = account_export(State(state.clone()), authed(alice, &token))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(export["account"]["name"], "alice");
+    let rows = export["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "tombstones are not part of an export");
+    assert_eq!(rows[0]["pk"], "h1");
+    assert_eq!(rows[0]["payload"]["name"], "run");
+
+    let wrong = self_delete_account(
+        State(state.clone()),
+        authed(alice, &token),
+        Json(serde_json::from_value(serde_json::json!({ "password": "nope-nope-nope" })).unwrap()),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(wrong.0, StatusCode::UNAUTHORIZED);
+
+    let gone = self_delete_account(
+        State(state.clone()),
+        authed(alice, &token),
+        Json(
+            serde_json::from_value(serde_json::json!({ "password": "CorrectHorseBattery1" }))
+                .unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(gone, StatusCode::NO_CONTENT);
+    let c = state.conn.lock().unwrap();
+    for table in ["accounts", "rows", "tokens"] {
+        let n: i64 = c
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "{table} must be empty");
+    }
+}
+
+/// Nothing keyed on an account id may survive its deletion: the next
+/// account to get that id would inherit the lockout, the spent TOTP steps,
+/// the recovery codes and the claimed sign-in session.
+#[test]
+fn admin_delete_clears_lockout_recovery_and_sessions() {
+    let c = mem(None);
+    let alice = make_account(&c, "alice");
+    crate::lockout::record_failure(&c, alice, "password").unwrap();
+    c.execute_batch(&format!(
+        "INSERT INTO totp_used (account_id, step) VALUES ({alice}, 1);
+         INSERT INTO recovery_codes (account_id, code_hash, created_at) VALUES ({alice}, 'h', 0);
+         INSERT INTO app_sessions (nonce_hash, account_id, token, created_at)
+           VALUES ('n', {alice}, 't', 0);"
+    ))
+    .unwrap();
+
+    delete_account_db(&c, "alice").unwrap();
+
+    for table in [
+        "auth_failures",
+        "totp_used",
+        "recovery_codes",
+        "app_sessions",
+    ] {
+        let n: i64 = c
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE account_id = ?1"),
+                [alice],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "{table} still references the deleted account");
+    }
+}
+
+/// `ensure_column` is the whole migration story for a shipped table: it
+/// adds what is missing, leaves what is there, and is safe to run twice.
+#[test]
+fn ensure_column_backfills_an_older_table() {
+    use crate::schema::ensure_column;
+    let c = Connection::open_in_memory().unwrap();
+    c.execute_batch(
+        "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+         INSERT INTO widgets (name) VALUES ('a');",
+    )
+    .unwrap();
+
+    ensure_column(&c, "widgets", "colour", "TEXT NOT NULL DEFAULT 'red'").unwrap();
+    ensure_column(&c, "widgets", "colour", "TEXT NOT NULL DEFAULT 'red'").unwrap();
+    assert_eq!(
+        table_columns(&c, "widgets").unwrap(),
+        ["id", "name", "colour"]
+    );
+    let colour: String = c
+        .query_row("SELECT colour FROM widgets WHERE name = 'a'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(colour, "red", "existing rows take the default");
+}
+
+/// `schema::open` turns foreign keys on: a child row for an account that
+/// does not exist is refused, so a bug that forgot a delete step would
+/// surface as an error rather than as an orphan.
+#[test]
+fn foreign_keys_are_enforced_after_open() {
+    let c = mem(None);
+    let err = c
+        .execute(
+            "INSERT INTO tokens (account_id, token_hash, label, created_at) VALUES (999, 'h', '', 0)",
+            [],
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("FOREIGN KEY"), "{err}");
+}
+
+/// The assembled router: `/sync` needs a bearer token, and the body limit
+/// really is the 32 MiB nginx allows rather than axum's 2 MB default — a
+/// device's first push is its whole history in one request.
+#[tokio::test]
+async fn router_rejects_unauthenticated_sync_and_oversized_bodies() {
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    let c = mem(None);
+    let alice = make_account(&c, "alice");
+    let token = mint_token(&c, alice, "t").unwrap();
+    let state = state_for(c);
+    let post = |body: Vec<u8>, auth: Option<&str>| {
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/sync")
+            .header("content-type", "application/json");
+        if let Some(token) = auth {
+            req = req.header("authorization", format!("Bearer {token}"));
+        }
+        req.body(Body::from(body)).unwrap()
+    };
+    let push = |payload_len: usize| {
+        format!(
+            r#"{{"since":0,"changes":[{{"tbl":"habits","pk":"big","payload":{{"blob":"{}"}},"updatedAt":1,"deleted":false}}]}}"#,
+            "x".repeat(payload_len)
+        )
+        .into_bytes()
+    };
+
+    let anon = app(state.clone())
+        .oneshot(post(push(1), None))
+        .await
+        .unwrap();
+    assert_eq!(anon.status(), StatusCode::UNAUTHORIZED);
+
+    // Well past axum's 2 MB default, well within nginx's 32 MiB.
+    let big = app(state.clone())
+        .oneshot(post(push(3 * 1024 * 1024), Some(&token)))
+        .await
+        .unwrap();
+    assert_eq!(big.status(), StatusCode::OK);
+
+    let too_big = app(state.clone())
+        .oneshot(post(push(MAX_BODY_BYTES), Some(&token)))
+        .await
+        .unwrap();
+    assert_eq!(too_big.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+    let health = app(state)
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(health.status(), StatusCode::OK);
 }

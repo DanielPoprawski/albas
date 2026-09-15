@@ -43,6 +43,11 @@ aes-gcm = "0.10"
 # HTTP admin routes. Derive only; no colour/suggestion extras.
 clap = { version = "4", features = ["derive"] }
 
+[dev-dependencies]
+# `ServiceExt::oneshot`, to drive the assembled router in tests (body limit,
+# 401 on `/sync`) without binding a port.
+tower = { version = "0.5", features = ["util"] }
+
 [profile.release]
 strip = true
 lto = true

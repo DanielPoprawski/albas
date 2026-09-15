@@ -9,8 +9,8 @@
 //! token: whoever can exec into the container or read the volume already owns
 //! the database, so an admin credential on top of that was only theatre.
 //!
-//! Everything here is a thin shell over the `*_db` functions in `main.rs` and
-//! `passkey::create_invite_db` — which is also what the tests exercise; this
+//! Everything here is a thin shell over the `*_db` functions in `admin_db.rs`
+//! and `passkey::create_invite_db` — which is also what the tests exercise; this
 //! module only parses arguments and prints. `albas-sync health` (`health`)
 //! lives here too because it is the other non-server entry point.
 
@@ -21,12 +21,13 @@ use std::net::{SocketAddr, TcpStream};
 use std::process::ExitCode;
 use std::time::Duration;
 
-use crate::{
-    clear_password_db, clear_totp_db, create_account_db, db_path, delete_account_db,
-    delete_passkey_db, env_token, init_db, label_passkey_db, list_accounts_db, list_shares_db,
-    passkey, rename_account_db, revoke_token_db, set_share_db, AccountDetail, AdminError,
-    AdminShare,
+use crate::admin_db::{
+    clear_password_db, clear_totp_db, create_account_db, delete_account_db, delete_passkey_db,
+    label_passkey_db, list_accounts_db, list_shares_db, rename_account_db, revoke_token_db,
+    set_share_db, AccountDetail, AdminError, AdminShare,
 };
+use crate::config::Config;
+use crate::{passkey, schema};
 
 #[derive(Parser)]
 #[command(
@@ -173,19 +174,13 @@ pub(crate) fn run(args: impl Iterator<Item = String>) -> ExitCode {
     }
 }
 
+/// Same boot path as the server (`schema::open`), so the CLI works on a fresh
+/// volume before the server has ever run — and `ALBAS_SYNC_TOKEN`, when set,
+/// keeps owning the `owner` account's env token exactly as a server start
+/// would.
 fn open_db() -> Result<Connection, String> {
-    let path = db_path();
-    let mut conn = Connection::open(&path).map_err(|e| format!("cannot open {path}: {e}"))?;
-    // The server may hold a write lock for a moment; wait rather than fail.
-    conn.busy_timeout(Duration::from_secs(5))
-        .map_err(|e| e.to_string())?;
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .map_err(|e| e.to_string())?;
-    // Same boot path as the server, so the CLI works on a fresh volume before
-    // the server has ever run — and `ALBAS_SYNC_TOKEN`, when set, keeps owning
-    // the `owner` account's env token exactly as a server start would.
-    init_db(&mut conn, env_token("ALBAS_SYNC_TOKEN").as_deref())?;
-    Ok(conn)
+    let cfg = Config::from_env()?;
+    schema::open(&cfg.db_path, cfg.owner_token.as_deref())
 }
 
 /// One transaction per write, so a failure leaves the database as it was.
@@ -382,33 +377,16 @@ fn fmt_ts(ms: i64) -> String {
 
 /// `albas-sync health`: exit 0 when the server on this host answers
 /// `GET /health` with 200. Used as the container healthcheck (the image has
-/// no curl). The port comes from `ALBAS_SYNC_PORT`, else the port part of
-/// `ALBAS_SYNC_ADDR`, else 8787.
+/// no curl). The port is `Config::health_port`; an environment the server
+/// itself would refuse to boot on reads as unhealthy too.
 pub(crate) fn health() -> ExitCode {
-    match probe(health_port()) {
+    match Config::from_env().and_then(|cfg| probe(cfg.health_port)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("unhealthy: {e}");
             ExitCode::FAILURE
         }
     }
-}
-
-fn health_port() -> u16 {
-    if let Some(p) = std::env::var("ALBAS_SYNC_PORT")
-        .ok()
-        .and_then(|p| p.trim().parse().ok())
-    {
-        return p;
-    }
-    std::env::var("ALBAS_SYNC_ADDR")
-        .ok()
-        .and_then(|addr| port_of(&addr))
-        .unwrap_or(8787)
-}
-
-fn port_of(addr: &str) -> Option<u16> {
-    addr.rsplit(':').next()?.trim().parse().ok()
 }
 
 fn probe(port: u16) -> Result<(), String> {
@@ -475,12 +453,9 @@ mod tests {
     }
 
     #[test]
-    fn timestamps_and_ports_format() {
+    fn timestamps_format() {
         assert_eq!(fmt_ts(0), "1970-01-01 00:00Z");
         assert_eq!(fmt_ts(1_756_684_800_000), "2025-09-01 00:00Z");
-        assert_eq!(port_of("0.0.0.0:8787"), Some(8787));
-        assert_eq!(port_of("[::]:9000"), Some(9000));
-        assert_eq!(port_of("nonsense"), None);
     }
 
     #[test]

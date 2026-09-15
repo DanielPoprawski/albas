@@ -53,7 +53,10 @@
 //! an existing account to Google belongs behind an authenticated action in
 //! Settings, where the account owner proves they are present.
 
-use crate::{mint_token, name_ok, now_ms, random_token, AppState};
+use crate::account::name_ok;
+use crate::auth::{mint_token, random_token};
+use crate::error::{internal, Rejection};
+use crate::{now_ms, AppState};
 use axum::{
     extract::{Path, Query, State},
     http::{
@@ -71,8 +74,6 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-type Rejection = (StatusCode, String);
-
 /// `state` + PKCE `code_verifier` live in one `HttpOnly; Secure; SameSite=Lax`
 /// cookie, scoped to the callback path (nginx puts the API behind `/api`, so
 /// this is `/api/auth/google/callback` — see `tls.conf`), between `start` and
@@ -89,13 +90,6 @@ const OAUTH_COOKIE: &str = "albas_oauth";
 /// attribute of a cookie is matched against the URL the *browser* requests,
 /// which still carries `/api`.
 const OAUTH_COOKIE_PATH: &str = "/api/auth/google";
-
-fn internal_err(e: impl std::fmt::Display) -> Rejection {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        format!("Database error: {e}"),
-    )
-}
 
 const AUTHORIZE_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
@@ -118,20 +112,22 @@ pub(crate) struct GoogleConfig {
     redirect_uri: String,
 }
 
-fn env_nonempty(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
 impl GoogleConfig {
     /// `Ok(None)` = Google sign-in is off (no env vars set). `Err` = some but
     /// not all three are set, which is refused rather than silently ignored.
     pub(crate) fn from_env() -> Result<Option<Self>, String> {
-        let client_id = env_nonempty("ALBAS_SYNC_GOOGLE_CLIENT_ID");
-        let client_secret = env_nonempty("ALBAS_SYNC_GOOGLE_CLIENT_SECRET");
-        let redirect_uri = env_nonempty("ALBAS_SYNC_GOOGLE_REDIRECT_URI");
+        Self::from_parts(
+            crate::config::var("ALBAS_SYNC_GOOGLE_CLIENT_ID"),
+            crate::config::var("ALBAS_SYNC_GOOGLE_CLIENT_SECRET"),
+            crate::config::var("ALBAS_SYNC_GOOGLE_REDIRECT_URI"),
+        )
+    }
+
+    fn from_parts(
+        client_id: Option<String>,
+        client_secret: Option<String>,
+        redirect_uri: Option<String>,
+    ) -> Result<Option<Self>, String> {
         match (client_id, client_secret, redirect_uri) {
             (None, None, None) => Ok(None),
             (Some(client_id), Some(client_secret), Some(redirect_uri)) => Ok(Some(Self {
@@ -304,7 +300,7 @@ pub(crate) async fn start(
         SET_COOKIE,
         oauth_cookie(&oauth_state, FLOW_TTL_MS / 1000)
             .parse()
-            .map_err(internal_err)?,
+            .map_err(internal)?,
     );
     Ok((headers, Redirect::to(&url)))
 }
@@ -371,12 +367,13 @@ pub(crate) async fn callback(
 
     let email = exchange_code(cfg, &code, &code_verifier).await?;
 
-    let (name, token) = {
-        let conn = state.conn.lock().unwrap();
-        let (account_id, name) = find_or_create_account(&conn, &email)?;
-        let token = mint_token(&conn, account_id, "google").map_err(internal_err)?;
-        (name, token)
-    };
+    let (name, token) = state
+        .db(move |conn| {
+            let (account_id, name) = find_or_create_account(conn, &email)?;
+            let token = mint_token(conn, account_id, "google").map_err(internal)?;
+            Ok((name, token))
+        })
+        .await?;
 
     let ticket = state.google_pending.new_ticket(name, token);
     // The nonce rides in the URL *fragment*, not a query param: fragments are
@@ -389,10 +386,7 @@ pub(crate) async fn callback(
         redirect.push_str(&format!("#app_session={}", urlencoding::encode(&nonce)));
     }
     let mut out_headers = HeaderMap::new();
-    out_headers.insert(
-        SET_COOKIE,
-        oauth_cookie("", 0).parse().map_err(internal_err)?,
-    );
+    out_headers.insert(SET_COOKIE, oauth_cookie("", 0).parse().map_err(internal)?);
     Ok((out_headers, Redirect::to(&redirect)))
 }
 
@@ -528,7 +522,7 @@ fn find_or_create_account(conn: &Connection, email: &str) -> Result<(i64, String
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()
-        .map_err(internal_err)?
+        .map_err(internal)?
     {
         return Ok((id, name));
     }
@@ -541,7 +535,7 @@ fn find_or_create_account(conn: &Connection, email: &str) -> Result<(i64, String
             |r| r.get(0),
         )
         .optional()
-        .map_err(internal_err)?;
+        .map_err(internal)?;
 
     match existing {
         // Someone already holds this name. Whether or not they set a password
@@ -562,7 +556,7 @@ fn find_or_create_account(conn: &Connection, email: &str) -> Result<(i64, String
                     // between the SELECT above and this INSERT.
                     create_distinct_account(conn, &candidate, email)
                 }
-                Err(e) => Err(internal_err(e)),
+                Err(e) => Err(internal(e)),
             }
         }
     }
@@ -588,10 +582,10 @@ fn create_distinct_account(
             {
                 continue
             }
-            Err(e) => return Err(internal_err(e)),
+            Err(e) => return Err(internal(e)),
         }
     }
-    Err(internal_err(
+    Err(internal(
         "could not allocate an account name for this Google sign-in",
     ))
 }
@@ -599,36 +593,27 @@ fn create_distinct_account(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Signups;
 
     fn mem() -> Connection {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::init_db(&mut c, None).unwrap();
-        c
+        crate::schema::test_db(None)
     }
 
     fn state_with(c: Connection) -> Arc<AppState> {
-        Arc::new(AppState {
-            conn: std::sync::Mutex::new(c),
-            signups: Signups::Open,
-            webauthn: None,
-            assetlinks: None,
-            pending: Default::default(),
-            google: None,
-            google_pending: Default::default(),
-        })
+        Arc::new(AppState::for_test(c))
     }
 
     #[test]
-    fn from_env_requires_all_three_or_none() {
-        // Can't safely test the "all set" / "none set" branches here: env
-        // vars are process-global and tests run concurrently. The property
-        // worth pinning without touching the environment is the parsing
-        // logic itself, exercised directly.
-        assert!(matches!(
-            (None::<String>, None::<String>, None::<String>),
-            (None, None, None)
-        ));
+    fn config_needs_all_three_vars_or_none() {
+        let some = |s: &str| Some(s.to_string());
+        assert!(GoogleConfig::from_parts(None, None, None)
+            .unwrap()
+            .is_none());
+        assert!(
+            GoogleConfig::from_parts(some("id"), some("secret"), some("uri"))
+                .unwrap()
+                .is_some()
+        );
+        assert!(GoogleConfig::from_parts(some("id"), None, some("uri")).is_err());
     }
 
     /// The button-hiding contract: unconfigured means `/auth/config` says so,
