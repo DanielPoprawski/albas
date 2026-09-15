@@ -18,9 +18,11 @@ or table without a data-preserving path, and never leave old rows unreadable.
   separate DB = always signed out); `--debug --apk` by hand only for WebView devtools.
 - `bun run version:set <x.y.z>`: `package.json` is the single version source; never hand-edit
   `tauri.properties` (versionCode is Android-monotonic).
-- Gate before pushing (CI runs the same): `bun run lint && bun run audit:css && bun run knip &&
-  bun run build && (cd src-tauri && cargo check --message-format=short && cargo test -q)`. Lint is Biome
-  with the formatter on (2-space, single quotes, 120 cols). Server image: `sync-server/scripts/publish.sh`.
+- Gate before pushing (CI runs the same): `bun run lint && bun run typecheck && bun run version:check &&
+  bun run audit:css && bun run knip && bun run build`, then in `src-tauri/` and `sync-server/`:
+  `cargo fmt --check && cargo check --message-format=short && cargo clippy --all-targets -- -D warnings &&
+  cargo test -q`. Lint is Biome with the formatter on (2-space, single quotes, 120 cols; `useButtonType` is
+  on — every `<button>` says `type`). Server image: `sync-server/scripts/publish.sh`.
 - **App id + signing key = identity.** `tauri.properties` must live in `gen/android/app/`.
   `tauri.conf.json` is strict JSON — a `//` comment gives "key must be a string"; its `security.csp` is
   set, read it before adding an asset source. `compileSdk = 36` (targetSdk 34) and AGP 8.7.3 in both

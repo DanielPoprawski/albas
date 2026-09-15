@@ -146,7 +146,9 @@ fn adopt_session(
     // not survive on its own, or the UI reads as signed in with no credential.
     if let Err(e) = crate::token_store::set(&db, token) {
         let _ = clear_session(&db);
-        return Err(format!("Signed in, but the token could not be stored on this device: {e}"));
+        return Err(format!(
+            "Signed in, but the token could not be stored on this device: {e}"
+        ));
     }
     Ok(())
 }
@@ -156,7 +158,11 @@ fn adopt_session(
 /// sign-in; the first sync then proves it — a rejected token clears the
 /// session again via the 401 path in `sync.rs`.
 #[tauri::command]
-pub async fn sync_connect_token(app: tauri::AppHandle, url: String, token: String) -> Result<(), String> {
+pub async fn sync_connect_token(
+    app: tauri::AppHandle,
+    url: String,
+    token: String,
+) -> Result<(), String> {
     let base = normalize_base(&url);
     check_url(&format!("{base}/sync"))?;
     let token = token.trim().to_string();

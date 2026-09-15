@@ -60,6 +60,7 @@ app**:
 | `bun run dev` | Vite only, on `localhost:1420`. No Rust, no SQLite, no sync — persistence falls back to a `localStorage` blob. Fine for pure UI work, misleading for anything else. |
 | `bun run tauri dev` | The real desktop app, Rust included. |
 | `bun run build` | `tsc && vite build`. The **frontend bundle only**. Does not touch the desktop binary. |
+| `bun run typecheck` | `tsc --noEmit` for the app and the web portal. |
 | `bun run tauri build` | Builds `src-tauri/target/release/albas` plus the deb/rpm bundles. |
 | `bun run app:desktop` | `tauri build --no-bundle`, then installs the binary to `~/.local/bin/albas`. **This** is what updates an installed desktop app. The bundles are skipped: this is an Arch machine and the install copies the raw binary anyway. |
 | `bun run app:android` | A standalone signed release APK, **and installs it** on the connected device, **and launches it**. The only Android command; there is no debug/`.dev` variant on the menu. |

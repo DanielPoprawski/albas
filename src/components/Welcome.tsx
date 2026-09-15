@@ -110,12 +110,14 @@ function SplashScreen({
       {/* Button stack */}
       <div className="flex flex-col gap-[0.75rem] w-full max-w-[18.75rem]">
         <button
+          type="button"
           onClick={onSignIn}
           className="px-[1.5rem] py-[0.75rem] text-on-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:translate-y-[-2px] hover:shadow-pop shadow-accent gradient-accent"
         >
           Sign In
         </button>
         <button
+          type="button"
           onClick={onCreateAccount}
           className="px-[1.5rem] py-[0.75rem] bg-surface text-accent border-2 border-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:bg-accent-tint"
         >
@@ -126,6 +128,7 @@ function SplashScreen({
       {/* Offline link */}
       <div className="mt-[1.5rem] pt-[1.5rem] border-t border-line">
         <button
+          type="button"
           onClick={onUseOffline}
           className="text-sm text-ink-muted cursor-pointer transition-colors duration-300 hover:text-accent text-center"
         >
@@ -163,6 +166,7 @@ function OfflineCard({ onStart, onBack, busy }: { onStart: () => void; onBack: (
         {/* Actions */}
         <div className="flex gap-[0.75rem] mt-[1.75rem]">
           <button
+            type="button"
             onClick={onStart}
             disabled={busy}
             className="flex-1 px-[0.75rem] py-[0.75rem] text-on-accent font-semibold text-lg cursor-pointer transition-all duration-300 hover:translate-y-[-2px] disabled:opacity-40 disabled:pointer-events-none gradient-accent"
@@ -170,6 +174,7 @@ function OfflineCard({ onStart, onBack, busy }: { onStart: () => void; onBack: (
             Start Using Albas
           </button>
           <button
+            type="button"
             onClick={onBack}
             disabled={busy}
             className="flex-1 px-[0.75rem] py-[0.75rem] bg-transparent text-accent font-semibold text-lg cursor-pointer transition-colors duration-300 hover:bg-accent-tint disabled:opacity-40 disabled:pointer-events-none"
@@ -239,6 +244,7 @@ function AuthCard({
         )}
 
         <button
+          type="button"
           onClick={onBack}
           disabled={busy}
           className="w-full mt-[1rem] px-[0.75rem] py-[0.625rem] bg-transparent text-accent font-semibold text-base cursor-pointer transition-colors duration-300 hover:bg-accent-tint disabled:opacity-40 disabled:pointer-events-none"
@@ -250,6 +256,7 @@ function AuthCard({
           <p className="text-sm text-ink-muted leading-relaxed">
             {isLogin ? "Don't have an account? " : 'Already have an account? '}
             <button
+              type="button"
               onClick={onFooterClick}
               disabled={busy}
               className="text-accent font-semibold cursor-pointer hover:underline disabled:opacity-40"

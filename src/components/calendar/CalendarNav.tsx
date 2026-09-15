@@ -34,6 +34,7 @@ function ModeButtons({
       <div className="flex items-center bg-subtle-strong p-xs gap-0.5">
         {MODES.map(({ value, label }) => (
           <button
+            type="button"
             key={value}
             onClick={() => onPick(value)}
             aria-pressed={mode === value}
@@ -46,6 +47,7 @@ function ModeButtons({
         ))}
       </div>
       <button
+        type="button"
         onClick={onToday}
         className="px-md py-xs font-semibold text-meta text-ink-muted bg-subtle-strong hover:text-ink hover:bg-line-strong transition-colors"
       >
@@ -80,6 +82,7 @@ export function ModeModal({
   return (
     <>
       <button
+        type="button"
         onClick={() => setOpen(true)}
         aria-label={`Calendar view: ${mode}`}
         title="Calendar view"
@@ -99,6 +102,7 @@ export function ModeModal({
           <div className="space-y-xs">
             {MODES.map(({ value, label, Icon, hint }) => (
               <button
+                type="button"
                 key={value}
                 onClick={() => {
                   onPick(value);
@@ -118,6 +122,7 @@ export function ModeModal({
           </div>
 
           <button
+            type="button"
             onClick={() => {
               onToday();
               setOpen(false);

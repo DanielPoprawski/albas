@@ -41,6 +41,7 @@ export default function DayView() {
             const hex = colorHex(o.event.colorKey);
             return (
               <button
+                type="button"
                 key={o.key}
                 onClick={() => openEvent(o.event, o.startDate)}
                 title={sharedTitleAttr(o.event)}
@@ -63,6 +64,7 @@ export default function DayView() {
               const hex = colorHex(o.event.colorKey);
               return (
                 <button
+                  type="button"
                   key={o.key}
                   onClick={() => openEvent(o.event, o.startDate)}
                   title={sharedTitleAttr(o.event)}
@@ -79,6 +81,7 @@ export default function DayView() {
               const hex = colorHex(todo.colorKey);
               return (
                 <button
+                  type="button"
                   key={todo.id}
                   onClick={() => toggleTodo(todo.id, dateStr)}
                   title={done ? 'Mark not done' : 'Mark done'}

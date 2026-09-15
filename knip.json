@@ -2,11 +2,6 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignoreExportsUsedInFile": true,
   "ignoreBinaries": ["install", "adb"],
-  "rules": {
-    "exports": "warn",
-    "types": "warn",
-    "duplicates": "warn"
-  },
   "workspaces": {
     ".": {
       "entry": ["index.html", "scripts/*.mjs"],

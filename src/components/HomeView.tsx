@@ -67,7 +67,12 @@ export default function HomeView() {
         <div className="flex gap-2">
           {/* The only route to Settings on a phone: the sidebar and bottom bar
               are `max-md:hidden`, and the tab row has no slot. */}
-          <button className={MOBILE_HEADER_BUTTON} title="Settings" onClick={() => setActiveView('settings')}>
+          <button
+            type="button"
+            className={MOBILE_HEADER_BUTTON}
+            title="Settings"
+            onClick={() => setActiveView('settings')}
+          >
             <Settings size="1rem" />
           </button>
         </div>
@@ -84,6 +89,7 @@ export default function HomeView() {
       <div className="fixed bottom-0 left-0 z-20 flex h-15 w-full items-center justify-around gap-2 border-t border-line bg-surface">
         {TABS.map(({ tab, label, Icon }) => (
           <button
+            type="button"
             key={tab}
             className={cn(TAB, currentTab === tab && 'text-accent')}
             onClick={() => setCurrentTab(tab)}

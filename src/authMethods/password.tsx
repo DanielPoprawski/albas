@@ -72,6 +72,7 @@ function SetPasswordAction({ ctx }: { ctx: AuthMethodContext }) {
         disabled={!ctx.token || loading}
       />
       <button
+        type="button"
         className="button-primary"
         onClick={() => void handleSetPassword()}
         disabled={!ctx.token || !password || loading}

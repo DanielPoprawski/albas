@@ -191,7 +191,7 @@ export function SignedInPanel() {
               On the signed-out device choose <strong>Scan a code from a signed-in device</strong>. Valid for five
               minutes, once. Confirmation code <strong className="tracking-[0.2em]">{offer.code}</strong>.
             </p>
-            <button className="button-small" onClick={() => setOffer(null)}>
+            <button type="button" className="button-small" onClick={() => setOffer(null)}>
               Done
             </button>
           </div>
@@ -207,6 +207,7 @@ export function SignedInPanel() {
       <div className="flex flex-col gap-[0.5rem] items-end">
         {isAndroid() && (
           <button
+            type="button"
             className="button-small"
             disabled={busy}
             onClick={() => {
@@ -218,7 +219,7 @@ export function SignedInPanel() {
           </button>
         )}
         {!offer && (
-          <button className="button-small" disabled={busy} onClick={() => void startOffer()}>
+          <button type="button" className="button-small" disabled={busy} onClick={() => void startOffer()}>
             Link another device
           </button>
         )}

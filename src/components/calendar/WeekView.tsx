@@ -64,6 +64,7 @@ export default function WeekView() {
           const isWeekend = dayNum === 0 || dayNum === 6;
           return (
             <button
+              type="button"
               key={dateStr}
               onClick={() => setSelectedDate(dateStr)}
               className={`flex-1 py-sm flex flex-col items-center gap-0.5 cursor-pointer ${isPast ? 'bg-past-cell' : ''} ${

@@ -1,8 +1,9 @@
 name: ci
 
-# Lint, typecheck and build the app frontend and the web portal, run the
-# sync-server tests, and the CSS hygiene audit. Publishing the server image is
-# the separate, manual `sync-server.yml`.
+# The same gate CLAUDE.md asks for before a push, split by toolchain: the app
+# frontend and the web portal (lint, typecheck, CSS audit, dead code, build,
+# version consistency), the Tauri client crate, and the sync server. Publishing
+# the server image is the separate, manual `sync-server.yml`.
 on:
   push:
   pull_request:
@@ -14,7 +15,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bunx biome ci src web/src scripts
+      - run: bunx biome ci
+      - run: bun run version:check
       - run: bun run audit:css
       - run: bun run knip
       - run: bun run build
@@ -22,7 +24,30 @@ jobs:
         working-directory: web
         run: |
           bun install --frozen-lockfile
+          bun run typecheck
           bun run build
+
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # What the tauri crate links against on Linux (webkit2gtk, gtk, tray).
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+      - run: cargo fmt --check
+      - run: cargo check --message-format=short
+      - run: cargo clippy --all-targets --message-format=short -- -D warnings
+      - run: cargo test -- -q
 
   sync-server:
     runs-on: ubuntu-latest
@@ -32,8 +57,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sync-server
+      - run: cargo fmt --check
       - run: cargo check --message-format=short
+      - run: cargo clippy --all-targets --message-format=short -- -D warnings
       - run: cargo test -- -q

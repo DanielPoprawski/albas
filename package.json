@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "lint": "biome check src web/src scripts",
+    "lint": "biome check",
     "audit:css": "node scripts/css-audit.mjs",
     "knip": "knip",
+    "typecheck": "tsc --noEmit && cd web && bunx tsc --noEmit",
     "preview": "vite preview",
     "version:set": "node scripts/version.mjs",
     "version:check": "node scripts/version.mjs --check",

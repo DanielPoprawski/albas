@@ -245,7 +245,9 @@ pub fn set_setting(db: tauri::State<Db>, key: String, value: String) -> Result<(
     // The token secret and the signed-in marker belong to `token_store.rs`;
     // a frontend write to either would desynchronise them from the keyring.
     if key == TOKEN_SECRET_SETTING || key == crate::sync::TOKEN_SETTING {
-        return Err(format!("{key} is managed by the app and cannot be set directly."));
+        return Err(format!(
+            "{key} is managed by the app and cannot be set directly."
+        ));
     }
     let conn = db.0.lock().map_err(err)?;
     write_setting(&conn, &key, &value).map_err(err)

@@ -219,10 +219,10 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
           {recoveryCodes.join('\n')}
         </pre>
         <div className="flex gap-2 mt-2">
-          <button className="button-small" onClick={() => void copyRecoveryCodes()}>
+          <button type="button" className="button-small" onClick={() => void copyRecoveryCodes()}>
             {copied ? 'Copied' : 'Copy'}
           </button>
-          <button className="button-primary" onClick={acknowledgeRecoveryCodes}>
+          <button type="button" className="button-primary" onClick={acknowledgeRecoveryCodes}>
             I&apos;ve saved these
           </button>
         </div>
@@ -244,10 +244,15 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
           disabled={busy}
           autoFocus
         />
-        <button className="button-primary" onClick={() => void startEnroll()} disabled={busy || password.length === 0}>
+        <button
+          type="button"
+          className="button-primary"
+          onClick={() => void startEnroll()}
+          disabled={busy || password.length === 0}
+        >
           {busy ? 'Starting...' : 'Continue'}
         </button>
-        <button className="button-small" onClick={cancelEnroll} disabled={busy}>
+        <button type="button" className="button-small" onClick={cancelEnroll} disabled={busy}>
           Cancel
         </button>
         {error && <p className="setting-desc">{error}</p>}
@@ -276,10 +281,15 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
           onChange={(e) => setCode(e.target.value)}
           disabled={busy}
         />
-        <button className="button-primary" onClick={() => void confirm()} disabled={busy || code.trim().length === 0}>
+        <button
+          type="button"
+          className="button-primary"
+          onClick={() => void confirm()}
+          disabled={busy || code.trim().length === 0}
+        >
           {busy ? 'Confirming...' : 'Confirm'}
         </button>
-        <button className="button-small" onClick={cancelEnroll} disabled={busy}>
+        <button type="button" className="button-small" onClick={cancelEnroll} disabled={busy}>
           Cancel
         </button>
         {error && <p className="setting-desc">{error}</p>}
@@ -291,11 +301,16 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
   return (
     <div>
       {status?.confirmed ? (
-        <button className="button-small button-danger" onClick={() => void turnOff()} disabled={!ctx.token || busy}>
+        <button
+          type="button"
+          className="button-small button-danger"
+          onClick={() => void turnOff()}
+          disabled={!ctx.token || busy}
+        >
           {busy ? 'Turning off...' : 'Turn off'}
         </button>
       ) : (
-        <button className="button-primary" onClick={beginEnroll} disabled={!ctx.token || busy}>
+        <button type="button" className="button-primary" onClick={beginEnroll} disabled={!ctx.token || busy}>
           {busy ? 'Starting...' : 'Set up two-factor authentication'}
         </button>
       )}

@@ -409,8 +409,12 @@ fn post(url: &str, token: &str, req: &SyncReq) -> Result<SyncRes, PostError> {
             .into_json::<SyncRes>()
             .map_err(|e| PostError::Other(format!("Bad response from server: {e}"))),
         Err(ureq::Error::Status(401, _)) => Err(PostError::Unauthorized),
-        Err(ureq::Error::Status(code, _)) => Err(PostError::Other(format!("Server returned HTTP {code}."))),
-        Err(e) => Err(PostError::Other(format!("Couldn't reach the sync server: {e}"))),
+        Err(ureq::Error::Status(code, _)) => {
+            Err(PostError::Other(format!("Server returned HTTP {code}.")))
+        }
+        Err(e) => Err(PostError::Other(format!(
+            "Couldn't reach the sync server: {e}"
+        ))),
     }
 }
 
@@ -506,7 +510,9 @@ fn run(db: &Db) -> Result<SyncOutcome, String> {
             // The credential is dead server-side; keeping the signed-in marker
             // would leave the UI claiming an account while every sync fails.
             crate::account::clear_session(db)?;
-            return Err("The server no longer accepts this device's sign-in. Sign in again.".into());
+            return Err(
+                "The server no longer accepts this device's sign-in. Sign in again.".into(),
+            );
         }
         Err(PostError::Other(msg)) => return Err(msg),
     };

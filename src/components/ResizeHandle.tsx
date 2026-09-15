@@ -69,7 +69,7 @@ interface ResizeHandleProps {
 
 /**
  * A thin drag handle between two panels — a 0.5rem hit area drawing a solid
- * 3px accent-2 line (the `after:` pseudo-element) that turns the accent
+ * 0.1875rem accent-2 line (the `after:` pseudo-element) that turns the accent
  * colour on hover/drag. It never touches layout state itself: it just reports pointer
  * deltas, a drag end and a reset request, so the caller (which owns the width
  * var and the persisted setting) decides what a delta means.
@@ -133,7 +133,7 @@ export default function ResizeHandle({ side, onDelta, onEnd, onReset, ariaLabel 
       data-side={side}
       className={cn(
         'relative block max-md:hidden w-2 shrink-0 cursor-col-resize touch-none',
-        "after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:bg-accent-2 after:transition-colors after:duration-150 after:content-[''] hover:after:bg-accent",
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-[0.1875rem] after:-translate-x-1/2 after:bg-accent-2 after:transition-colors after:duration-150 after:content-[''] hover:after:bg-accent",
         dragging && 'after:bg-accent',
       )}
       onPointerDown={handlePointerDown}

@@ -149,7 +149,7 @@ export function CheckboxRow({
   label: string;
   hint?: string;
 }) {
-  // htmlFor works here because a <button> is a labelable element, so the whole
+  // htmlFor works here because a <button type="button"> is a labelable element, so the whole
   // row still toggles the box the way the native input did
   const id = useId();
 

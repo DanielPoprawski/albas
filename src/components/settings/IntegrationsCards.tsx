@@ -173,6 +173,7 @@ export function SharingCard() {
           }}
         />
         <button
+          type="button"
           onClick={() => void addShare()}
           disabled={busy || newName.trim() === ''}
           className="button-primary shrink-0"
@@ -208,7 +209,7 @@ export function SharingCard() {
             ))}
           </div>
         )}
-        <button onClick={refreshIncoming} disabled={busy} className="button-small mt-3">
+        <button type="button" onClick={refreshIncoming} disabled={busy} className="button-small mt-3">
           Refresh
         </button>
       </div>

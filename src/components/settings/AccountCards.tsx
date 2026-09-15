@@ -100,14 +100,14 @@ export function SessionCard({
           status?.lastSync ? `Last sync: ${new Date(Number(status.lastSync)).toLocaleString()}` : 'Never synced'
         }
       >
-        <button onClick={onSync} disabled={busy} className="button-small">
+        <button type="button" onClick={onSync} disabled={busy} className="button-small">
           Sync Now
         </button>
       </SettingItem>
       <PushDelaySetting />
       <SignedInPanel />
       <SettingItem label="Log out" description="Sign out of this device">
-        <button onClick={() => setConfirming(true)} className="button-small button-danger">
+        <button type="button" onClick={() => setConfirming(true)} className="button-small button-danger">
           Log Out
         </button>
       </SettingItem>
@@ -118,10 +118,11 @@ export function SessionCard({
             Your local items stay on this device, but syncing will stop until you sign in again.
           </DialogDescription>
           <div className="flex gap-xs justify-end">
-            <button onClick={() => setConfirming(false)} className="button-small">
+            <button type="button" onClick={() => setConfirming(false)} className="button-small">
               Cancel
             </button>
             <button
+              type="button"
               onClick={() => {
                 setConfirming(false);
                 onSignOut();
@@ -304,7 +305,7 @@ export function AccountSigninCard({
               <SignedOutPanel browser={browser} busy={busy} />
             </div>
           </div>
-          <button onClick={() => setManual(!manual)} className={LINK_MUTED}>
+          <button type="button" onClick={() => setManual(!manual)} className={LINK_MUTED}>
             {manual ? 'v' : '>'} Advanced: connect to your own server
           </button>
           {manual && (
@@ -331,7 +332,12 @@ export function AccountSigninCard({
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
               />
-              <button onClick={onConnect} disabled={busy || token.trim() === ''} className="button-primary">
+              <button
+                type="button"
+                onClick={onConnect}
+                disabled={busy || token.trim() === ''}
+                className="button-primary"
+              >
                 Connect
               </button>
             </div>
@@ -399,6 +405,7 @@ function ExportDataSection({ ctx }: { ctx: AuthMethodContext }) {
       <h4 className="card-title text-sm mb-2">Export data</h4>
       <p className="setting-desc mb-2">Downloads everything synced to this account as a JSON file.</p>
       <button
+        type="button"
         className="button-small"
         onClick={() => void run('Exporting…', async () => `Saved to ${await ipc.accountExport()}`)}
         disabled={!ctx.token || busy}
@@ -499,6 +506,7 @@ export function SessionsCard({ status, syncToken }: { status: SyncStatusInfo | n
             <td className={SW_TD}>
               {!row.current && (
                 <button
+                  type="button"
                   className="button-small button-danger"
                   onClick={() => void revoke(row.id)}
                   disabled={busyId !== null}
@@ -514,7 +522,12 @@ export function SessionsCard({ status, syncToken }: { status: SyncStatusInfo | n
       </SettingsTable>
       {error && <FormMessage>{error}</FormMessage>}
       {others.length > 0 && (
-        <button className="button-small mt-4" onClick={() => void revokeOthers()} disabled={busyId !== null}>
+        <button
+          type="button"
+          className="button-small mt-4"
+          onClick={() => void revokeOthers()}
+          disabled={busyId !== null}
+        >
           {busyId === 'all' ? 'Signing out...' : 'Sign out other devices'}
         </button>
       )}

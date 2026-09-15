@@ -27,11 +27,11 @@ export type AsyncState =
  */
 export function useAsyncState() {
   const [state, setState] = useState<AsyncState>({ kind: 'idle' });
-  const run = useCallback(async (what: string, task: () => Promise<string | undefined | void>) => {
+  const run = useCallback(async (what: string, task: () => Promise<unknown>) => {
     setState({ kind: 'busy', what });
     try {
       const message = await task();
-      setState(message ? { kind: 'ok', message } : { kind: 'idle' });
+      setState(typeof message === 'string' && message ? { kind: 'ok', message } : { kind: 'idle' });
     } catch (err) {
       setState({ kind: 'error', message: errorMessage(err) });
     }

@@ -479,7 +479,7 @@ mod tests {
             .0;
         assert_eq!(before["set"], serde_json::Value::Bool(false));
 
-        set_password(
+        let _ = set_password(
             axum::extract::State(state.clone()),
             headers_for(&token),
             Json(json!({ "password": "MyVerySecurePassword123" })),

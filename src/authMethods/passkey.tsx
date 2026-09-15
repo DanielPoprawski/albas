@@ -61,7 +61,12 @@ async function openPortal(server: string) {
 function AddPasskey({ ctx }: { ctx: AuthMethodContext }) {
   return (
     <div>
-      <button className="button-primary" disabled={!ctx.token} onClick={() => void openPortal(ctx.server)}>
+      <button
+        type="button"
+        className="button-primary"
+        disabled={!ctx.token}
+        onClick={() => void openPortal(ctx.server)}
+      >
         Add a passkey in browser
       </button>
       <p className="setting-desc">

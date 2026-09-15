@@ -1,7 +1,7 @@
-import { rm } from "node:fs/promises";
-import path from "node:path";
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
 
-const outdir = path.join(process.cwd(), "dist");
+const outdir = path.join(process.cwd(), 'dist');
 await rm(outdir, { recursive: true, force: true });
 
 // The entry HTML file sits at the project root. Bun derives the output path
@@ -10,21 +10,21 @@ await rm(outdir, { recursive: true, force: true });
 // accident, since those resolve against the URL path rather than the file's
 // location. Keeping it at the root puts index.html at the root of dist/ with
 // the asset links nginx actually needs.
-const entrypoints = ["index.html"];
+const entrypoints = ['index.html'];
 
 const result = await Bun.build({
   entrypoints,
   outdir,
   minify: true,
-  target: "browser",
+  target: 'browser',
   // Root-absolute asset URLs. The default is relative, which resolves against
   // the *URL* the browser is on, not the file's location — and every route here
   // except "/" is a client-side path served by the same index.html, so a
   // relative link is only correct by coincidence of depth.
-  publicPath: "/",
-  sourcemap: "linked",
+  publicPath: '/',
+  sourcemap: 'linked',
   define: {
-    "process.env.NODE_ENV": JSON.stringify("production"),
+    'process.env.NODE_ENV': JSON.stringify('production'),
   },
 });
 

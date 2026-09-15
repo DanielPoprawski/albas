@@ -72,7 +72,7 @@ function WipeRow({ spec }: { spec: WipeSpec }) {
   if (!expanded) {
     return (
       <div>
-        <button className="button-small button-danger" onClick={() => setExpanded(true)}>
+        <button type="button" className="button-small button-danger" onClick={() => setExpanded(true)}>
           {spec.label}
         </button>
       </div>
@@ -99,10 +99,10 @@ function WipeRow({ spec }: { spec: WipeSpec }) {
         }}
       />
       <div className="flex gap-2">
-        <button className="button-small button-danger" onClick={confirm} disabled={!armed}>
+        <button type="button" className="button-small button-danger" onClick={confirm} disabled={!armed}>
           {spec.label}
         </button>
-        <button className="button-small" onClick={cancel}>
+        <button type="button" className="button-small" onClick={cancel}>
           Cancel
         </button>
       </div>
@@ -145,7 +145,12 @@ function DeleteAccount({ enabled, onDeleted }: { enabled: boolean; onDeleted: ()
   if (!expanded) {
     return (
       <div>
-        <button className="button-small button-danger" onClick={() => setExpanded(true)} disabled={!enabled}>
+        <button
+          type="button"
+          className="button-small button-danger"
+          onClick={() => setExpanded(true)}
+          disabled={!enabled}
+        >
           Delete account
         </button>
       </div>
@@ -170,13 +175,14 @@ function DeleteAccount({ enabled, onDeleted }: { enabled: boolean; onDeleted: ()
       />
       <div className="flex gap-2">
         <button
+          type="button"
           className="button-small button-danger"
           onClick={() => void confirmDelete()}
           disabled={busy || password.length === 0}
         >
           {busy ? 'Deleting...' : 'Permanently delete account'}
         </button>
-        <button className="button-small" onClick={cancel} disabled={busy}>
+        <button type="button" className="button-small" onClick={cancel} disabled={busy}>
           Cancel
         </button>
       </div>
