@@ -1,7 +1,6 @@
 import { DEFAULT_COLOR } from './colors';
-import type { NewEvent, NewTodo } from './context/DataContext';
 import { addMinutes } from './dates';
-import type { AddType, Recurrence, Repeat } from './types';
+import type { AddType, NewEvent, NewTodo, Recurrence, Repeat } from './types';
 
 export type EventRepeat = 'Never' | 'Daily' | 'Weekly' | 'Monthly';
 

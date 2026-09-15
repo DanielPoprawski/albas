@@ -17,7 +17,7 @@ import { LAYOUT_LIMITS, clampRem } from '../appearance';
 import { goToday, stepMonth, stepYear } from '../calendarNav';
 import { useApp } from '../context/AppContext';
 import { fmt, stampLabel, timeAgo } from '../dates';
-import { cn } from '@/lib/utils';
+import { cn, initialsOf } from '@/lib/utils';
 import { inTauri } from '../persistence';
 import { useIsMobile } from '../useMedia';
 import { useEditorMode, useShortcuts } from '../shortcuts';
@@ -132,18 +132,6 @@ function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Rout
 }
 
 /* ── Bottom taskbar ──────────────────────────────────────────────────────*/
-
-/**
- * "Ada Lovelace" → "AL"; a single word gives its first letter.
- *
- * Exported because Settings' Profile avatar draws the same initials from the
- * same account name, and two implementations would eventually disagree.
- */
-export function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
-}
 
 /**
  * The strip along the bottom edge: version on the left, sync state and the

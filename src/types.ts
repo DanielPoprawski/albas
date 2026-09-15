@@ -151,6 +151,33 @@ export interface ShareGrant {
  */
 export type ItemKey = `event:${string}` | `todo:${string}`;
 
+/** What a create surface hands `DataContext`: the row minus what the store assigns. */
+export type NewTodo = Omit<Todo, 'id' | 'completions' | 'createdAt'>;
+export type NewEvent = Omit<CalendarEvent, 'id'>;
+export type NewCategory = Omit<Category, 'id'>;
+
+/**
+ * Raw rows saved by older app versions, still readable so the loader can
+ * convert them on load: tasks become once-todos, periods become events.
+ */
+export interface LegacyTask {
+  id: string;
+  title: string;
+  category: string;
+  completed: boolean;
+  date: string | null;
+}
+
+export interface LegacyPeriod {
+  id: string;
+  name: string;
+  colorKey: string;
+  startDate: string;
+  endDate: string;
+  notes: string;
+  habitIds: string[];
+}
+
 export type ActiveView = 'calendar' | 'todos' | 'habits' | 'settings';
 export type AddType = 'event' | 'task' | 'habit';
 export type CalendarMode = 'month' | 'week' | 'day';

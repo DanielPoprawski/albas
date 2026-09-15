@@ -1,30 +1,8 @@
-import type { CalendarEvent, Category, CategoryScope, Todo } from './types';
+import type { CalendarEvent, Category, CategoryScope, LegacyPeriod, LegacyTask, Todo } from './types';
 import * as ipc from './ipc';
 import type { CategoryRow } from './ipc';
 
 const STORAGE_KEY = 'albas-data-v1';
-
-/**
- * Raw rows saved by older app versions, still readable so AppContext can
- * convert them on load: tasks become once-todos, periods become events.
- */
-export interface LegacyTask {
-  id: string;
-  title: string;
-  category: string;
-  completed: boolean;
-  date: string | null;
-}
-
-export interface LegacyPeriod {
-  id: string;
-  name: string;
-  colorKey: string;
-  startDate: string;
-  endDate: string;
-  notes: string;
-  habitIds: string[];
-}
 
 export interface LoadedState {
   todos: Todo[];

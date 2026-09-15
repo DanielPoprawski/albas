@@ -121,10 +121,11 @@ export default function EventForm({
             until: until || null,
             ...(prevExdates?.length ? { exdates: prevExdates } : {}),
           };
+    // No `colorKey`: see TodoForm — the category paints the row, and the
+    // painted value must not be persisted as a choice.
     const fields = {
       title: title.trim(),
       description: description.trim(),
-      colorKey: edit?.colorKey ?? DEFAULT_COLOR,
       allDay,
       startDate,
       startTime: allDay ? null : startTime,
@@ -138,7 +139,7 @@ export default function EventForm({
       if (samePatch(fields, edit)) return 'unchanged';
       updateEvent(edit.id, fields);
     } else {
-      addEvent(fields);
+      addEvent({ ...fields, colorKey: DEFAULT_COLOR });
     }
     return 'saved';
   }

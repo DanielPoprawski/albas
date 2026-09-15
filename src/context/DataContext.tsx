@@ -2,19 +2,24 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { fmt } from '../dates';
 import * as ipc from '../ipc';
 import type { SyncOutcome } from '../ipc';
-import { migrateLegacyTask, migrateTodo, periodToEvent, remapLegacyCategory, taskToTodo } from '../migrations';
-import { inTauri, persistence, readLocalBlob } from '../persistence';
-import { displayColor, TODO_CATEGORIES } from '../colors';
-import { initialTodos } from '../seedData';
+import { loadInitialState, seedDemoTodos } from '../loadState';
+import { migrateTodo } from '../migrations';
+import { inTauri, persistence } from '../persistence';
+import { displayColor } from '../colors';
 import { mapSharedRows } from '../sharedLogic';
-import { onSyncRequest } from '../syncBus';
 import { isRepeating } from '../todoLogic';
-import type { CalendarEvent, Category, CategoryScope, SharedGroup, Todo } from '../types';
+import type {
+  CalendarEvent,
+  Category,
+  CategoryScope,
+  NewCategory,
+  NewEvent,
+  NewTodo,
+  SharedGroup,
+  Todo,
+} from '../types';
 import { useSettings } from './SettingsContext';
-
-export type NewTodo = Omit<Todo, 'id' | 'completions' | 'createdAt'>;
-export type NewEvent = Omit<CalendarEvent, 'id'>;
-export type NewCategory = Omit<Category, 'id'>;
+import { useSyncEngine } from './useSyncEngine';
 
 export interface DataContextType {
   todos: Todo[];
@@ -66,32 +71,12 @@ export interface DataContextType {
   sharedEvents: CalendarEvent[];
   /** Own + visible shared events — what every calendar surface expands. */
   allEvents: CalendarEvent[];
-  /** Epoch millis of the last successful sync on this device, or null for never. */
+  /** See `SyncEngine` (`useSyncEngine.ts`) for these four. */
   lastSync: number | null;
-  /** True while a sync is in flight, whoever started it. */
   syncing: boolean;
-  /**
-   * Runs a sync and folds the result back into React. Every caller goes
-   * through this — the status bar, Settings, and the once-per-launch effect
-   * below — so there is a single `lastSync` rather than one per surface.
-   * Rejects on failure; how loudly to say so is the caller's business.
-   */
   syncNow: () => Promise<SyncOutcome>;
-  /**
-   * Debounced push after an edit (`__sync_debounce_ms`, default 2 s). Every
-   * mutator calls it; a sync already in flight marks it dirty and re-runs
-   * once done. No-op outside Tauri or while no server is configured.
-   */
   scheduleSync: () => void;
 }
-
-const DEBOUNCE_DEFAULT_MS = 2000;
-const DEBOUNCE_MIN_MS = 500;
-const DEBOUNCE_MAX_MS = 10000;
-/** Upper bound on the close-time push: a dead server must not hold the window hostage. */
-const CLOSE_SYNC_TIMEOUT_MS = 5000;
-
-const timeout = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const DataContext = createContext<DataContextType | null>(null);
 
@@ -115,15 +100,6 @@ function patchRow<T extends { id: string }>(list: T[], id: string, updates: Part
   return hit ? next : list;
 }
 
-/** Persists the starter to-dos (and their completions) and returns them. */
-function seedDemoTodos(): Todo[] {
-  for (const t of initialTodos) {
-    persistence.saveTodo(t);
-    for (const [d, v] of Object.entries(t.completions)) persistence.setCompletion(t.id, d, v);
-  }
-  return initialTodos;
-}
-
 function withCompletion(t: Todo, date: string, value: number): Todo {
   const completions = { ...t.completions };
   if (value <= 0) delete completions[date];
@@ -138,19 +114,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [shared, setShared] = useState<SharedGroup[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [lastSync, setLastSync] = useState<number | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const initStarted = useRef(false);
-  // Sync bookkeeping lives in refs so the mutators (and the timer callbacks
-  // they arm) keep one identity for the life of the provider.
-  const configured = useRef(false);
-  const inflight = useRef<Promise<SyncOutcome> | null>(null);
-  const dirty = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closing = useRef<Promise<void> | null>(null);
-  const getSettingRef = useRef(getSetting);
-  getSettingRef.current = getSetting;
-  const syncNowRef = useRef<() => Promise<SyncOutcome>>(() => Promise.reject(new Error('sync not ready')));
 
   /** Re-reads the shared cache. Tauri-only — the browser dev server has no sync. */
   const refreshShared = useCallback(async () => {
@@ -161,143 +125,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn('failed to load shared data:', err);
     }
-  }, []);
-
-  useEffect(() => {
-    if (initStarted.current) return; // StrictMode double-mount guard
-    initStarted.current = true;
-
-    // The launch sync starts alongside the store read rather than after first
-    // paint, but is never awaited before it: a slow or unreachable server must
-    // not delay startup. Raw `ipc.syncNow` here, not `syncNow` — its reload
-    // would race the initial load's own state writes; the pull is folded in
-    // once both have settled.
-    const startupSync = (async (): Promise<SyncOutcome | null> => {
-      if (!inTauri()) return null;
-      const status = await ipc.syncStatus();
-      configured.current = status.configured;
-      if (!status.configured) return null;
-      setSyncing(true);
-      try {
-        return await ipc.syncNow();
-      } finally {
-        setSyncing(false);
-      }
-    })();
-
-    const load = async () => {
-      try {
-        let state = await persistence.load();
-        hydrateSettings(state.settings);
-
-        if (inTauri() && state.needsLegacyImport) {
-          const blob = readLocalBlob();
-          if (blob) {
-            await persistence.importLegacy(blob.tasks.map(migrateLegacyTask), blob.habits.map(migrateTodo));
-            state = await persistence.load();
-          }
-        }
-
-        // Demo data goes only where it can't leak into an account: never on
-        // a signed-in device (the first sync would push it), and in Tauri
-        // only once the Welcome gate has been dismissed with "use offline"
-        // (`seedDemoIfEmpty` handles that moment; a fresh install that
-        // signs in from Welcome must start empty). The browser dev server
-        // has no gate and no sync, so it seeds on first load as before.
-        const signedInAtLoad = !!state.settings.__sync_token?.trim();
-        const welcomeDoneAtLoad = state.settings.__welcome_done === '1';
-        const seedNow = state.empty && !signedInAtLoad && (!inTauri() || welcomeDoneAtLoad);
-
-        let finalTodos: Todo[];
-        if (seedNow) {
-          finalTodos = seedDemoTodos();
-          setTodos(finalTodos);
-        } else {
-          const loadedTodos = state.todos.map(migrateTodo);
-          const loadedEvents = [...state.events];
-
-          // one-time unification: fold legacy tasks/periods into todos/events
-          for (const raw of state.legacyTasks) {
-            const todo = taskToTodo(migrateLegacyTask(raw));
-            loadedTodos.push(todo);
-            persistence.saveTodo(todo);
-            Object.entries(todo.completions).forEach(([d, v]) => persistence.setCompletion(todo.id, d, v));
-            persistence.deleteTask(raw.id);
-          }
-          for (const raw of state.legacyPeriods) {
-            const event = periodToEvent(raw);
-            loadedEvents.push(event);
-            persistence.saveEvent(event);
-            persistence.deletePeriod(raw.id);
-          }
-
-          finalTodos = loadedTodos;
-          setTodos(loadedTodos);
-          setEvents(loadedEvents);
-        }
-
-        // Categories: seed the five starters only for a genuinely fresh,
-        // never-signed-in install — zero categories exist yet, nothing is
-        // signed in (a sync is not about to pull the real ones), and no
-        // loaded to-do already carries a pre-Phase-K free-text category (that
-        // data goes through the remap below instead of being buried under
-        // five defaults it never asked for). Everything else — an existing
-        // local install with free-text categories, or any signed-in device,
-        // which will get its real categories from the next sync — is left
-        // empty for the user to fill in from Settings.
-        let loadedCategories = state.categories;
-        const hasLegacyCategoryText = finalTodos.some((t) => t.category.trim());
-        if (loadedCategories.length === 0 && !signedInAtLoad && !hasLegacyCategoryText) {
-          loadedCategories = TODO_CATEGORIES.map((c, i) => ({
-            id: crypto.randomUUID(),
-            name: c.label,
-            colorKey: c.hex,
-            scopes: ['tasks'],
-            sort: i,
-          }));
-          loadedCategories.forEach((c) => persistence.saveCategory(c));
-        }
-        // Best-effort, cheap remap of any surviving free-text category to the
-        // matching id (see migrations.ts#remapLegacyCategory) — a no-op once
-        // everything already holds ids, which is every load after the first.
-        finalTodos = finalTodos.map((t) => {
-          const remapped = remapLegacyCategory(t.category, loadedCategories);
-          if (remapped === t.category) return t;
-          const next = { ...t, category: remapped };
-          persistence.saveTodo(next);
-          return next;
-        });
-        setTodos(finalTodos);
-        setCategories(loadedCategories);
-
-        await refreshShared();
-      } catch (err) {
-        // Stay empty rather than show demo rows: the first edit would persist
-        // them (fixed ids) into whatever store just failed to read.
-        console.error('failed to load persisted data:', err);
-      }
-      setLoaded(true);
-    };
-
-    (async () => {
-      const [, synced] = await Promise.allSettled([load(), startupSync]);
-      if (synced.status === 'rejected') {
-        console.warn('startup sync failed:', synced.reason);
-        return;
-      }
-      const out = synced.value;
-      if (!out) return;
-      try {
-        if (out.pulled > 0 || out.sharedChanged) await reloadFromStore();
-        if (out.lastSync) setLastSync(Number(out.lastSync));
-      } catch (err) {
-        console.warn('failed to fold the startup sync in:', err);
-      }
-      if (dirty.current) {
-        dirty.current = false;
-        scheduleSync();
-      }
-    })();
   }, []);
 
   const reloadFromStore = useCallback(async () => {
@@ -312,157 +139,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await refreshShared();
   }, [hydrateSettings, refreshShared]);
 
+  const { lastSync, syncing, syncNow, scheduleSync, startup } = useSyncEngine({
+    reloadFromStore,
+    getSetting,
+    signedIn,
+  });
+
+  useEffect(() => {
+    if (initStarted.current) return; // StrictMode double-mount guard
+    initStarted.current = true;
+
+    const load = async () => {
+      try {
+        const loadedState = await loadInitialState();
+        hydrateSettings(loadedState.settings);
+        setTodos(loadedState.todos);
+        setEvents(loadedState.events);
+        setCategories(loadedState.categories);
+        await refreshShared();
+      } catch (err) {
+        // Stay empty rather than show demo rows: the first edit would persist
+        // them (fixed ids) into whatever store just failed to read.
+        console.error('failed to load persisted data:', err);
+      }
+      setLoaded(true);
+    };
+    startup(load());
+  }, []);
+
   const seedDemoIfEmpty = useCallback(() => {
     setTodos((prev) => (prev.length === 0 ? seedDemoTodos() : prev));
   }, []);
-
-  const scheduleSync = useCallback(() => {
-    if (!inTauri() || !configured.current) return;
-    if (inflight.current) {
-      dirty.current = true; // re-run once the current one finishes
-      return;
-    }
-    if (timer.current) clearTimeout(timer.current);
-    const raw = Number.parseInt(getSettingRef.current('__sync_debounce_ms') ?? '', 10);
-    const delay = Math.min(DEBOUNCE_MAX_MS, Math.max(DEBOUNCE_MIN_MS, raw || DEBOUNCE_DEFAULT_MS));
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      syncNowRef.current().catch((err) => console.warn('background sync failed:', err));
-    }, delay);
-  }, []);
-
-  /**
-   * The one place a sync is run from. Rust merges straight into SQLite, so a
-   * pull has to be read back into React here; doing that per caller is how the
-   * status bar and Settings would come to disagree about what is on screen and
-   * when it last arrived. Queued store writes are flushed first so the push
-   * carries them. Overlapping calls share the in-flight run and queue one more.
-   */
-  const syncNow = useCallback(async (): Promise<SyncOutcome> => {
-    if (inflight.current) {
-      dirty.current = true;
-      return inflight.current;
-    }
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-    setSyncing(true);
-    const run = (async () => {
-      try {
-        await persistence.flush();
-        const out = await ipc.syncNow();
-        configured.current = true;
-        if (out.pulled > 0 || out.sharedChanged) await reloadFromStore();
-        if (out.lastSync) setLastSync(Number(out.lastSync));
-        return out;
-      } finally {
-        inflight.current = null;
-        setSyncing(false);
-        if (dirty.current) {
-          dirty.current = false;
-          scheduleSync();
-        }
-      }
-    })();
-    inflight.current = run;
-    return run;
-  }, [reloadFromStore, scheduleSync]);
-  syncNowRef.current = syncNow;
-
-  // Settings writes (outer provider) ask for a push through the bus.
-  useEffect(() => onSyncRequest(scheduleSync), [scheduleSync]);
-
-  // Desktop close: hold the window until queued writes are on disk and one
-  // push has been attempted (bounded), then destroy it for real. A second
-  // close request while that runs just waits on the same promise.
-  useEffect(() => {
-    if (!inTauri()) return;
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    ipc
-      .onCloseRequested(async (e) => {
-        e.preventDefault();
-        if (!closing.current) {
-          closing.current = (async () => {
-            if (timer.current) clearTimeout(timer.current);
-            try {
-              await persistence.flush();
-            } catch {
-              // nothing more to do about it at close time
-            }
-            if (configured.current) {
-              try {
-                await Promise.race([syncNowRef.current(), timeout(CLOSE_SYNC_TIMEOUT_MS)]);
-              } catch {
-                // offline or server down — the next launch's sync recovers
-              }
-            }
-            try {
-              await ipc.destroyWindow();
-            } catch (err) {
-              console.warn('destroy on close failed:', err);
-              closing.current = null;
-            }
-          })();
-        }
-        await closing.current;
-      })
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch((err) => console.warn('close handler not registered:', err));
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, []);
-
-  // Backgrounding (Android has no close event): flush, then push. Fire and
-  // forget — the OS may kill the process before the sync lands, in which case
-  // the next launch's sync carries it.
-  useEffect(() => {
-    if (!inTauri()) return;
-    const push = () => {
-      if (!configured.current) return;
-      persistence
-        .flush()
-        .then(() => syncNowRef.current())
-        .catch(() => {});
-    };
-    const onVisibility = () => {
-      if (document.hidden) push();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pagehide', push);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pagehide', push);
-    };
-  }, []);
-
-  // Rust owns the stamp, and not every sync passes through `syncNow`: the
-  // browser sign-in flow (`useBrowserSignIn`) syncs from inside the poll
-  // loop, so on sign-in React can only learn when that happened by asking.
-  // Signing out clears it — the next account's history is not this one's.
-  useEffect(() => {
-    if (!inTauri()) return;
-    if (!signedIn) {
-      configured.current = false;
-      setLastSync(null);
-      return;
-    }
-    (async () => {
-      try {
-        const status = await ipc.syncStatus();
-        configured.current = status.configured;
-        setLastSync(status.lastSync ? Number(status.lastSync) : null);
-      } catch {
-        // backend not ready — the bar reads "never synced" until one runs
-      }
-    })();
-  }, [signedIn]);
 
   const addTodo = useCallback(
     (todo: NewTodo) => {
@@ -632,7 +339,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // category's colour (or the neutral for General) before it leaves the
   // context, so no render site has to know that colours belong to categories
   // and a recolour propagates everywhere at once. The raw rows above keep the
-  // stored key, which is what the mutators patch and persist.
+  // stored key, which is what the mutators patch and persist — so no edit
+  // surface may hand a painted `colorKey` back (the forms don't).
   const paint = useCallback(
     <T extends { category: string; colorKey: string }>(rows: T[]): T[] =>
       rows.map((r) => ({ ...r, colorKey: displayColor(r, categoryById) })),

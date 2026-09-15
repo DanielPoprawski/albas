@@ -13,8 +13,7 @@
  * matching Rust signature reads snake_case (e.g. `key_id` -> `keyId`).
  */
 
-import type { CalendarEvent, RawSharedRow, ShareGrant, Todo } from './types';
-import type { LegacyPeriod, LegacyTask } from './persistence';
+import type { CalendarEvent, LegacyPeriod, LegacyTask, RawSharedRow, ShareGrant, Todo } from './types';
 
 /** Mirrors Rust's `Category` (`db.rs`) — DB shape, `scopes` still a CSV string. */
 export interface CategoryRow {

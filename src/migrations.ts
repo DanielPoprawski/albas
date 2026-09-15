@@ -2,10 +2,9 @@
 // reuse them without importing the provider (which imports sharedLogic — a
 // cycle otherwise). No React, no persistence: raw saved shapes in, app types out.
 
-import type { CalendarEvent, Category, Repeat, Todo } from './types';
+import type { CalendarEvent, Category, LegacyPeriod, LegacyTask, Repeat, Todo } from './types';
 import { fmt } from './dates';
 import { DEFAULT_COLOR } from './colors';
-import type { LegacyPeriod, LegacyTask } from './persistence';
 
 const todayStr = fmt(new Date());
 

@@ -11,7 +11,7 @@ import { Tag } from '../ui/tag';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/dialog';
 import { DEFAULT_SYNC_URL, apiBase, apiError, apiRequest } from '../../syncServer';
 import { timeAgo } from '../../dates';
-import { initialsOf } from '../AppShell';
+import { initialsOf } from '@/lib/utils';
 import {
   authMethods,
   METHOD_PILL,

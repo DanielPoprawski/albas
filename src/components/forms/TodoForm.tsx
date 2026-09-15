@@ -79,9 +79,11 @@ export default function TodoForm({
       return 'invalid';
     }
     const parsedTarget = parseInt(target, 10);
+    // No `colorKey`: colours belong to categories (`displayColor`), and the
+    // row the form was opened on carries its painted category colour, which
+    // must not be written back as if the user had chosen it.
     const fields = {
       name: name.trim(),
-      colorKey: edit?.colorKey ?? DEFAULT_COLOR,
       kind,
       unit: kind === 'measurable' ? unit.trim() : '',
       target: kind === 'measurable' && Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : 1,
@@ -96,7 +98,7 @@ export default function TodoForm({
       if (samePatch(fields, edit)) return 'unchanged';
       updateTodo(edit.id, fields);
     } else {
-      addTodo(fields);
+      addTodo({ ...fields, colorKey: DEFAULT_COLOR });
     }
     return 'saved';
   }
