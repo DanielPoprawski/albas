@@ -2,7 +2,7 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StarButton } from '../ui/star';
 import { useApp } from '../../context/AppContext';
-import { completionDay, dueLabel, GENERAL, isDone } from '../../todoLogic';
+import { completionDay, dueLabel, isDone } from '../../todoLogic';
 import { colorHex } from '../../colors';
 import type { Todo } from '../../types';
 import InlineEditor from '../InlineEditor';
@@ -18,11 +18,6 @@ interface TaskRowProps {
   /** Whether the inline editor is open under this row (one at a time, owned by the list). */
   expanded?: boolean;
   onToggleExpand?: () => void;
-  /**
-   * Category dot and name in the meta line. For a list that mixes categories
-   * (the To-Do page's "All"); a list already grouped by category leaves it off.
-   */
-  showCategory?: boolean;
   /** The Edit · Delete pair at the row's end — the phone dashboard, which has no context menu. */
   actions?: boolean;
   selected?: boolean;
@@ -35,7 +30,7 @@ interface TaskRowProps {
 
 /**
  * One-time to-do, the same row on every surface: star, checkbox, name, then a
- * meta line (category, due moment). The checkbox is the only thing that
+ * meta line (due moment). The checkbox is the only thing that
  * toggles done — on the day `completionDay` says — and the row itself opens
  * the inline editor beneath it.
  */
@@ -45,18 +40,16 @@ export default function TaskRow({
   onEdit,
   expanded = false,
   onToggleExpand,
-  showCategory = false,
   actions = false,
   selected = false,
   onRowClick,
   onContextMenu,
   className,
 }: TaskRowProps) {
-  const { toggleTodo, updateTodo, categoryById } = useApp();
+  const { toggleTodo, updateTodo } = useApp();
   const done = isDone(task);
   const hex = colorHex(task.colorKey);
   const due = dueLabel(task, today);
-  const category = showCategory ? (categoryById(task.category)?.name ?? GENERAL) : null;
 
   // A plain click (no Ctrl/Shift) opens the inline editor; the modifiers
   // belong to the list's selection and never expand.
@@ -116,28 +109,13 @@ export default function TaskRow({
         >
           {task.name}
         </p>
-        {(category || due) && (
-          <div className="flex items-center gap-1.5 mt-0.5 text-meta text-ink-muted">
-            {category && (
-              <>
-                <span
-                  className="w-[0.4375rem] h-[0.4375rem] flex-shrink-0"
-                  // dynamic: the category's colour (neutral for General)
-                  style={{ backgroundColor: hex }}
-                />
-                <span>{category}</span>
-              </>
-            )}
-            {category && due && <span>·</span>}
-            {due && (
-              <span
-                className={cn('tabular-nums', due.late && !done && 'font-bold text-danger')}
-                title={due.late && !done ? 'Overdue' : undefined}
-              >
-                {due.text}
-              </span>
-            )}
-          </div>
+        {due && (
+          <p
+            className={cn('mt-0.5 text-meta text-ink-muted tabular-nums', due.late && !done && 'font-bold text-danger')}
+            title={due.late && !done ? 'Overdue' : undefined}
+          >
+            {due.text}
+          </p>
         )}
       </div>
 

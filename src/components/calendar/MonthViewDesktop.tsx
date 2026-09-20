@@ -53,7 +53,9 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
     <Card
       // dynamic: width follows the ResizeObserver, see above
       style={{ width, maxWidth: `calc(100vw - (${reserved}))` }}
-      className="flex-1 min-h-0 overflow-hidden flex flex-col"
+      // self-center: the width is aspect-derived, so any slack in the content
+      // slot splits evenly instead of piling up on the right.
+      className="flex-1 min-h-0 self-center overflow-hidden flex flex-col"
     >
       {/* Calendar header: Today + month navigation on the left, search
           centred (adding is a click on a day — the "+ Add" button that used
@@ -103,9 +105,8 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
           return (
             <div
               key={i}
-              className={`py-xs px-1.5 text-center text-xs font-bold uppercase tracking-wider ${
-                isWeekendCol ? 'text-ink' : 'text-ink-muted'
-              }`}
+              className={`py-xs px-1.5 text-center text-xs font-bold uppercase tracking-wider ${isWeekendCol ? 'text-ink' : 'text-ink-muted'
+                }`}
             >
               {day}
             </div>

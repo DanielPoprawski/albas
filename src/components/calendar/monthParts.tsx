@@ -59,7 +59,7 @@ const CELL_VARIANTS = {
     dayRow: '',
     dayNumber: 'text-xs px-0.5',
     chips: 'gap-px mt-px',
-    chip: 'text-xs font-semibold px-px truncate hover:opacity-80',
+    chip: 'text-xs font-semibold px-px overflow-hidden whitespace-nowrap hover:opacity-80',
     paint: mobilePaint,
     time: false,
     more: (n: number) => `+${n}`,
@@ -255,7 +255,7 @@ export function PeriodTitles({ cell, onEditEvent }: { cell: DayCell; onEditEvent
             onEditEvent(o);
           }}
           title={sharedTitleAttr(o.event)}
-          className="text-xs font-bold uppercase tracking-wide truncate hover:opacity-70"
+          className="text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap hover:opacity-70"
           // dynamic: the event's own colour, dimmed when shared
           style={{ color: colorHex(o.event.colorKey), opacity: (sharedOpacity(o.event) ?? 1) * dimFactor }}
         >
@@ -303,7 +303,7 @@ export function BarsOverlay({
               onEditEvent(seg.item);
             }}
             title={sharedTitleAttr(seg.item.event)}
-            className={`pointer-events-auto cursor-pointer text-xs font-bold px-xs truncate hover:opacity-90 h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
+            className={`pointer-events-auto cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
             // dynamic: grid placement and the event's own colour
             style={{
               gridColumn: `${seg.startCol} / span ${seg.span}`,

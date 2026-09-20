@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { EllipsisVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { clampRem, LAYOUT_LIMITS } from '../appearance';
 import { useSettings } from '../context/SettingsContext';
@@ -68,9 +69,10 @@ interface ResizeHandleProps {
 }
 
 /**
- * A thin drag handle between two panels — a 0.5rem hit area drawing a solid
- * 0.1875rem accent-2 line (the `after:` pseudo-element) that turns the accent
- * colour on hover/drag. It never touches layout state itself: it just reports pointer
+ * A thin drag handle between two panels — a 0.5rem hit area showing a muted
+ * vertical ellipsis as its grip, which turns accent and gains a 0.1875rem
+ * accent line (the `after:` pseudo-element) on hover/drag. It never touches
+ * layout state itself: it just reports pointer
  * deltas, a drag end and a reset request, so the caller (which owns the width
  * var and the persisted setting) decides what a delta means.
  *
@@ -132,12 +134,14 @@ export default function ResizeHandle({ side, onDelta, onEnd, onReset, ariaLabel 
       aria-label={ariaLabel}
       data-side={side}
       className={cn(
-        'relative block max-md:hidden w-2 shrink-0 cursor-col-resize touch-none',
-        "after:absolute after:inset-y-0 after:left-1/2 after:w-[0.1875rem] after:-translate-x-1/2 after:bg-accent-2 after:transition-colors after:duration-150 after:content-[''] hover:after:bg-accent",
-        dragging && 'after:bg-accent',
+        'relative flex max-md:hidden w-2 shrink-0 items-center justify-center cursor-col-resize touch-none text-ink-muted transition-colors duration-150 hover:text-accent',
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-[0.1875rem] after:-translate-x-1/2 after:bg-transparent after:transition-colors after:duration-150 after:content-[''] hover:after:bg-accent",
+        dragging && 'text-accent after:bg-accent',
       )}
       onPointerDown={handlePointerDown}
       onDoubleClick={onReset}
-    />
+    >
+      <EllipsisVertical size="1rem" className="shrink-0" aria-hidden />
+    </div>
   );
 }

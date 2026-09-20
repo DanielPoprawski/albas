@@ -93,7 +93,7 @@ export default function HabitRow({
         />
       </button>
 
-      <div className="flex flex-col gap-1 min-w-0 w-[13.75rem] max-wide:w-[12.5rem]">
+      <div className="flex flex-col gap-1 min-w-0 min-w-[12rem] max-w-[24rem]">
         <div className="flex items-center gap-2.5 min-w-0">
           <Dot accent={color} size={10} />
           <span className="font-heading text-sm font-bold text-ink truncate">{todo.name}</span>
@@ -117,14 +117,14 @@ export default function HabitRow({
         cells={habit.strip}
         color={color}
         today={today}
-        cellClass="size-[0.875rem]"
+        cellClass="size-[1rem]"
         className="flex-1 min-w-0 items-start max-md:basis-full max-md:order-last"
       />
 
       <div className="flex gap-3.5 w-[11.875rem] shrink-0 max-wide:hidden">
         {STAT_LABELS.map(([key, label, suffix]) => (
           <div key={key} className="flex flex-col">
-            <span className="font-heading text-[0.9375rem] font-bold leading-[1.1] text-ink tabular-nums">
+            <span className="font-heading text-[1rem] font-bold leading-[1.1] text-ink tabular-nums">
               {habit[key]}
               {suffix}
             </span>

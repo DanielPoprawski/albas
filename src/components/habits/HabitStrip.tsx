@@ -35,7 +35,7 @@ export default function HabitStrip({
   className?: string;
 }) {
   const { toggleTodo, setTodoValue } = useApp();
-  const grid = cn('grid grid-flow-col auto-cols-max gap-[0.1875rem]', spread && 'justify-between');
+  const grid = cn('grid grid-flow-col auto-cols-max gap-[0.25rem]', spread && 'justify-between');
   return (
     // Individual cells stop propagation; clicking elsewhere in the strip area
     // expands or collapses the habit row as expected.

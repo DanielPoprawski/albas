@@ -170,12 +170,12 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate,
                     }}
                   >
                     {/* dynamic: the event's own colour */}
-                    <div className="text-xs font-bold truncate" style={{ color: hex }}>
+                    <div className="text-xs font-bold overflow-hidden whitespace-nowrap" style={{ color: hex }}>
                       {eventTitle(occ.event)}
                     </div>
                     {/* dynamic: the event's own colour */}
                     {minutes >= 45 && (
-                      <div className="text-xs opacity-70 truncate" style={{ color: hex }}>
+                      <div className="text-xs opacity-70 overflow-hidden whitespace-nowrap" style={{ color: hex }}>
                         {shortTime(occ.event.startTime!)}
                         {occ.event.endTime ? ` – ${shortTime(occ.event.endTime)}` : ''}
                       </div>

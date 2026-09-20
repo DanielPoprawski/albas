@@ -128,7 +128,7 @@ export default function WeekView() {
                   key={seg.item.key}
                   onClick={() => openEvent(seg.item.event, seg.item.startDate)}
                   title={sharedTitleAttr(seg.item.event)}
-                  className={`cursor-pointer text-xs font-bold px-xs truncate hover:opacity-90 h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
+                  className={`cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
                   // dynamic: grid placement and the event's own colour
                   style={{
                     gridColumn: `${seg.startCol} / span ${seg.span}`,
@@ -159,7 +159,7 @@ export default function WeekView() {
                       <div
                         key={todo.id}
                         onClick={() => setEditTodo(todo)}
-                        className={`cursor-pointer text-xs font-bold px-xs py-0.5 truncate hover:opacity-80 ${isDone(todo) ? 'line-through opacity-50' : ''}`}
+                        className={`cursor-pointer text-xs font-bold px-xs py-0.5 overflow-hidden whitespace-nowrap hover:opacity-80 ${isDone(todo) ? 'line-through opacity-50' : ''}`}
                         // dynamic: the to-do's own colour
                         style={{
                           backgroundColor: `${hex}${PILL_BG_ALPHA}`,
