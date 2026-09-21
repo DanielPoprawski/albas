@@ -7,18 +7,37 @@ import type { CalendarEvent, FirstDayOfWeek, Todo } from './types';
 const NOTIFIED_KEY = 'albas-last-reminder';
 const EVENT_NOTIFIED_KEY = 'albas-event-reminders-sent';
 
+/** When a to-do with no time of its own is reminded on a due day. */
+const DEFAULT_REMINDER_TIME = '09:00';
+
 /**
- * Send one desktop notification per day listing to-dos that are due today,
- * have reminders enabled, and aren't done yet. No-op outside Tauri (plain
- * browser dev server) and when everything is already done.
+ * Notify about to-dos due today once their reminder time (`time`, else 09:00)
+ * has passed and they aren't done yet — one notification per pass, each
+ * to-do at most once a day (tracked in localStorage as id → day). No-op
+ * outside Tauri (plain browser dev server).
  */
 export async function remindDueTodos(todos: Todo[], firstDay: FirstDayOfWeek = 0): Promise<void> {
   if (!inTauri()) return;
 
-  const todayStr = fmt(new Date());
-  if (localStorage.getItem(NOTIFIED_KEY) === todayStr) return;
+  const now = new Date();
+  const todayStr = fmt(now);
+  const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  let sent: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(NOTIFIED_KEY) ?? '{}');
+    if (parsed && typeof parsed === 'object') sent = parsed;
+  } catch {
+    /* the pre-time-of-day store was a bare date string — start fresh */
+  }
 
-  const due = todos.filter((t) => t.reminder && isDueOn(t, todayStr, firstDay) && !isDoneOn(t, todayStr));
+  const due = todos.filter(
+    (t) =>
+      t.reminder &&
+      sent[t.id] !== todayStr &&
+      (t.time ?? DEFAULT_REMINDER_TIME) <= nowHm &&
+      isDueOn(t, todayStr, firstDay) &&
+      !isDoneOn(t, todayStr),
+  );
   if (due.length === 0) return;
 
   try {
@@ -34,7 +53,8 @@ export async function remindDueTodos(todos: Todo[], firstDay: FirstDayOfWeek = 0
       title: due.length === 1 ? 'Due today' : `${due.length} to-dos due today`,
       body: due.map((t) => t.name).join(', '),
     });
-    localStorage.setItem(NOTIFIED_KEY, todayStr);
+    for (const t of due) sent[t.id] = todayStr;
+    localStorage.setItem(NOTIFIED_KEY, JSON.stringify(sent));
   } catch (err) {
     console.warn('notification failed:', err);
   }

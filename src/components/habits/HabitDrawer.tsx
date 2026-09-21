@@ -1,4 +1,4 @@
-import { Bell, Pencil } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { colorHex } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import InlineEditor from '../InlineEditor';
@@ -8,8 +8,9 @@ import { cycleCell, type HabitData, HISTORY_WEEKS, monthLabels } from './habitMo
 
 /**
  * The panel under an open habit row: the full 16-week heatmap with month
- * labels, the completion rate and reminder, and the page's only way into the
- * habit's editor. Left-inset so the grid lines up under the row's name.
+ * labels, the completion rate and reminder, above the inline editor whose
+ * "Advanced…" is the way into the full modal. Left-inset so the grid lines up
+ * under the row's name.
  */
 export default function HabitDrawer({ habit }: { habit: HabitData }) {
   const { toggleTodo, setTodoValue } = useApp();
@@ -63,14 +64,6 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
             <Bell size="0.8125rem" />
             Reminder · {reminder}
           </span>
-          <button
-            type="button"
-            onClick={() => setEditing(todo)}
-            className="button-small inline-flex items-center gap-1.5 self-start"
-          >
-            <Pencil size="0.8125rem" />
-            Edit habit
-          </button>
         </div>
       </div>
 

@@ -24,7 +24,7 @@ export const PILL_CAP = 2;
  */
 const CELL_ASPECT = 3 / 2;
 
-export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDayClick }: MonthLayoutProps) {
+export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDayClick, onShowDay }: MonthLayoutProps) {
   const { firstDayOfWeek, currentMonth, setCurrentMonth, setSelectedDate, showRightPanel, toggleRightPanel } = useApp();
 
   // Measure the rows area, not the whole sheet: the weekday header's height
@@ -105,8 +105,9 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
           return (
             <div
               key={i}
-              className={`py-xs px-1.5 text-center text-xs font-bold uppercase tracking-wider ${isWeekendCol ? 'text-ink' : 'text-ink-muted'
-                }`}
+              className={`py-xs px-1.5 text-center text-xs font-bold uppercase tracking-wider ${
+                isWeekendCol ? 'text-ink' : 'text-ink-muted'
+              }`}
             >
               {day}
             </div>
@@ -128,6 +129,7 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
                   variant="desktop"
                   className={colIdx === 6 ? 'border-b border-line' : 'border-r border-b border-line'}
                   onDayClick={onDayClick}
+                  onShowDay={onShowDay}
                   onEditEvent={onEditEvent}
                   onEditTodo={onEditTodo}
                 />

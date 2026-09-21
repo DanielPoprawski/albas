@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { fieldDate } from '../../dates';
 import { parseStrictDate } from '../../nlDate';
+import { useIsCoarsePointer } from '../../useMedia';
 
 /**
  * A date as a plain text field. Shows "Thu 18 Sep 2026"; accepts anything
@@ -11,6 +12,8 @@ import { parseStrictDate } from '../../nlDate';
  * suggestion chip makes the interpretation visible before it lands.
  * Enter on an unparseable value marks the field and keeps focus; leaving it
  * reverts to the last good date; Escape reverts in place.
+ * On a coarse pointer the field is a native `type="date"` input instead, so a
+ * phone gets the system picker rather than a keyboard.
  */
 export default function DateField({
   value,
@@ -37,6 +40,26 @@ export default function DateField({
     setText(fieldDate(value));
     setInvalid(false);
   }, [value]);
+
+  const coarse = useIsCoarsePointer();
+
+  // Touch: hand the date to the system picker. `placeholder` has no meaning on a
+  // native date input; its "clear" yields '', which only `allowEmpty` may pass on.
+  if (coarse) {
+    return (
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (!next && !allowEmpty) return;
+          onChange(next);
+        }}
+        className={cn('field-input', className)}
+        {...rest}
+      />
+    );
+  }
 
   const pristine = !invalid && text === fieldDate(value);
 

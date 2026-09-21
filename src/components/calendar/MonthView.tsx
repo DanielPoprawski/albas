@@ -18,7 +18,7 @@ interface MonthViewProps {
 }
 
 export default function MonthView({ isMobile = false }: MonthViewProps) {
-  const { setSelectedDate } = useApp();
+  const { setSelectedDate, setCalendarMode } = useApp();
   const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
   const [editTodo, setEditTodo] = useState<Todo | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
@@ -36,10 +36,17 @@ export default function MonthView({ isMobile = false }: MonthViewProps) {
     },
     onEditTodo: setEditTodo,
     // Clicking a day adds to it, on every device — the phone's day view is a
-    // mode in the nav picker, not a tap away from the grid.
+    // mode in the nav picker, not a tap away from the grid. A cell names a day
+    // and no hour, so it starts an all-day event; the hour grids (WeekView,
+    // DayView) start a timed one.
     onDayClick: (dateStr: string) => {
       setSelectedDate(dateStr);
       setAddDate(dateStr);
+    },
+    // "+N more": the day view is where the whole day fits.
+    onShowDay: (dateStr: string) => {
+      setSelectedDate(dateStr);
+      setCalendarMode('day');
     },
   };
 
@@ -51,7 +58,7 @@ export default function MonthView({ isMobile = false }: MonthViewProps) {
         <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />
       )}
       {editTodo && <AddModal editTodo={editTodo} onClose={() => setEditTodo(null)} />}
-      {addDate && <AddModal defaultDate={addDate} defaultType="event" onClose={() => setAddDate(null)} />}
+      {addDate && <AddModal defaultDate={addDate} defaultType="event" defaultAllDay onClose={() => setAddDate(null)} />}
     </>
   );
 }

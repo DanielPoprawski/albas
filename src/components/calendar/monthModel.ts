@@ -130,6 +130,8 @@ export interface MonthLayoutProps {
   onEditEvent: (o: Occurrence) => void;
   onEditTodo: (t: Todo) => void;
   onDayClick: (dateStr: string) => void;
+  /** The "+N more" overflow: show the whole day. */
+  onShowDay: (dateStr: string) => void;
 }
 
 /**

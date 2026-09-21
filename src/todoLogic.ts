@@ -2,7 +2,7 @@ import { addDays, addMonths, diffDays, fmt, monthsBetween, parse, rotateWeek, sh
 import { shortTime } from './eventLogic';
 import type { FirstDayOfWeek, Repeat, Todo } from './types';
 
-export function isRepeating(todo: Todo): boolean {
+export function isRepeating(todo: Pick<Todo, 'schedule'>): boolean {
   return todo.schedule.type !== 'once';
 }
 
@@ -333,6 +333,16 @@ export function dueLabel(todo: Todo, todayStr: string): DueLabel | null {
     else day = shortDate(todo.dueDate);
   }
   return { text: [day, time].filter(Boolean).join(' '), late: isOverdue(todo) };
+}
+
+/** The user's manual habit order (drag in the Habits list); creation order, then name, break ties. */
+export function byHabitOrder(a: Todo, b: Todo): number {
+  return a.sort - b.sort || a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name);
+}
+
+/** The `sort` that puts a new habit after every existing one. */
+export function nextHabitSort(todos: Todo[]): number {
+  return todos.reduce((max, t) => (isRepeating(t) ? Math.max(max, t.sort + 1) : max), 0);
 }
 
 /** Starred first, then by due moment, then by name so the order is stable. */

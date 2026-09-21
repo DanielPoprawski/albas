@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import { rotateWeek } from '../../dates';
 import type { FirstDayOfWeek } from '../../types';
 import type { Repeat, RepeatUnit } from '../../types';
@@ -8,7 +9,7 @@ import { CheckboxRow, inputClass, Select } from './shared';
  * side (numbers as raw text so a half-typed field doesn't snap back), and
  * `buildRepeat` folds the active one into a `Repeat` on commit.
  */
-export type RepeatChoice = 'once' | 'daily' | 'weekdays' | 'every' | 'timesPer';
+export type RepeatChoice = 'once' | 'weekdays' | 'every' | 'timesPer';
 
 export interface RepeatDraft {
   choice: RepeatChoice;
@@ -22,9 +23,8 @@ export interface RepeatDraft {
 
 export const REPEAT_OPTIONS: { value: RepeatChoice; label: string }[] = [
   { value: 'once', label: "Doesn't repeat" },
-  { value: 'daily', label: 'Daily' },
   { value: 'weekdays', label: 'Days of the week' },
-  { value: 'every', label: 'Every N days / weeks / months' },
+  { value: 'every', label: 'Every day / N days / weeks / months' },
   { value: 'timesPer', label: 'N times per week / month' },
 ];
 
@@ -41,16 +41,19 @@ const WEEKDAY_OPTIONS = [
 
 const DEFAULTS: Omit<RepeatDraft, 'choice'> = {
   weekdays: [1, 2, 3, 4, 5],
-  everyN: '3',
+  everyN: '1',
   everyUnit: 'day',
   fromDone: false,
   times: '3',
   per: 'week',
 };
 
-/** A draft that mirrors an existing rule; the other branches hold their defaults. */
+/**
+ * A draft that mirrors an existing rule; the other branches hold their
+ * defaults. `daily` is "every 1 day" here — one choice, not two.
+ */
 export function draftFromRepeat(repeat: Repeat | undefined): RepeatDraft {
-  const base: RepeatDraft = { choice: repeat?.type ?? 'once', ...DEFAULTS };
+  const base: RepeatDraft = { choice: repeat?.type === 'daily' ? 'every' : (repeat?.type ?? 'once'), ...DEFAULTS };
   switch (repeat?.type) {
     case 'weekdays':
       return { ...base, weekdays: repeat.days };
@@ -68,13 +71,13 @@ export function buildRepeat(d: RepeatDraft): Repeat | null {
   switch (d.choice) {
     case 'once':
       return { type: 'once' };
-    case 'daily':
-      return { type: 'daily' };
     case 'weekdays':
       return d.weekdays.length === 0 ? null : { type: 'weekdays', days: d.weekdays };
     case 'every': {
       const n = parseInt(d.everyN, 10);
       if (!Number.isFinite(n) || n < 1) return null;
+      // Every single day on a fixed schedule is the stored `daily` rule.
+      if (n === 1 && d.everyUnit === 'day' && !d.fromDone) return { type: 'daily' };
       return { type: 'every', n, unit: d.everyUnit, fromDone: d.fromDone };
     }
     case 'timesPer': {
@@ -88,6 +91,41 @@ export function buildRepeat(d: RepeatDraft): Repeat | null {
 /** What `buildRepeat` returning null means for this draft, in the user's words. */
 export function repeatError(d: RepeatDraft): string {
   return d.choice === 'weekdays' ? 'Pick at least one day of the week.' : 'Enter a number of 1 or more.';
+}
+
+/** The seven weekday toggles, in the user's week order — a to-do's rule and an event's share them. */
+export function WeekdayPicker({
+  value,
+  onChange,
+  firstDayOfWeek,
+  className,
+}: {
+  value: number[];
+  onChange: (days: number[]) => void;
+  firstDayOfWeek: FirstDayOfWeek;
+  className?: string;
+}) {
+  return (
+    <div className={cn('flex gap-xs', className)}>
+      {rotateWeek(WEEKDAY_OPTIONS, firstDayOfWeek).map(({ day, label }) => {
+        const active = value.includes(day);
+        return (
+          <button
+            key={day}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(active ? value.filter((d) => d !== day) : [...value, day])}
+            className={cn(
+              'flex-1 h-8 max-md:h-10 text-meta font-bold transition-all cursor-pointer',
+              active ? 'bg-accent text-on-accent' : 'bg-subtle-strong text-ink-muted hover:bg-line-strong',
+            )}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -111,34 +149,17 @@ export default function RepeatField({
   const options = repeatingOnly ? REPEAT_OPTIONS.filter((o) => o.value !== 'once') : REPEAT_OPTIONS;
   const everyN = parseInt(value.everyN, 10);
 
-  function toggleWeekday(day: number) {
-    patch({
-      weekdays: value.weekdays.includes(day) ? value.weekdays.filter((d) => d !== day) : [...value.weekdays, day],
-    });
-  }
-
   return (
     <div>
       <Select options={options} value={value.choice} onChange={(choice) => patch({ choice })} />
 
       {value.choice === 'weekdays' && (
-        <div className="flex gap-xs mt-sm">
-          {rotateWeek(WEEKDAY_OPTIONS, firstDayOfWeek).map(({ day, label }) => (
-            <button
-              key={day}
-              type="button"
-              aria-pressed={value.weekdays.includes(day)}
-              onClick={() => toggleWeekday(day)}
-              className={`flex-1 h-8 text-meta font-bold transition-all ${
-                value.weekdays.includes(day)
-                  ? 'bg-accent text-on-accent'
-                  : 'bg-subtle-strong text-ink-muted hover:bg-line-strong'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <WeekdayPicker
+          value={value.weekdays}
+          onChange={(weekdays) => patch({ weekdays })}
+          firstDayOfWeek={firstDayOfWeek}
+          className="mt-sm"
+        />
       )}
 
       {value.choice === 'every' && (

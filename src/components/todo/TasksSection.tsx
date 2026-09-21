@@ -22,7 +22,6 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
     task: todo,
     today,
     onEdit,
-    actions: true,
     expanded: expandedId === todo.id,
     onToggleExpand: () => toggleExpanded(todo.id),
     className: 'px-2 py-1.5',
@@ -41,7 +40,7 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
       {groups.map(({ category, todos: rows }) => (
         <div key={category || GENERAL} className="mb-md">
           <SectionHeading className="mb-xs">{categoryById(category)?.name ?? GENERAL}</SectionHeading>
-          <div className="space-y-0.5">
+          <div className="list-rows">
             {rows.map((todo) => (
               <TaskRow key={todo.id} {...rowProps(todo)} />
             ))}
@@ -54,7 +53,7 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
           <SectionHeading className="mb-xs" count={completed.length}>
             Completed
           </SectionHeading>
-          <div className="space-y-0.5">
+          <div className="list-rows">
             {completed.map((todo) => (
               <TaskRow key={todo.id} {...rowProps(todo)} />
             ))}

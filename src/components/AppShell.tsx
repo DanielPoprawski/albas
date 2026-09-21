@@ -79,12 +79,12 @@ function Sidebar({ view, onNavigate }: { view: ActiveView; onNavigate: (view: Ac
         ))}
       </div>
 
-      {/* Categories show only when viewing a tab that categories apply to */}
-      {view !== 'settings' && (
+      {/* Categories show only on the tabs they apply to; habits carry their own colour */}
+      {(view === 'calendar' || view === 'todos') && (
         <div className={'flex flex-col gap-2'}>
           <SidebarCategories
             showCompletedRow={view === 'todos'}
-            currentScope={view === 'calendar' ? 'calendar' : view === 'todos' ? 'tasks' : 'habits'}
+            currentScope={view === 'calendar' ? 'calendar' : 'tasks'}
           />
         </div>
       )}

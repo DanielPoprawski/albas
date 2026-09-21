@@ -85,6 +85,9 @@ const TABLES: &[Spec] = &[
             "time",
             "category",
             "important",
+            "notes",
+            "sort",
+            "routine",
         ],
     },
     Spec {

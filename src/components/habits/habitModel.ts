@@ -1,6 +1,7 @@
+import { arrayMove } from '@dnd-kit/sortable';
 import { addDays, parse } from '../../dates';
 import { bestStreakOf, isDoneOn, isDueOn, streakOf, valueOn } from '../../todoLogic';
-import type { FirstDayOfWeek, Todo } from '../../types';
+import type { FirstDayOfWeek, HabitsLayout, Routine, Todo } from '../../types';
 
 /** The drawer's heatmap: this many week columns, the last one being this week. */
 export const HISTORY_WEEKS = 16;
@@ -89,7 +90,89 @@ export function buildHabitData(todo: Todo, firstDayOfWeek: FirstDayOfWeek, today
   };
 }
 
-/** Falls back to a schedule-shaped label when the habit has no category. */
+export const ROUTINE_OPTIONS: { value: Exclude<Routine, ''>; label: string }[] = [
+  { value: 'morning', label: 'Morning' },
+  { value: 'afternoon', label: 'Afternoon' },
+  { value: 'evening', label: 'Evening' },
+];
+
+/** The habit's routine: its tag, else its time of day (a reminder time), else none. */
+export function routineOf(todo: Todo): Routine {
+  if (todo.routine) return todo.routine;
+  if (!todo.time) return '';
+  return todo.time < '12:00' ? 'morning' : todo.time < '17:00' ? 'afternoon' : 'evening';
+}
+
+type Cadence = 'daily' | 'weekly' | 'monthly' | 'chores';
+
+/** Which cadence bucket a repeat rule falls in — the Cadence layout needs no metadata. */
+function cadenceOf(todo: Todo): Cadence {
+  const s = todo.schedule;
+  switch (s.type) {
+    case 'daily':
+      return 'daily';
+    case 'weekdays':
+      return s.days.length === 7 ? 'daily' : 'weekly';
+    case 'timesPer':
+      return s.per === 'week' ? 'weekly' : 'monthly';
+    case 'every':
+      if (s.fromDone) return 'chores';
+      if (s.unit === 'month') return 'monthly';
+      return s.unit === 'day' && s.n <= 1 ? 'daily' : 'weekly';
+    default:
+      return 'daily';
+  }
+}
+
+export interface HabitGroup {
+  key: string;
+  /** Empty in the flat layout, where the list has no headers. */
+  label: string;
+  todos: Todo[];
+}
+
+const CADENCE_LABELS: Record<Cadence, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  chores: 'Chores',
+};
+const ROUTINE_LABELS: Record<Routine, string> = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  evening: 'Evening',
+  '': 'Anytime',
+};
+
+/**
+ * The Habits list under a layout preset: one flat group, or the habits
+ * bucketed by cadence or routine in a fixed order, empty buckets dropped.
+ * `habits` arrive in the user's order and keep it inside each group.
+ */
+export function groupHabits(habits: Todo[], layout: HabitsLayout): HabitGroup[] {
+  if (layout === 'flat') return [{ key: 'all', label: '', todos: habits }];
+  const keys: string[] = layout === 'cadence' ? Object.keys(CADENCE_LABELS) : Object.keys(ROUTINE_LABELS);
+  const labels: Record<string, string> = layout === 'cadence' ? CADENCE_LABELS : ROUTINE_LABELS;
+  const of = layout === 'cadence' ? cadenceOf : routineOf;
+  return keys
+    .map((key) => ({ key, label: labels[key], todos: habits.filter((t) => of(t) === key) }))
+    .filter((g) => g.todos.length > 0);
+}
+
+/**
+ * The `sort` writes that drop `activeId` where `overId` sits in the user's
+ * ordered habit list: every row whose index moved gets `sort = index`, which
+ * also renumbers rows still on the pre-order default the first time.
+ */
+export function reorderHabits(ordered: Todo[], activeId: string, overId: string): { id: string; sort: number }[] {
+  const from = ordered.findIndex((t) => t.id === activeId);
+  const to = ordered.findIndex((t) => t.id === overId);
+  if (from === -1 || to === -1) return [];
+  const moved = arrayMove(ordered, from, to);
+  return moved.flatMap((t, i) => (t.sort === i ? [] : [{ id: t.id, sort: i }]));
+}
+
+/** A schedule-shaped label for the habit's identity tag. */
 export function fallbackLabel(todo: Todo): string {
   if (todo.schedule.type === 'once') return 'Task';
   if (todo.schedule.type === 'every' && todo.schedule.fromDone) return 'Chore';

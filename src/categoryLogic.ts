@@ -2,7 +2,7 @@ import { CATEGORY_PALETTE, colorHex, DEFAULT_COLOR } from './colors';
 import type { Category, CategoryScope, NewCategory } from './types';
 
 /** Every surface a category can appear on — what a new one is offered for until narrowed in Settings. */
-export const ALL_SCOPES: CategoryScope[] = ['calendar', 'tasks', 'habits'];
+export const ALL_SCOPES: CategoryScope[] = ['calendar', 'tasks'];
 
 /** A partial category update addressed by id, as `updateCategory` takes it. */
 export type CategoryPatch = Partial<Category> & { id: string };
@@ -34,8 +34,8 @@ export function toggleScope(cat: Category, scope: CategoryScope): CategoryScope[
 }
 
 /** The first palette hue no category wears yet, so new ones start distinct. */
-export function nextColor(categories: Category[]): string {
-  const used = new Set(categories.map((c) => colorHex(c.colorKey).toLowerCase()));
+export function nextColor(coloured: { colorKey: string }[]): string {
+  const used = new Set(coloured.map((c) => colorHex(c.colorKey).toLowerCase()));
   return CATEGORY_PALETTE.find((hex) => !used.has(hex)) ?? DEFAULT_COLOR;
 }
 

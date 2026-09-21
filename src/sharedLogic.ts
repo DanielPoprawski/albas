@@ -38,7 +38,7 @@ function nsCategory(owner: string, rawId: unknown): string {
   return id ? `${owner}:${id}` : '';
 }
 
-const SCOPE_VALUES: CategoryScope[] = ['calendar', 'tasks', 'habits'];
+const SCOPE_VALUES: CategoryScope[] = ['calendar', 'tasks'];
 
 function sharedCategory(id: string, p: Record<string, unknown>): Category {
   return {
@@ -131,6 +131,9 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
             time: str(p.time) || null,
             category: nsCategory(owner, p.category),
             important: !!p.important,
+            notes: str(p.notes),
+            sort: typeof p.sort === 'number' ? p.sort : 0,
+            routine: str(p.routine),
             completions: {},
           });
           todos.set(id, todo);

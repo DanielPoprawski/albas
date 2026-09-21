@@ -111,13 +111,17 @@ export function useSearchState(page: SearchPage) {
   );
   const datedCount = selectedItems.filter((i) => i.kind === 'event' || (i.kind === 'task' && i.todo.dueDate)).length;
 
-  /** Categories the selection could move to: any whose scopes cover a selected kind. */
+  /** Categories the selection could move to: any whose scopes cover a selected kind. Habits have none. */
   const categoryOptions = useMemo<Category[]>(() => {
-    const scopes = new Set<CategoryScope>(
-      selectedItems.map((i) => (i.kind === 'event' ? 'calendar' : i.kind === 'task' ? 'tasks' : 'habits')),
-    );
+    const scopes = new Set<CategoryScope>();
+    for (const i of selectedItems) {
+      if (i.kind === 'event') scopes.add('calendar');
+      else if (i.kind === 'task') scopes.add('tasks');
+    }
     return categories.filter((c) => c.scopes.some((s) => scopes.has(s))).sort(byCategoryOrder);
   }, [categories, selectedItems]);
+  /** Whether the selection holds anything a category applies to. */
+  const categorisable = selectedItems.some((i) => i.kind !== 'habit');
 
   // --- selection ---
 
@@ -230,6 +234,7 @@ export function useSearchState(page: SearchPage) {
     visibleSelectedCount,
     missingCount,
     commonCategory,
+    categorisable,
     commonReminder,
     datedCount,
     categoryOptions,

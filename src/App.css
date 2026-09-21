@@ -548,9 +548,10 @@
   }
 }
 
-/* A bordered, hoverable row — dashboard list rows, task rows, habit cards. */
-@utility row-hover {
-  @apply border border-line bg-surface hover:border-accent hover:bg-subtle transition-all;
+/* A list of to-do rows: one solid box, dashed hairlines between rows (a row
+   draws no border of its own, so dividers never double up). */
+@utility list-rows {
+  @apply border border-line bg-surface divide-y divide-dashed divide-line;
 }
 
 /* The uppercase title inside a card (Settings) — an ink-coloured micro-label
@@ -602,7 +603,7 @@
 /* A selectable pill: category picker, "add a field" rail. Dashed at rest;
    `data-selected` (or hover) turns it solid in the accent. */
 @utility chip {
-  @apply inline-flex items-center gap-[0.3125rem] px-[0.625rem] py-[0.3125rem] text-sm font-medium text-ink-secondary bg-transparent border border-dashed border-line-strong cursor-pointer transition-colors hover:border-accent hover:text-ink;
+  @apply inline-flex items-center gap-[0.3125rem] px-[0.625rem] py-[0.3125rem] text-sm font-medium text-ink-secondary bg-transparent border border-dashed border-line-strong cursor-pointer transition-colors hover:border-accent hover:text-ink max-md:min-h-10;
 
   &[data-selected] {
     @apply border-solid border-accent bg-accent-tint text-accent;

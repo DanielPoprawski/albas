@@ -6,7 +6,8 @@ import { colorHex, DEFAULT_COLOR } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { GENERAL, isDone, isRepeating } from '../../todoLogic';
 import type { Category, CategoryScope } from '../../types';
-import { CategoryMenu, ColorPopover } from './CategoryMenu';
+import { ColorPopover } from '../forms/shared';
+import { CategoryMenu } from './CategoryMenu';
 
 /** The tick box at the head of a category row; `checked` fills it in. */
 const CHECK = 'flex size-3.5 shrink-0 items-center justify-center border border-line-strong text-xs text-accent';
@@ -68,9 +69,6 @@ export default function SidebarCategories({
   const openCount = (catId: string): number => {
     if (currentScope === 'calendar') {
       return events.filter((e) => e.category === catId).length;
-    }
-    if (currentScope === 'habits') {
-      return todos.filter((t) => isRepeating(t) && t.category === catId).length;
     }
     return todos.filter((t) => !isRepeating(t) && !isDone(t) && t.category === catId).length;
   };

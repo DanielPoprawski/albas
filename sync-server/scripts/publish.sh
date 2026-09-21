@@ -11,7 +11,7 @@
 set -euo pipefail
 
 # user@host of the deploy target; kept out of the repo. Same variable admin.sh reads.
-DEPLOY_HOST=${ALBAS_DEPLOY_HOST:-}
+DEPLOY_HOST=daniel@ssh.danni-dev.com
 DEPLOY=1
 [[ "${1:-}" == "--build-only" ]] && DEPLOY=0
 

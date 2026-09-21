@@ -12,10 +12,27 @@ import { Card } from './shared';
  * read from `useApp()` rather than local state.
  */
 export function PreferencesCard() {
-  const { firstDayOfWeek, setSetting } = useApp();
+  const { firstDayOfWeek, habitsLayout, setSetting } = useApp();
 
   return (
     <Card title="Preferences">
+      <div className="mb-4">
+        <div className="setting-label mb-2">Habits are grouped</div>
+        <Segmented
+          aria-label="Habits layout"
+          options={[
+            { value: 'flat', label: 'Not at all' },
+            { value: 'cadence', label: 'By cadence' },
+            { value: 'routine', label: 'By routine' },
+          ]}
+          value={habitsLayout}
+          onChange={(v) => setSetting('habitsLayout', v)}
+        />
+        <p className="setting-desc mt-2">
+          One list in your own order; or sections for daily, weekly, monthly and chores; or morning, afternoon, evening
+          and anytime, from each habit’s routine tag or reminder time.
+        </p>
+      </div>
       <div>
         <div className="setting-label mb-2">Week starts on</div>
         <Segmented

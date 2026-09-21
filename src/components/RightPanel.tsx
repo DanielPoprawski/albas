@@ -4,7 +4,7 @@ import QuickAddField from './QuickAddField';
 import ResizeHandle, { useResizableWidth } from './ResizeHandle';
 import { useInlineEdit } from './useInlineEdit';
 import { fmt, weekOf } from '../dates';
-import { byDashboardOrder, dashboardTasks, groupTasks, isRepeating } from '../todoLogic';
+import { byDashboardOrder, byHabitOrder, dashboardTasks, groupTasks, isRepeating } from '../todoLogic';
 import type { Todo } from '../types';
 import { accentOf, colorHex } from '../colors';
 import { Card } from './ui/card';
@@ -28,9 +28,9 @@ export default function RightPanel() {
   // Get today's date
   const today = fmt(new Date());
 
-  // Habits and tasks, minus the categories the sidebar has hidden
+  // Tasks minus the categories the sidebar has hidden; habits in the user's order.
   const visible = todos.filter((t) => !hiddenCategoryIds.has(t.category));
-  const habits = visible.filter(isRepeating);
+  const habits = todos.filter(isRepeating).sort(byHabitOrder);
 
   // Get this week's dates (7 days)
   const weekDateStrs = weekOf(new Date(), firstDayOfWeek);
@@ -105,7 +105,7 @@ export default function RightPanel() {
           <SectionHeading className="text-sm font-bold tracking-wider text-accent-deep mb-2">Tasks</SectionHeading>
 
           <div className="space-y-md">
-            <div className="space-y-xs">
+            <div className="list-rows">
               {topTasks.map((task) => (
                 <TaskRow key={task.id} {...taskRowProps(task)} />
               ))}
@@ -113,7 +113,7 @@ export default function RightPanel() {
             {categoryGroups.map(({ category, todos: rows }) => {
               const cat = categoryById(category);
               return (
-                <div key={category} className="space-y-xs">
+                <div key={category}>
                   <SectionHeading
                     className="text-xs mb-1"
                     // dynamic: the category's own colour
@@ -121,9 +121,11 @@ export default function RightPanel() {
                   >
                     {cat?.name ?? category}
                   </SectionHeading>
-                  {rows.map((task) => (
-                    <TaskRow key={task.id} {...taskRowProps(task)} />
-                  ))}
+                  <div className="list-rows">
+                    {rows.map((task) => (
+                      <TaskRow key={task.id} {...taskRowProps(task)} />
+                    ))}
+                  </div>
                 </div>
               );
             })}

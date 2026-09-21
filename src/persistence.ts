@@ -18,7 +18,7 @@ export interface LoadedState {
   empty: boolean;
 }
 
-const SCOPE_VALUES: CategoryScope[] = ['calendar', 'tasks', 'habits'];
+const SCOPE_VALUES: CategoryScope[] = ['calendar', 'tasks'];
 
 /** `scopes` is a CSV in SQLite/sync payloads; the app works with the array. */
 function rowToCategory(row: CategoryRow): Category {

@@ -18,8 +18,6 @@ interface TaskRowProps {
   /** Whether the inline editor is open under this row (one at a time, owned by the list). */
   expanded?: boolean;
   onToggleExpand?: () => void;
-  /** The Edit · Delete pair at the row's end — the phone dashboard, which has no context menu. */
-  actions?: boolean;
   selected?: boolean;
   /** Ctrl/Shift selection; a `'plain'` result means the click should expand instead. */
   onRowClick?: (e: React.MouseEvent) => RowClickResult;
@@ -32,7 +30,8 @@ interface TaskRowProps {
  * One-time to-do, the same row on every surface: star, checkbox, name, then a
  * meta line (due moment). The checkbox is the only thing that
  * toggles done — on the day `completionDay` says — and the row itself opens
- * the inline editor beneath it.
+ * the inline editor beneath it. On touch there is no inline editor: the row
+ * opens the full modal, which is the only editor a phone gets.
  */
 export default function TaskRow({
   task,
@@ -40,22 +39,25 @@ export default function TaskRow({
   onEdit,
   expanded = false,
   onToggleExpand,
-  actions = false,
   selected = false,
   onRowClick,
   onContextMenu,
   className,
 }: TaskRowProps) {
   const { toggleTodo, updateTodo } = useApp();
+  const coarse = useIsCoarsePointer();
   const done = isDone(task);
   const hex = colorHex(task.colorKey);
   const due = dueLabel(task, today);
 
-  // A plain click (no Ctrl/Shift) opens the inline editor; the modifiers
-  // belong to the list's selection and never expand.
+  // A plain click (no Ctrl/Shift) opens the inline editor, or the modal on
+  // touch; the modifiers belong to the list's selection and never expand.
   const handleClick = (e: React.MouseEvent) => {
     const result = onRowClick ? onRowClick(e) : 'plain';
-    if (result === 'plain') onToggleExpand?.();
+    if (result === 'plain') {
+      if (coarse) onEdit(task);
+      else onToggleExpand?.();
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -76,7 +78,7 @@ export default function TaskRow({
       onKeyDown={handleKeyDown}
       onContextMenu={onContextMenu}
       className={cn(
-        'group row-hover flex flex-wrap items-center gap-2.5 px-3 py-2.5 cursor-pointer',
+        'group flex flex-wrap items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors hover:bg-subtle',
         done && 'opacity-55',
         selected && 'bg-accent/10 ring-1 ring-inset ring-accent/30 border-l-2 border-accent',
         className,
@@ -119,60 +121,10 @@ export default function TaskRow({
         )}
       </div>
 
-      {actions && <RowActions todo={task} onEdit={onEdit} />}
-
       {/* The light editor, under the row; the modal stays the "Advanced" path. */}
-      {expanded && (
+      {expanded && !coarse && (
         <InlineEditor todo={task} autoFocusTitle onAdvanced={() => onEdit(task)} className="basis-full pt-1" />
       )}
     </div>
-  );
-}
-
-/**
- * Edit/delete pair shared by the habit and task rows.
- *
- * Words, not icons, and the block is *always laid out* — only its opacity
- * changes. Revealing it with `hidden`/`flex` re-flowed the whole row on hover,
- * which shifted the name and status text sideways every time the pointer
- * crossed a habit. Reserving the space costs a little width and nothing else.
- *
- * There is no hover on a touchscreen, so below the phone breakpoint the pair
- * stays visible — otherwise editing a to-do would be unreachable there.
- */
-const ACTION = 'micro-label transition-colors';
-
-export function RowActions({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
-  const { deleteTodo } = useApp();
-  const isCoarse = useIsCoarsePointer();
-  return (
-    <span
-      className={cn(
-        'flex items-center gap-xs flex-shrink-0 opacity-0 max-md:opacity-100 [@media(pointer:coarse)]:opacity-100 group-hover:opacity-100 transition-opacity',
-        isCoarse && 'opacity-100',
-      )}
-    >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit(todo);
-        }}
-        className={`${ACTION} text-ink-muted hover:text-ink`}
-      >
-        Edit
-      </button>
-      <span className="text-xs text-ink-muted select-none">·</span>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          deleteTodo(todo.id);
-        }}
-        className={`${ACTION} text-ink-muted hover:text-danger`}
-      >
-        Delete
-      </button>
-    </span>
   );
 }

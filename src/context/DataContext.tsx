@@ -6,9 +6,9 @@ import type { SyncOutcome } from '../ipc';
 import { loadInitialState, seedDemoTodos } from '../loadState';
 import { migrateTodo } from '../migrations';
 import { inTauri, persistence } from '../persistence';
-import { displayColor } from '../colors';
+import { colorHex, displayColor } from '../colors';
 import { mapSharedRows } from '../sharedLogic';
-import { isRepeating } from '../todoLogic';
+import { isRepeating, nextHabitSort } from '../todoLogic';
 import type {
   CalendarEvent,
   Category,
@@ -16,6 +16,7 @@ import type {
   NewCategory,
   NewEvent,
   NewTodo,
+  Repeat,
   SharedGroup,
   Todo,
 } from '../types';
@@ -174,12 +175,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const addTodo = useCallback(
     (todo: NewTodo) => {
-      const full: Todo = { ...todo, id: crypto.randomUUID(), createdAt: fmt(new Date()), completions: {} };
+      const full: Todo = {
+        ...todo,
+        id: crypto.randomUUID(),
+        createdAt: fmt(new Date()),
+        completions: {},
+        // A new habit lands at the end of the list.
+        sort: isRepeating(todo) ? nextHabitSort(todos) : 0,
+      };
       setTodos((prev) => [...prev, full]);
       persistence.saveTodo(full);
       scheduleSync();
     },
-    [scheduleSync],
+    [scheduleSync, todos],
   );
 
   const updateTodo = useCallback(
@@ -333,15 +341,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const visibleShared = useMemo(() => shared.filter((g) => !hiddenOwners.includes(g.owner)), [shared, hiddenOwners]);
 
-  // What consumers see is *painted*: every row's `colorKey` is replaced by its
-  // category's colour (or the neutral for General) before it leaves the
-  // context, so no render site has to know that colours belong to categories
-  // and a recolour propagates everywhere at once. The raw rows above keep the
-  // stored key, which is what the mutators patch and persist — so no edit
-  // surface may hand a painted `colorKey` back (the forms don't).
+  // What consumers see is *painted*: every event's and task's `colorKey` is
+  // replaced by its category's colour (or the neutral for General) before it
+  // leaves the context, so no render site has to know that colours belong to
+  // categories and a recolour propagates everywhere at once. The raw rows
+  // above keep the stored key, which is what the mutators patch and persist —
+  // so no edit surface may hand a painted `colorKey` back (the forms don't).
+  // A habit's colour is its own: it is only resolved from a legacy key.
   const paint = useCallback(
-    <T extends { category: string; colorKey: string }>(rows: T[]): T[] =>
-      rows.map((r) => ({ ...r, colorKey: displayColor(r, categoryById) })),
+    <T extends { category: string; colorKey: string; schedule?: Repeat }>(rows: T[]): T[] =>
+      rows.map((r) => ({
+        ...r,
+        colorKey:
+          r.schedule && isRepeating({ schedule: r.schedule }) ? colorHex(r.colorKey) : displayColor(r, categoryById),
+      })),
     [categoryById],
   );
   const paintedTodos = useMemo(() => paint(todos), [paint, todos]);

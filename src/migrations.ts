@@ -2,7 +2,15 @@
 // reuse them without importing the provider (which imports sharedLogic — a
 // cycle otherwise). No React, no persistence: raw saved shapes in, app types out.
 
-import type { CalendarEvent, Category, LegacyPeriod, LegacyTask, Repeat, Todo } from './types';
+import {
+  type CalendarEvent,
+  type Category,
+  type LegacyPeriod,
+  type LegacyTask,
+  type Repeat,
+  ROUTINES,
+  type Todo,
+} from './types';
 import { fmt } from './dates';
 import { DEFAULT_COLOR } from './colors';
 
@@ -67,6 +75,9 @@ export function migrateTodo(t: any): Todo {
     reminder: !!t?.reminder,
     category: typeof t?.category === 'string' ? t.category : '',
     important: !!t?.important,
+    notes: typeof t?.notes === 'string' ? t.notes : '',
+    sort: typeof t?.sort === 'number' ? t.sort : 0,
+    routine: ROUTINES.includes(t?.routine) ? t.routine : '',
     completions,
   };
 }
@@ -99,7 +110,10 @@ export function taskToTodo(t: LegacyTask): Todo {
     // Legacy tasks all defaulted to 'General', so carrying that through would
     // file every imported task under a category the user never chose.
     category: t.category === 'General' ? '' : t.category,
+    sort: 0,
+    routine: '',
     important: false,
+    notes: '',
     completions: t.completed ? { [t.date ?? todayStr]: 1 } : {},
   };
 }

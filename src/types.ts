@@ -16,8 +16,12 @@ export type Repeat =
 
 export type TodoKind = 'yesno' | 'measurable';
 
-/** Which surfaces a category can be assigned on. */
-export type CategoryScope = 'calendar' | 'tasks' | 'habits';
+/** Which surfaces a category can be assigned on. Habits have none: they carry their own colour. */
+export type CategoryScope = 'calendar' | 'tasks';
+
+/** A habit's time-of-day tag; '' = untagged (the Routine layout infers one from `time`). */
+export type Routine = '' | 'morning' | 'afternoon' | 'evening';
+export const ROUTINES: Routine[] = ['', 'morning', 'afternoon', 'evening'];
 
 /**
  * A user-managed, synced grouping — replaces the old free-text
@@ -56,10 +60,17 @@ export interface Todo {
   /**
    * Category id, empty for uncategorised. Was free text; a synced
    * `categories` table now owns the name/colour (`DataContext`'s `categoryById`).
+   * Repeating to-dos (habits) ignore it — they paint from their own `colorKey`.
    */
   category: string;
   /** Starred. Sorts above everything else in its category. */
   important: boolean;
+  /** Free-text notes; '' when none. */
+  notes: string;
+  /** Manual order in the Habits list (repeating to-dos only); 0 for rows that predate it. */
+  sort: number;
+  /** Habit routine tag; ignored on once to-dos. */
+  routine: Routine;
   /** Progress per day. Yes/no to-dos store 1 when done. */
   completions: Record<string, number>;
 }
@@ -119,6 +130,9 @@ export type ThemeName = 'light' | 'dark';
 export type ThemePref = ThemeName | 'system';
 /** Which weekday grids start on, as a JS `getDay()` value: 0 = Sunday, 1 = Monday. */
 export type FirstDayOfWeek = 0 | 1;
+/** How the Habits list is grouped: not at all, by schedule cadence, or by routine tag/time of day. */
+export type HabitsLayout = 'flat' | 'cadence' | 'routine';
+export const HABITS_LAYOUTS: HabitsLayout[] = ['flat', 'cadence', 'routine'];
 
 /** One raw row another account shared with us, as loaded from `shared_rows`. */
 export interface RawSharedRow {

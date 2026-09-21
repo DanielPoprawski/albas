@@ -62,35 +62,37 @@ export default function EditPanel({ s }: { s: SearchState }) {
             <InlineEditor todo={one.todo} onAdvanced={s.openFullEditor} />
           ))}
 
-        <section className="flex flex-col gap-1">
-          <h4 className={SECTION}>Category</h4>
-          <button
-            type="button"
-            onClick={() => s.applyCategory('')}
-            className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-ink-secondary hover:bg-subtle"
-          >
-            <span className="size-2 border border-line-strong" aria-hidden />
-            <span className="flex-1 text-left">None</span>
-            {s.commonCategory === '' && <Check size="0.75rem" className="text-accent" />}
-          </button>
-          {s.categoryOptions.map((c) => (
+        {s.categorisable && (
+          <section className="flex flex-col gap-1">
+            <h4 className={SECTION}>Category</h4>
             <button
-              key={c.id}
               type="button"
-              onClick={() => s.applyCategory(c.id)}
-              className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-ink hover:bg-subtle"
+              onClick={() => s.applyCategory('')}
+              className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-ink-secondary hover:bg-subtle"
             >
-              <span
-                className="size-2"
-                aria-hidden
-                // dynamic: the category's own colour
-                style={{ background: colorHex(c.colorKey) }}
-              />
-              <span className="flex-1 truncate text-left">{c.name}</span>
-              {s.commonCategory === c.id && <Check size="0.75rem" className="text-accent" />}
+              <span className="size-2 border border-line-strong" aria-hidden />
+              <span className="flex-1 text-left">None</span>
+              {s.commonCategory === '' && <Check size="0.75rem" className="text-accent" />}
             </button>
-          ))}
-        </section>
+            {s.categoryOptions.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => s.applyCategory(c.id)}
+                className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-ink hover:bg-subtle"
+              >
+                <span
+                  className="size-2"
+                  aria-hidden
+                  // dynamic: the category's own colour
+                  style={{ background: colorHex(c.colorKey) }}
+                />
+                <span className="flex-1 truncate text-left">{c.name}</span>
+                {s.commonCategory === c.id && <Check size="0.75rem" className="text-accent" />}
+              </button>
+            ))}
+          </section>
+        )}
 
         <section className="flex flex-col gap-1.5">
           <h4 className={SECTION}>

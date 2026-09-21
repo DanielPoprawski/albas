@@ -32,7 +32,7 @@ export default function SelectionBar({
 
   const categoryOptions = [
     { value: '', label: GENERAL },
-    ...categoriesFor(scope).map((c) => ({ value: c.id, label: c.name })),
+    ...categoriesFor('tasks').map((c) => ({ value: c.id, label: c.name })),
   ];
   // The category every selected to-do shares, or General when they differ.
   const first = items[0];
@@ -67,12 +67,12 @@ export default function SelectionBar({
         <button type="button" onClick={() => actions.setImportant(false)} className={ACTION}>
           Unstar
         </button>
-        <label className="flex items-center gap-1.5 text-xs text-ink-secondary">
-          Category
-          <Select options={categoryOptions} value={common} onChange={actions.applyCategory} className="w-auto" />
-        </label>
         {scope === 'tasks' && (
           <>
+            <label className="flex items-center gap-1.5 text-xs text-ink-secondary">
+              Category
+              <Select options={categoryOptions} value={common} onChange={actions.applyCategory} className="w-auto" />
+            </label>
             <button
               type="button"
               onClick={() => actions.applyShift(-1)}

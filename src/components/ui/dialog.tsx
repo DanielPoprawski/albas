@@ -30,7 +30,7 @@ const DialogOverlay = React.forwardRef<
         // bg-scrim, not the stock bg-black/50: this app's scrim is a theme
         // variable and carries a blur, and a literal black would not follow
         // the light theme.
-        'fixed inset-0 z-50 bg-scrim backdrop-blur-[0.25rem] data-[state=open]:animate-[fade_150ms_ease-out_both] data-[state=closed]:animate-[fade_150ms_ease-in_reverse_both] motion-reduce:animate-none',
+        'fixed inset-x-0 top-0 bottom-8 z-50 bg-scrim backdrop-blur-[0.25rem] max-md:bottom-0 data-[state=open]:animate-[fade_150ms_ease-out_both] data-[state=closed]:animate-[fade_150ms_ease-in_reverse_both] motion-reduce:animate-none',
         className,
       )}
       {...props}

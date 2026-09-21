@@ -1,5 +1,7 @@
 import { type RefObject, useCallback, useEffect, useRef } from 'react';
 
+import { useIsMobile } from '../../useMedia';
+
 /**
  * Animates `card`'s height towards `inner`'s content height with a critically
  * damped spring, so a modal whose rows appear and disappear grows and shrinks
@@ -7,12 +9,15 @@ import { type RefObject, useCallback, useEffect, useRef } from 'react';
  * (no React state per frame); `prefers-reduced-motion` snaps instead. A
  * `ResizeObserver` on `inner` catches content changes; the returned
  * `measure` is for callers that know a change is coming before layout does.
+ * Below the phone breakpoint the card is a full-screen sheet, so the hook
+ * clears the inline height and stays out of the way.
  */
 export function useSpringHeight(
   card: RefObject<HTMLElement | null>,
   inner: RefObject<HTMLElement | null>,
   snappiness = 1,
 ): () => void {
+  const isMobile = useIsMobile();
   const raf = useRef<number | null>(null);
   const height = useRef<number | null>(null);
   const velocity = useRef(0);
@@ -55,6 +60,12 @@ export function useSpringHeight(
   }, [snappiness, setHeight]);
 
   const measure = useCallback(() => {
+    if (isMobile) {
+      if (card.current) card.current.style.height = '';
+      height.current = null;
+      target.current = null;
+      return;
+    }
     if (!inner.current || !card.current) return;
     const next = Math.min(inner.current.scrollHeight, Math.round(window.innerHeight * 0.88));
     if (next === target.current) return;
@@ -68,15 +79,21 @@ export function useSpringHeight(
       return;
     }
     tick();
-  }, [inner, card, tick, setHeight]);
+  }, [inner, card, tick, setHeight, isMobile]);
 
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => measure());
-    if (inner.current) ro.observe(inner.current);
+    const el = inner.current;
+    if (el) ro.observe(el);
+    // The card's fixed height keeps `inner` from growing with its content, so
+    // the observer misses a row that is still animating in (`row-in` starts
+    // at max-height 0). Its `animationend` is the moment to measure again.
+    el?.addEventListener('animationend', measure);
     measure();
     return () => {
       ro.disconnect();
+      el?.removeEventListener('animationend', measure);
       if (raf.current) cancelAnimationFrame(raf.current);
       raf.current = null;
     };

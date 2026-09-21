@@ -1,11 +1,8 @@
 // Reminder lead times, in minutes before an event's start (or a to-do's
-// time). One table for every surface that offers them: the create modal's
-// chips, the bulk-edit panel, and the event form's picker.
+// time). One table for both surfaces that offer them: the Add modal's chips
+// and the bulk-edit panel.
 
-/** Lead times offered as one tap in the full picker. */
-export const REMINDER_PRESETS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080] as const;
-
-/** The short list the chip surfaces (create modal, bulk panel) show. */
+/** The short list the chip surfaces (Add modal, bulk panel) show. */
 export const REMINDER_QUICK = [0, 5, 10, 15, 30, 60, 1440, 10080] as const;
 
 /** A bulk-edit choice: no reminder, or one lead time. To-dos only know on/off. */

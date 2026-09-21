@@ -1,15 +1,12 @@
-import { useRef, type ReactNode } from 'react';
-import { DropdownMenu, Popover as PopoverPrimitive } from 'radix-ui';
+import { useRef } from 'react';
+import { DropdownMenu } from 'radix-ui';
 import { ArrowDown, ArrowUp, Check, MoreHorizontal, Palette, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Category, CategoryScope } from '../../types';
-import { ColorPicker } from '../forms/shared';
-import { PopoverContent } from '../ui/popover';
 
 export const SCOPE_OPTIONS: { value: CategoryScope; label: string }[] = [
   { value: 'calendar', label: 'Calendar' },
   { value: 'tasks', label: 'Tasks' },
-  { value: 'habits', label: 'Habits' },
 ];
 
 /** The sidebar's hover-revealed "…" trigger: laid out always, painted on hover/focus/open. */
@@ -129,33 +126,5 @@ export function CategoryMenu({
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
-  );
-}
-
-/**
- * A `ColorPicker` in a small panel anchored to whatever it wraps — a sidebar
- * row or the new-category swatch. Controlled by the caller, so the menu's
- * "Color" item and the swatch button can both open it.
- */
-export function ColorPopover({
-  open,
-  onOpenChange,
-  value,
-  onChange,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  value: string;
-  onChange: (hex: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <PopoverPrimitive.Anchor asChild>{children}</PopoverPrimitive.Anchor>
-      <PopoverContent align="start" className="w-auto">
-        <ColorPicker value={value} onChange={onChange} />
-      </PopoverContent>
-    </PopoverPrimitive.Root>
   );
 }

@@ -36,7 +36,8 @@ unnecessary. A new file or dependency needs a reason a smaller edit couldn't cov
 ## Data & sync invariants
 - **Synced column = 4 touches**: `db.rs` (`SCHEMA` + `user_version` migration), `src-tauri/src/sync.rs`
   `TABLES`, `sharedLogic.ts` (+ `persistence.ts` both branches and `src/ipc.ts`). Mismatch = silent no-sync. `todos.category` /
-  `events.category` hold a category **id** ('' = none). A new column on a shipped sync-server table
+  `events.category` hold a category **id** ('' = none); repeating to-dos (habits) ignore it — their colour is
+  their own `colorKey`, `sort`/`routine` are habit-only, and `habitsLayout` is a synced setting. A new column on a shipped sync-server table
   needs an `ensure_column()` call in `schema.rs` `init_db`, not just `SCHEMA`.
 - Server stores opaque `(account, table, pk) → payload`, never parses it. Two clocks: `updated_at`
   (device, last-write-wins per row) and `seq` (server, resume point). `__`-prefixed settings are local

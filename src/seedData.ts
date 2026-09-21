@@ -22,6 +22,9 @@ const baseTodo = {
   reminder: false,
   category: '',
   important: false,
+  notes: '',
+  sort: 0,
+  routine: '' as const,
 };
 
 export const initialTodos: Todo[] = [

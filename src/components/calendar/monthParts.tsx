@@ -46,7 +46,7 @@ const CELL_VARIANTS = {
     dayRow: 'flex items-start justify-between mb-xs',
     dayNumber: 'text-xs font-semibold',
     chips: 'gap-[2px] mt-auto text-xs',
-    chip: 'text-xs font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap border',
+    chip: 'text-xs font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap border hover:shadow-pop',
     paint: desktopPaint,
     /* The time prefix only fits at desktop widths. */
     time: true,
@@ -59,7 +59,7 @@ const CELL_VARIANTS = {
     dayRow: '',
     dayNumber: 'text-xs px-0.5',
     chips: 'gap-px mt-px',
-    chip: 'text-xs font-semibold px-px overflow-hidden whitespace-nowrap hover:opacity-80',
+    chip: 'text-xs font-semibold px-px overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop',
     paint: mobilePaint,
     time: false,
     more: (n: number) => `+${n}`,
@@ -76,6 +76,7 @@ export function MonthCell({
   variant,
   className,
   onDayClick,
+  onShowDay,
   onEditEvent,
   onEditTodo,
 }: {
@@ -85,6 +86,7 @@ export function MonthCell({
   /** Borders and any layout-specific extras (the phone's selected tint). */
   className?: string;
   onDayClick: (dateStr: string) => void;
+  onShowDay: (dateStr: string) => void;
   onEditEvent: (o: Occurrence) => void;
   onEditTodo: (t: Todo) => void;
 }) {
@@ -180,7 +182,16 @@ export function MonthCell({
           ),
         )}
         {cell.hiddenCount > 0 && (
-          <div className={cn('text-xs text-ink-muted', v.morePad)}>{v.more(cell.hiddenCount)}</div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShowDay(cell.dateStr);
+            }}
+            className={cn('cursor-pointer text-left text-xs text-ink-muted hover:text-ink hover:underline', v.morePad)}
+          >
+            {v.more(cell.hiddenCount)}
+          </button>
         )}
       </div>
     </div>
@@ -255,7 +266,7 @@ export function PeriodTitles({ cell, onEditEvent }: { cell: DayCell; onEditEvent
             onEditEvent(o);
           }}
           title={sharedTitleAttr(o.event)}
-          className="text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap hover:opacity-70"
+          className="text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap hover:opacity-70 hover:shadow-pop"
           // dynamic: the event's own colour, dimmed when shared
           style={{ color: colorHex(o.event.colorKey), opacity: (sharedOpacity(o.event) ?? 1) * dimFactor }}
         >
@@ -303,7 +314,7 @@ export function BarsOverlay({
               onEditEvent(seg.item);
             }}
             title={sharedTitleAttr(seg.item.event)}
-            className={`pointer-events-auto cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
+            className={`pointer-events-auto cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
             // dynamic: grid placement and the event's own colour
             style={{
               gridColumn: `${seg.startCol} / span ${seg.span}`,

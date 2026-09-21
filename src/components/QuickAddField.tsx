@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Plus, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
+import { nextColor } from '../categoryLogic';
 import { buildCreate } from '../createItem';
 import InlineEditor, { InlineEventEditor } from './InlineEditor';
 import { fmt } from '../dates';
+import { isRepeating } from '../todoLogic';
 import { parseWhen, stripMatch } from '../nlDate';
 import type { AddType } from '../types';
 import AddModal from './AddModal';
@@ -96,6 +98,8 @@ export default function QuickAddField({
       allDay: type === 'event' && !when?.start.time,
       dueDate: type === 'task' ? (when?.start.date ?? null) : startDate,
       category: defaultCategory,
+      // A new habit takes the first palette hue no habit uses yet.
+      colorKey: type === 'habit' ? nextColor(todos.filter(isRepeating)) : undefined,
     });
     if (payload.kind === 'event') addEvent(payload.event);
     else addTodo(payload.todo);

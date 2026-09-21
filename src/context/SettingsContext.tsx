@@ -13,7 +13,7 @@ import {
 } from '../appearance';
 import { persistence } from '../persistence';
 import { requestSync } from '../syncBus';
-import type { FirstDayOfWeek, ThemeName, ThemePref } from '../types';
+import { type FirstDayOfWeek, HABITS_LAYOUTS, type HabitsLayout, type ThemeName, type ThemePref } from '../types';
 
 export interface SettingsContextType {
   /** The theme being painted — `themePref` with `system` resolved against the OS. */
@@ -25,6 +25,8 @@ export interface SettingsContextType {
   font: FontChoice;
   fontSize: FontSizeChoice;
   firstDayOfWeek: FirstDayOfWeek;
+  /** Settings › Preferences: how the Habits list is grouped. */
+  habitsLayout: HabitsLayout;
   setSetting: (key: string, value: string) => void;
   /** Raw read of any setting, layout's included. */
   getSetting: (key: string) => string | undefined;
@@ -129,6 +131,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       ...appearance,
       // Sunday by default as of v1.7; only an explicit '1' opts into Monday.
       firstDayOfWeek: settings.firstDayOfWeek === '1' ? 1 : 0,
+      habitsLayout: HABITS_LAYOUTS.find((l) => l === settings.habitsLayout) ?? 'flat',
       setSetting,
       getSetting,
       hydrateSettings,

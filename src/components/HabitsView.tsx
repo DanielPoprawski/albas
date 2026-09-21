@@ -1,44 +1,47 @@
 import { useState } from 'react';
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import QuickAddField from './QuickAddField';
 import SearchPalette from './search/SearchPalette';
-import { colorHex } from '../colors';
 import { useApp } from '../context/AppContext';
 import { fmt } from '../dates';
 import { todoKey } from '../itemKeys';
-import { GENERAL, groupTasks, isRepeating } from '../todoLogic';
+import { byHabitOrder, isRepeating } from '../todoLogic';
 import SelectionBar from './bulk/SelectionBar';
 import { useListSelection } from './bulk/useListSelection';
 import HabitDrawer from './habits/HabitDrawer';
 import HabitRow from './habits/HabitRow';
-import { buildHabitData } from './habits/habitModel';
+import { buildHabitData, groupHabits, reorderHabits } from './habits/habitModel';
 import { toSearchItems } from './search/searchItems';
 import { AccordionHeader } from './ui/accordion-header';
 
 export default function HabitsView() {
-  const { todos, firstDayOfWeek, categoriesFor, categoryById, hiddenCategoryIds } = useApp();
+  const { todos, updateTodo, firstDayOfWeek, categoryById, habitsLayout } = useApp();
   const today = fmt(new Date());
 
-  // Repeating to-dos (habits), minus the categories the sidebar has hidden,
-  // grouped by category with General first. General is always drawn so
-  // there is somewhere to add the first habit.
-  const groups = groupTasks(
-    todos.filter((t) => isRepeating(t) && !hiddenCategoryIds.has(t.category)),
-    categoriesFor('habits').map((c) => c.id),
-  );
-  if (groups[0]?.category !== '') groups.unshift({ category: '', todos: [] });
-  const shown = groups.flatMap((g) => g.todos);
-  const habits = shown.map((todo) => buildHabitData(todo, firstDayOfWeek, today));
+  // Repeating to-dos (habits) in the user's order, grouped per the Settings
+  // layout — one headerless group when flat.
+  const ordered = todos.filter(isRepeating).sort(byHabitOrder);
+  const groups = groupHabits(ordered, habitsLayout);
+  const habits = ordered.map((todo) => buildHabitData(todo, firstDayOfWeek, today));
 
-  const orderedKeys = shown.map(todoKey);
-  const generalKeys = shown.filter((t) => t.category === '').map(todoKey);
-  const selection = useListSelection(orderedKeys, generalKeys);
+  const orderedKeys = ordered.map(todoKey);
+  const selection = useListSelection(orderedKeys, orderedKeys);
   const selectedItems =
     selection.selected.size === 0
       ? []
       : toSearchItems(
           [],
           [],
-          shown.filter((t) => selection.selected.has(todoKey(t))),
+          ordered.filter((t) => selection.selected.has(todoKey(t))),
           categoryById,
           firstDayOfWeek,
           today,
@@ -55,6 +58,21 @@ export default function HabitsView() {
       if (!next.delete(id)) next.add(id);
       return next;
     });
+
+  // Drag to reorder, within a group. The pointer must travel a little first
+  // so a click on the handle's row still selects or opens the drawer.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const group = groups.find((g) => g.todos.some((t) => t.id === active.id));
+    if (!group?.todos.some((t) => t.id === over.id)) return;
+    for (const patch of reorderHabits(ordered, String(active.id), String(over.id))) {
+      updateTodo(patch.id, { sort: patch.sort });
+    }
+  };
 
   return (
     // `flex-1 min-w-0` + a white ground: this is the design's `.main-column`,
@@ -74,45 +92,55 @@ export default function HabitsView() {
           <SelectionBar items={selectedItems} scope="habits" selection={selection} className="mx-0 mb-0" />
         )}
 
-        {groups.map(({ category, todos: rows }) => {
-          const cat = categoryById(category);
-          const closed = collapsed.has(category);
-          return (
-            <div key={category || GENERAL} className="flex flex-col">
-              <AccordionHeader
-                name={cat?.name ?? GENERAL}
-                color={cat && colorHex(cat.colorKey)}
-                count={rows.length}
-                open={!closed}
-                onToggle={() => toggleCollapsed(category)}
-              />
-              {!closed && (
-                <div className="flex flex-col border border-line border-t-0 divide-y divide-dotted divide-line">
-                  {habits
-                    .filter((h) => rows.includes(h.todo))
-                    .map((h) => {
-                      const open = h.todo.id === expandedId;
-                      return (
-                        <div key={h.todo.id}>
-                          <HabitRow
-                            habit={h}
-                            today={today}
-                            open={open}
-                            onToggleOpen={() => setExpanded(open ? null : h.todo.id)}
-                            selected={selection.isSelected(todoKey(h.todo))}
-                            onRowClick={(e) => selection.onRowClick(e, todoKey(h.todo))}
-                            onContextMenu={selection.onContextMenu}
-                          />
-                          {open && <HabitDrawer habit={h} />}
-                        </div>
-                      );
-                    })}
-                  <QuickAddField type="habit" variant="row" defaultCategory={category} />
-                </div>
-              )}
-            </div>
-          );
-        })}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          {groups.map(({ key, label, todos: rows }) => {
+            const closed = label !== '' && collapsed.has(key);
+            return (
+              <div key={key} className="flex flex-col">
+                {label !== '' && (
+                  <AccordionHeader
+                    name={label}
+                    count={rows.length}
+                    open={!closed}
+                    onToggle={() => toggleCollapsed(key)}
+                  />
+                )}
+                {!closed && (
+                  <div className="flex flex-col border border-line divide-y divide-dotted divide-line">
+                    <SortableContext items={rows.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                      {habits
+                        .filter((h) => rows.includes(h.todo))
+                        .map((h) => {
+                          const open = h.todo.id === expandedId;
+                          return (
+                            <HabitRow
+                              key={h.todo.id}
+                              habit={h}
+                              today={today}
+                              open={open}
+                              onToggleOpen={() => setExpanded(open ? null : h.todo.id)}
+                              selected={selection.isSelected(todoKey(h.todo))}
+                              onRowClick={(e) => selection.onRowClick(e, todoKey(h.todo))}
+                              onContextMenu={selection.onContextMenu}
+                              draggable={ordered.length > 1}
+                            >
+                              {open && <HabitDrawer habit={h} />}
+                            </HabitRow>
+                          );
+                        })}
+                    </SortableContext>
+                    {label === '' && <QuickAddField type="habit" variant="row" />}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </DndContext>
+        {habitsLayout !== 'flat' && (
+          <div className="border border-line">
+            <QuickAddField type="habit" variant="row" />
+          </div>
+        )}
       </div>
     </div>
   );

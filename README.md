@@ -228,11 +228,12 @@ source of truth that silently drifts from what is actually deployed.
 
 ### Known gaps
 
-- To-do reminders fire on the due day, not at the to-do's `time`. The habits route is unpersisted
-  (`ActiveView` has no name for it).
+- To-do reminders fire at the to-do's `time` (09:00 when unset) on a due day, on the app's five-minute
+  poll — so up to five minutes late. The habits route is unpersisted (`ActiveView` has no name for it).
 - Settings' display name is read-only.
-- `CalendarEvent` has no `location`, so the Add modal folds it into the description. Categories seed
-  only on a fresh, signed-out install.
+- `CalendarEvent` has no `location`; the modal stores it as a `Location: …` first paragraph of the
+  description and `splitLocation()` reads it back on edit. Categories seed only on a fresh,
+  signed-out install.
 - Push 2FA is wanted but unbuilt (device registration, a push channel, pending state).
 - Linking an existing account to Google needs an authenticated Settings action. Habits stats were
   removed pending a rework.

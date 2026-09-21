@@ -51,7 +51,7 @@ export default function DayView() {
                 key={o.key}
                 onClick={() => openEvent(o.event, o.startDate)}
                 title={sharedTitleAttr(o.event)}
-                className="flex items-center gap-sm cursor-pointer text-left hover:opacity-80"
+                className="flex items-center gap-sm cursor-pointer text-left hover:opacity-80 hover:shadow-pop"
                 // dynamic: shared events are dimmed
                 style={{ opacity: sharedOpacity(o.event) }}
               >
@@ -74,7 +74,7 @@ export default function DayView() {
                   key={o.key}
                   onClick={() => openEvent(o.event, o.startDate)}
                   title={sharedTitleAttr(o.event)}
-                  className="text-xs font-bold px-sm py-0.5 cursor-pointer hover:opacity-90"
+                  className="text-xs font-bold px-sm py-0.5 cursor-pointer hover:opacity-90 hover:shadow-pop"
                   // dynamic: the event's own colour, dimmed when shared
                   style={{ backgroundColor: `${hex}cc`, color: 'var(--t-on-accent)', opacity: sharedOpacity(o.event) }}
                 >

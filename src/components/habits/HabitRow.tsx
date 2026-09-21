@@ -1,4 +1,7 @@
-import { Bell, Check, ChevronDown } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Bell, Check, ChevronDown, GripVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { colorHex } from '../../colors';
 import { useApp } from '../../context/AppContext';
@@ -6,7 +9,7 @@ import { repeatLabel } from '../../todoLogic';
 import type { RowClickResult } from '../bulk/useListSelection';
 import { Dot, Tag } from '../ui/tag';
 import HabitStrip from './HabitStrip';
-import { fallbackLabel, type HabitData } from './habitModel';
+import { fallbackLabel, type HabitData, ROUTINE_OPTIONS } from './habitModel';
 
 const STAT_LABELS: [keyof Pick<HabitData, 'currentStreak' | 'bestStreak' | 'weeklyRate'>, string, string][] = [
   ['currentStreak', 'Streak', ''],
@@ -15,10 +18,11 @@ const STAT_LABELS: [keyof Pick<HabitData, 'currentStreak' | 'bestStreak' | 'week
 ];
 
 /**
- * One habit as a list row: today's check, identity, the last four weeks as
- * a strip, three numbers, and the chevron that opens its drawer. Below
+ * One habit as a list row: a drag handle, today's check, identity, the last
+ * four weeks as a strip, three numbers, and the chevron that opens its
+ * drawer (`children`, rendered under the row so it moves with it). Below
  * `wide` (1100px) the stats and tag go so the name keeps its room; on a
- * phone the strip wraps onto its own line.
+ * phone the strip wraps onto its own line. Must sit in a `SortableContext`.
  */
 export default function HabitRow({
   habit,
@@ -28,6 +32,8 @@ export default function HabitRow({
   selected = false,
   onRowClick,
   onContextMenu,
+  draggable = true,
+  children,
 }: {
   habit: HabitData;
   today: string;
@@ -37,11 +43,18 @@ export default function HabitRow({
   /** Ctrl/Shift selection; a `'plain'` result means the click should open the drawer instead. */
   onRowClick?: (e: React.MouseEvent) => RowClickResult;
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** Show the drag handle (pointless with a single habit). */
+  draggable?: boolean;
+  /** The open drawer. */
+  children?: ReactNode;
 }) {
-  const { toggleTodo, categoryById, firstDayOfWeek } = useApp();
+  const { toggleTodo, firstDayOfWeek } = useApp();
   const { todo } = habit;
   const color = colorHex(todo.colorKey);
-  const category = categoryById(todo.category);
+  const routine = ROUTINE_OPTIONS.find((o) => o.value === todo.routine);
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id: todo.id,
+  });
 
   const handleClick = (e: React.MouseEvent) => {
     const result = onRowClick ? onRowClick(e) : 'plain';
@@ -58,93 +71,115 @@ export default function HabitRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-expanded={open}
-      data-open={open || undefined}
-      data-selected={selected || undefined}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      onContextMenu={onContextMenu}
-      className={cn(
-        'flex items-center gap-5 px-3 py-[0.875rem] cursor-pointer transition-colors duration-150 hover:bg-surface-hover data-[open]:bg-surface-hover max-md:flex-wrap',
-        selected && 'bg-accent/10 data-[open]:bg-accent/15 ring-1 ring-inset ring-accent/30 border-l-2 border-accent',
-      )}
+      ref={setNodeRef}
+      className={cn('bg-surface', isDragging && 'relative z-10 shadow-card opacity-90')}
+      // dynamic: dnd-kit's live drag offset
+      style={{ transform: CSS.Transform.toString(transform), transition }}
     >
-      <button
-        type="button"
-        aria-pressed={habit.doneToday}
-        title={habit.doneToday ? 'Completed today — click to undo' : 'Mark as done'}
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleTodo(todo.id, today);
-        }}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        data-open={open || undefined}
+        data-selected={selected || undefined}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        onContextMenu={onContextMenu}
         className={cn(
-          'group size-[1.375rem] shrink-0 flex items-center justify-center border border-accent transition-colors',
-          habit.doneToday
-            ? 'bg-accent text-on-accent hover:bg-accent-hover'
-            : 'bg-surface text-accent hover:bg-accent-tint',
+          'flex items-center gap-5 px-3 py-[0.875rem] cursor-pointer transition-colors duration-150 hover:bg-surface-hover data-[open]:bg-surface-hover max-md:flex-wrap',
+          selected && 'bg-accent/10 data-[open]:bg-accent/15 ring-1 ring-inset ring-accent/30 border-l-2 border-accent',
         )}
       >
-        <Check
-          size="0.8125rem"
-          strokeWidth={3}
-          className={cn('transition-opacity', habit.doneToday ? 'opacity-100' : 'opacity-0 group-hover:opacity-35')}
-        />
-      </button>
-
-      <div className="flex flex-col gap-1 min-w-0 min-w-[12rem] max-w-[24rem]">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Dot accent={color} size={10} />
-          <span className="font-heading text-sm font-bold text-ink truncate">{todo.name}</span>
-        </div>
-        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden max-wide:hidden">
-          <Tag accent={category ? colorHex(category.colorKey) : color} className="shrink-0">
-            {category?.name ?? fallbackLabel(todo)}
-          </Tag>
-          <Tag className="shrink-0">{repeatLabel(todo.schedule, firstDayOfWeek)}</Tag>
-          {todo.reminder && (
-            <span className="flex items-center gap-1 text-meta text-ink-muted whitespace-nowrap">
-              <Bell size="0.75rem" aria-label="Reminder" />
-              {todo.time ?? 'due days'}
-            </span>
+        {draggable && (
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            aria-label="Drag to reorder"
+            title="Drag to reorder"
+            onClick={(e) => e.stopPropagation()}
+            className="-ml-1 -mr-3 shrink-0 touch-none cursor-grab text-ink-muted hover:text-ink active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size="0.875rem" />
+          </button>
+        )}
+        <button
+          type="button"
+          aria-pressed={habit.doneToday}
+          title={habit.doneToday ? 'Completed today — click to undo' : 'Mark as done'}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleTodo(todo.id, today);
+          }}
+          className={cn(
+            'group size-[1.375rem] shrink-0 flex items-center justify-center border border-accent transition-colors',
+            habit.doneToday
+              ? 'bg-accent text-on-accent hover:bg-accent-hover'
+              : 'bg-surface text-accent hover:bg-accent-tint',
           )}
-        </div>
-      </div>
+        >
+          <Check
+            size="0.8125rem"
+            strokeWidth={3}
+            className={cn('transition-opacity', habit.doneToday ? 'opacity-100' : 'opacity-0 group-hover:opacity-35')}
+          />
+        </button>
 
-      <HabitStrip
-        todo={todo}
-        cells={habit.strip}
-        color={color}
-        today={today}
-        cellClass="size-[1rem]"
-        className="flex-1 min-w-0 items-start max-md:basis-full max-md:order-last"
-      />
-
-      <div className="flex gap-3.5 w-[11.875rem] shrink-0 max-wide:hidden">
-        {STAT_LABELS.map(([key, label, suffix]) => (
-          <div key={key} className="flex flex-col">
-            <span className="font-heading text-[1rem] font-bold leading-[1.1] text-ink tabular-nums">
-              {habit[key]}
-              {suffix}
-            </span>
-            <span className="text-[0.625rem] text-ink-muted">{label}</span>
+        <div className="flex flex-col gap-1 min-w-0 min-w-[12rem] max-w-[24rem]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Dot accent={color} size={10} />
+            <span className="font-heading text-sm font-bold text-ink truncate">{todo.name}</span>
           </div>
-        ))}
-      </div>
+          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden max-wide:hidden">
+            <Tag accent={color} className="shrink-0">
+              {routine?.label ?? fallbackLabel(todo)}
+            </Tag>
+            <Tag className="shrink-0">{repeatLabel(todo.schedule, firstDayOfWeek)}</Tag>
+            {todo.reminder && (
+              <span className="flex items-center gap-1 text-meta text-ink-muted whitespace-nowrap">
+                <Bell size="0.75rem" aria-label="Reminder" />
+                {todo.time ?? 'due days'}
+              </span>
+            )}
+          </div>
+        </div>
 
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={open ? 'Hide details' : 'Show details'}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleOpen();
-        }}
-        className="size-7 shrink-0 flex items-center justify-center border border-transparent text-ink-muted transition-colors hover:text-ink hover:border-line hover:bg-subtle"
-      >
-        <ChevronDown size="0.875rem" className={cn('transition-transform duration-200', open && 'rotate-180')} />
-      </button>
+        <HabitStrip
+          todo={todo}
+          cells={habit.strip}
+          color={color}
+          today={today}
+          cellClass="size-[1rem]"
+          className="flex-1 min-w-0 items-start max-md:basis-full max-md:order-last"
+        />
+
+        <div className="flex gap-3.5 w-[11.875rem] shrink-0 max-wide:hidden">
+          {STAT_LABELS.map(([key, label, suffix]) => (
+            <div key={key} className="flex flex-col">
+              <span className="font-heading text-[1rem] font-bold leading-[1.1] text-ink tabular-nums">
+                {habit[key]}
+                {suffix}
+              </span>
+              <span className="text-[0.625rem] text-ink-muted">{label}</span>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={open ? 'Hide details' : 'Show details'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleOpen();
+          }}
+          className="size-7 shrink-0 flex items-center justify-center border border-transparent text-ink-muted transition-colors hover:text-ink hover:border-line hover:bg-subtle"
+        >
+          <ChevronDown size="0.875rem" className={cn('transition-transform duration-200', open && 'rotate-180')} />
+        </button>
+      </div>
+      {children}
     </div>
   );
 }

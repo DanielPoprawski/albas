@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS habits (
   time TEXT,
   category TEXT NOT NULL DEFAULT '',
   important INTEGER NOT NULL DEFAULT 0,
+  notes TEXT NOT NULL DEFAULT '',
+  sort INTEGER NOT NULL DEFAULT 0,
+  routine TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0
 );
@@ -150,6 +153,18 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
         if version < 6 {
             conn.execute_batch("ALTER TABLE events ADD COLUMN category TEXT NOT NULL DEFAULT '';")?;
         }
+        // v8 (to-do notes): free text on a task or habit, the counterpart of an
+        // event's description.
+        if version < 8 {
+            conn.execute_batch("ALTER TABLE habits ADD COLUMN notes TEXT NOT NULL DEFAULT '';")?;
+        }
+        // v9 (habits own their look): a manual order and a routine tag.
+        if version < 9 {
+            conn.execute_batch(
+                "ALTER TABLE habits ADD COLUMN sort INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE habits ADD COLUMN routine TEXT NOT NULL DEFAULT '';",
+            )?;
+        }
     }
     // v7: weight tracking was removed; drop its table wherever it still exists.
     conn.execute_batch("DROP TABLE IF EXISTS weights;")?;
@@ -163,7 +178,21 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     if version < 6 {
         conn.execute_batch(SCHEMA_V6)?;
     }
-    conn.pragma_update(None, "user_version", 7)?;
+    // v9: habits stopped borrowing their category's colour. Copy it into each
+    // repeating to-do's own `color_key` once so nothing changes on screen;
+    // needs the categories table, hence after the v6 step. Bumping
+    // `updated_at` lets the copy sync (same value from every device).
+    if (1..9).contains(&version) {
+        conn.execute(
+            "UPDATE habits SET
+               color_key = (SELECT c.color_key FROM categories c WHERE c.id = habits.category AND c.deleted = 0),
+               updated_at = ?1
+             WHERE category != '' AND schedule NOT LIKE '%once%'
+               AND EXISTS (SELECT 1 FROM categories c WHERE c.id = habits.category AND c.deleted = 0)",
+            params![now_ms()],
+        )?;
+    }
+    conn.pragma_update(None, "user_version", 9)?;
     repoint_default_server(&conn)?;
     Ok(conn)
 }
@@ -297,6 +326,16 @@ pub struct Habit {
     pub category: String,
     #[serde(default)]
     pub important: bool,
+    /// Free-text notes; empty when none.
+    #[serde(default)]
+    pub notes: String,
+    /// Manual order among repeating to-dos (the Habits list); 0 for rows
+    /// that predate it.
+    #[serde(default)]
+    pub sort: i64,
+    /// Habit routine tag: '' | 'morning' | 'afternoon' | 'evening'.
+    #[serde(default)]
+    pub routine: String,
     #[serde(default)]
     pub completions: HashMap<String, f64>,
 }
@@ -410,7 +449,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
     });
 
     let habits = conn
-        .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important FROM habits WHERE deleted = 0")
+        .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important, notes, sort, routine FROM habits WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
             Ok(Habit {
@@ -427,6 +466,9 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
                 time: r.get(10)?,
                 category: r.get(11)?,
                 important: r.get::<_, i64>(12)? != 0,
+                notes: r.get(13)?,
+                sort: r.get(14)?,
+                routine: r.get(15)?,
                 completions: HashMap::new(),
             })
         })
@@ -541,13 +583,13 @@ fn upsert_task(conn: &Connection, t: &Task) -> rusqlite::Result<()> {
 
 fn upsert_habit(conn: &Connection, h: &Habit) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 0)
-         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, kind=?4, unit=?5, target=?6, schedule=?7, created_at=?8, reminder=?9, due_date=?10, time=?11, category=?12, important=?13, updated_at=?14, deleted=0",
+        "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important, notes, sort, routine, updated_at, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, 0)
+         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, kind=?4, unit=?5, target=?6, schedule=?7, created_at=?8, reminder=?9, due_date=?10, time=?11, category=?12, important=?13, notes=?14, sort=?15, routine=?16, updated_at=?17, deleted=0",
         params![
             h.id, h.name, h.color_key, h.kind, h.unit, h.target,
             json_col(&h.schedule), h.created_at, h.reminder as i64,
-            h.due_date, h.time, h.category, h.important as i64, now_ms()
+            h.due_date, h.time, h.category, h.important as i64, h.notes, h.sort, h.routine, now_ms()
         ],
     )?;
     Ok(())
@@ -925,7 +967,8 @@ mod tests {
     /// The schema as it shipped at `user_version` 1: before to-dos gained
     /// `due_date`/`time` (v2) and `category`/`important` (v4), before the
     /// shared-rows cache (v5), events' `category` and the categories table
-    /// (v6), and while weight tracking still had a table (dropped in v7).
+    /// (v6), to-do `notes` (v8), and while weight tracking still had a table
+    /// (dropped in v7).
     const SCHEMA_V1: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE tasks (
@@ -980,7 +1023,7 @@ PRAGMA user_version = 1;
             .unwrap()
     }
 
-    const CURRENT_VERSION: i64 = 7;
+    const CURRENT_VERSION: i64 = 9;
 
     /// Every table an upgraded database has, with the columns it has, must
     /// match a database created fresh from `SCHEMA` — the CLAUDE.md rule that
@@ -1038,16 +1081,42 @@ PRAGMA user_version = 1;
         assert_same_shape(&c, &fresh);
 
         // Rows survive with the new columns at their defaults.
-        let (name, category, important, due): (String, String, i64, Option<String>) = c
+        let (name, category, important, notes, due, sort, routine): (
+            String,
+            String,
+            i64,
+            String,
+            Option<String>,
+            i64,
+            String,
+        ) = c
             .query_row(
-                "SELECT name, category, important, due_date FROM habits WHERE id = 'h1'",
+                "SELECT name, category, important, notes, due_date, sort, routine FROM habits WHERE id = 'h1'",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
             )
             .unwrap();
         assert_eq!(
-            (name.as_str(), category.as_str(), important, due),
-            ("run", "", 0, None)
+            (
+                name.as_str(),
+                category.as_str(),
+                important,
+                notes.as_str(),
+                due,
+                sort,
+                routine.as_str()
+            ),
+            ("run", "", 0, "", None, 0, "")
         );
         let event_category: String = c
             .query_row("SELECT category FROM events WHERE id = 'e1'", [], |r| {
@@ -1099,5 +1168,44 @@ PRAGMA user_version = 1;
             )
             .unwrap();
         assert_eq!((due.as_deref(), important), (Some("2026-02-01"), 1));
+    }
+
+    /// v9: a repeating to-do in a category takes that category's colour as
+    /// its own; a once to-do and an uncategorised habit keep theirs, and the
+    /// copied row's `updated_at` moves so the copy syncs.
+    #[test]
+    fn a_version_8_database_copies_category_colours_onto_habits() {
+        let old = TempDb::new("v8");
+        {
+            // A current database wound back to the v8 shape.
+            let c = open(&old.0).unwrap();
+            c.execute_batch(
+                "ALTER TABLE habits DROP COLUMN sort;
+                 ALTER TABLE habits DROP COLUMN routine;
+                 INSERT INTO categories (id, name, color_key, scopes, sort, created_at, updated_at)
+                 VALUES ('c1', 'Wellness', '#f59e0b', 'habits', 0, 1, 1);
+                 INSERT INTO habits (id, name, color_key, kind, schedule, category, created_at, updated_at)
+                 VALUES ('h1', 'run', '#a855f7', 'yesno', '{\"type\":\"daily\"}', 'c1', '2026-01-01', 1),
+                        ('h2', 'read', '#a855f7', 'yesno', '{\"type\":\"daily\"}', '', '2026-01-01', 1),
+                        ('t1', 'milk', '#a855f7', 'yesno', '{\"type\":\"once\"}', 'c1', '2026-01-01', 1);
+                 PRAGMA user_version = 8;",
+            )
+            .unwrap();
+        }
+        let c = open(&old.0).unwrap();
+        assert_eq!(user_version(&c), CURRENT_VERSION);
+        let colour = |id: &str| -> (String, i64) {
+            c.query_row(
+                "SELECT color_key, updated_at FROM habits WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        };
+        let (h1, h1_at) = colour("h1");
+        assert_eq!(h1, "#f59e0b");
+        assert!(h1_at > 1);
+        assert_eq!(colour("h2"), ("#a855f7".to_string(), 1));
+        assert_eq!(colour("t1"), ("#a855f7".to_string(), 1));
     }
 }
