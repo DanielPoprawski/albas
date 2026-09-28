@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, Circle } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { useApp } from '../../context/AppContext';
 import { fmt, shortDate } from '../../dates';
 import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
@@ -100,7 +100,7 @@ export default function DayView() {
                     opacity: done ? 1 : 0.7,
                   }}
                 >
-                  {done ? <CheckCircle2 size="0.75rem" /> : <Circle size="0.75rem" />}
+                  <Icon name={done ? 'check_circle' : 'circle'} size="0.75rem" />
                   {todo.name}
                 </button>
               );

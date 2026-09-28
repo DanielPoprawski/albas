@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { describeWhen, type NlDateMatch, useNlDate } from '../../nlDate';
 
@@ -50,7 +50,7 @@ export function NlDateSuggestion({
           aria-label="Dismiss date suggestion"
           className="flex items-center text-ink-muted hover:text-ink"
         >
-          <X size="0.6875rem" strokeWidth={2.4} />
+          <Icon name="close" size="0.6875rem" />
         </button>
       </span>
     </div>

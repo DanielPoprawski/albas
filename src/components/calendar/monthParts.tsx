@@ -59,7 +59,7 @@ const CELL_VARIANTS = {
     dayRow: '',
     dayNumber: 'text-xs px-0.5',
     chips: 'gap-px mt-px',
-    chip: 'text-xs font-semibold px-px overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop',
+    chip: 'text-xs font-extralight px-px overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop',
     paint: mobilePaint,
     time: false,
     more: (n: number) => `+${n}`,

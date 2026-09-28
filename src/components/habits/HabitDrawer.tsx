@@ -1,4 +1,4 @@
-import { Bell } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { colorHex } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import InlineEditor from '../InlineEditor';
@@ -61,7 +61,7 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
             Last {HISTORY_WEEKS} weeks · {habit.completion}% complete
           </span>
           <span className="flex items-center gap-[0.375rem] text-xs text-ink-secondary">
-            <Bell size="0.8125rem" />
+            <Icon name="notifications" size="0.8125rem" />
             Reminder · {reminder}
           </span>
         </div>

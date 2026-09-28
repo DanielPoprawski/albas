@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { DropdownMenu } from 'radix-ui';
-import { ArrowDown, ArrowUp, Check, MoreHorizontal, Palette, Pencil, Trash2 } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import type { Category, CategoryScope } from '../../types';
 
@@ -71,7 +71,7 @@ export function CategoryMenu({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <MoreHorizontal size="0.875rem" />
+          <Icon name="more_horiz" size="0.875rem" />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -85,17 +85,17 @@ export function CategoryMenu({
           }}
         >
           <DropdownMenu.Item className={ITEM} onSelect={handOff(onRename)}>
-            <Pencil size="0.875rem" /> Rename
+            <Icon name="edit" size="0.875rem" /> Rename
           </DropdownMenu.Item>
           <DropdownMenu.Item className={ITEM} onSelect={handOff(onColor)}>
-            <Palette size="0.875rem" /> Color
+            <Icon name="palette" size="0.875rem" /> Color
           </DropdownMenu.Item>
           <DropdownMenu.Separator className={SEPARATOR} />
           <DropdownMenu.Item className={ITEM} disabled={!canMoveUp} onSelect={() => onMove(-1)}>
-            <ArrowUp size="0.875rem" /> Move up
+            <Icon name="arrow_upward" size="0.875rem" /> Move up
           </DropdownMenu.Item>
           <DropdownMenu.Item className={ITEM} disabled={!canMoveDown} onSelect={() => onMove(1)}>
-            <ArrowDown size="0.875rem" /> Move down
+            <Icon name="arrow_downward" size="0.875rem" /> Move down
           </DropdownMenu.Item>
           <DropdownMenu.Separator className={SEPARATOR} />
           <DropdownMenu.Label className="micro-label px-2 py-1">Show in</DropdownMenu.Label>
@@ -110,7 +110,7 @@ export function CategoryMenu({
             >
               <span className="flex size-3.5 items-center justify-center border border-line-strong text-accent">
                 <DropdownMenu.ItemIndicator>
-                  <Check size="0.625rem" strokeWidth={3} />
+                  <Icon name="check" size="0.625rem" />
                 </DropdownMenu.ItemIndicator>
               </span>
               {label}
@@ -121,7 +121,7 @@ export function CategoryMenu({
             className={cn(ITEM, 'text-danger data-[highlighted]:bg-danger-tint')}
             onSelect={handOff(onDelete)}
           >
-            <Trash2 size="0.875rem" /> Delete
+            <Icon name="delete" size="0.875rem" /> Delete
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek, weekdayAt } from '../../dates';
 import { goToday, isThisMonth, stepMonth } from '../../calendarNav';
@@ -73,11 +73,11 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
             Today
           </Button>
           <IconButton variant="accent2" aria-label="Previous month" onClick={() => stepMonth(nav, -1)}>
-            <ChevronLeft size="0.875rem" />
+            <Icon name="chevron_left" size="0.875rem" />
           </IconButton>
           <MonthYearPopover month={currentMonth} onPick={setCurrentMonth} />
           <IconButton variant="accent2" aria-label="Next month" onClick={() => stepMonth(nav, 1)}>
-            <ChevronRight size="0.875rem" />
+            <Icon name="chevron_right" size="0.875rem" />
           </IconButton>
         </div>
 
@@ -90,7 +90,7 @@ export default function MonthViewDesktop({ weeks, onEditEvent, onEditTodo, onDay
             title={showRightPanel ? 'Hide side panel' : 'Show side panel'}
             onClick={toggleRightPanel}
           >
-            {showRightPanel ? <PanelRightClose size="0.875rem" /> : <PanelRightOpen size="0.875rem" />}
+            <Icon name={showRightPanel ? 'right_panel_close' : 'right_panel_open'} size="0.875rem" />
           </IconButton>
         </div>
       </div>

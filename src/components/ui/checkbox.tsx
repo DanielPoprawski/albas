@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { Checkbox as CheckboxPrimitive } from 'radix-ui';
-import { Check } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { Icon } from './icon';
 
 /**
  * A square 1.125rem box with a 1px gray hairline, filling solid accent when
@@ -32,7 +32,7 @@ function Checkbox({ className, ...props }: React.ComponentProps<typeof CheckboxP
         data-slot="checkbox-indicator"
         className="grid place-content-center text-current transition-none"
       >
-        <Check size="0.75rem" strokeWidth={3} />
+        <Icon name="check" size="0.75rem" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { IconButton } from '../ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
@@ -34,17 +34,17 @@ export default function MonthYearPopover({ month, onPick }: { month: Date; onPic
           className="flex items-center gap-1 px-xs py-[0.375rem] text-sm font-medium font-body text-ink hover:text-accent transition-colors"
         >
           {month.toLocaleString('default', { month: 'long', year: 'numeric' })}
-          <ChevronDown size="0.875rem" className="text-ink-muted" />
+          <Icon name="expand_more" size="0.875rem" className="text-ink-muted" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-[14rem]">
         <div className="flex items-center justify-between mb-2">
           <IconButton aria-label="Previous year" onClick={() => setYear((y) => y - 1)}>
-            <ChevronLeft size="0.875rem" />
+            <Icon name="chevron_left" size="0.875rem" />
           </IconButton>
           <span className="font-heading text-sm font-bold text-ink tabular-nums">{year}</span>
           <IconButton aria-label="Next year" onClick={() => setYear((y) => y + 1)}>
-            <ChevronRight size="0.875rem" />
+            <Icon name="chevron_right" size="0.875rem" />
           </IconButton>
         </div>
         <div className="grid grid-cols-3 gap-1">

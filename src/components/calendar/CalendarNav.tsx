@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { CalendarDays, CalendarRange, CalendarClock, ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
 import { goToday as navToday, stepPeriod, syncMonth } from '../../calendarNav';
@@ -8,10 +8,10 @@ import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { IconButton } from '../ui/button';
 import type { CalendarMode } from '../../types';
 
-const MODES: { value: CalendarMode; label: string; Icon: LucideIcon; hint: string }[] = [
-  { value: 'month', label: 'Month', Icon: CalendarDays, hint: 'The whole month at a glance' },
-  { value: 'week', label: 'Week', Icon: CalendarRange, hint: 'Seven days, hour by hour' },
-  { value: 'day', label: 'Day', Icon: CalendarClock, hint: 'One day, hour by hour' },
+const MODES: { value: CalendarMode; label: string; icon: string; hint: string }[] = [
+  { value: 'month', label: 'Month', icon: 'calendar_view_month', hint: 'The whole month at a glance' },
+  { value: 'week', label: 'Week', icon: 'calendar_view_week', hint: 'Seven days, hour by hour' },
+  { value: 'day', label: 'Day', icon: 'calendar_view_day', hint: 'One day, hour by hour' },
 ];
 
 /**
@@ -77,7 +77,7 @@ export function ModeModal({
   onToday: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const Current = MODES.find((m) => m.value === mode)!.Icon;
+  const current = MODES.find((m) => m.value === mode)!.icon;
 
   return (
     <>
@@ -92,7 +92,7 @@ export function ModeModal({
           'text-ink-muted hover:text-ink active:scale-95',
         )}
       >
-        <Current size="1rem" />
+        <Icon name={current} size="1rem" />
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -100,7 +100,7 @@ export function ModeModal({
           <DialogTitle className="text-h1">View</DialogTitle>
 
           <div className="space-y-xs">
-            {MODES.map(({ value, label, Icon, hint }) => (
+            {MODES.map(({ value, label, icon, hint }) => (
               <button
                 type="button"
                 key={value}
@@ -112,7 +112,7 @@ export function ModeModal({
                   mode === value ? 'border-accent bg-subtle-strong' : 'border-line hover:bg-subtle-strong'
                 }`}
               >
-                <Icon size="1.25rem" className={mode === value ? 'text-accent' : 'text-ink-muted'} />
+                <Icon name={icon} size="1.25rem" className={mode === value ? 'text-accent' : 'text-ink-muted'} />
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-ink">{label}</span>
                   <span className="block text-xs text-ink-muted">{hint}</span>
@@ -172,7 +172,6 @@ export default function CalendarNav({ compact = false }: { compact?: boolean }) 
   // compact trades icon size for tap area — 1.25rem glyphs, but the button still
   // carries padding so the target isn't a 1.25rem square on a touchscreen
   const arrow = (dir: 1 | -1) => {
-    const Icon = dir === 1 ? ChevronRight : ChevronLeft;
     return (
       <IconButton
         variant="accent2"
@@ -180,7 +179,7 @@ export default function CalendarNav({ compact = false }: { compact?: boolean }) 
         aria-label={dir === 1 ? 'Next' : 'Previous'}
         className={compact ? 'size-auto p-xs' : undefined}
       >
-        <Icon size={compact ? '1.25rem' : '1.125rem'} />
+        <Icon name={dir === 1 ? 'chevron_right' : 'chevron_left'} size={compact ? '1.25rem' : '1.125rem'} />
       </IconButton>
     );
   };

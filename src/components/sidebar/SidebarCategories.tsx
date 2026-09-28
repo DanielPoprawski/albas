@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from 'react';
-import { ChevronDown, Plus } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { byCategoryOrder, moveCategory, newCategory, nextColor, toggleScope } from '../../categoryLogic';
 import { colorHex, DEFAULT_COLOR } from '../../colors';
@@ -142,10 +142,9 @@ export default function SidebarCategories({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <ChevronDown
+        <Icon
+          name="expand_more"
           size="0.75rem"
-          strokeWidth={3}
-          aria-hidden="true"
           className={cn('transition-transform duration-150', !open && '-rotate-90')}
         />
         Categories
@@ -287,7 +286,7 @@ export default function SidebarCategories({
             </div>
           ) : (
             <button type="button" className={ROW} onClick={startAdding}>
-              <Plus size="0.875rem" strokeWidth={3} aria-hidden="true" />
+              <Icon name="add" size="0.875rem" />
               <span className={NAME}>New category</span>
             </button>
           )}

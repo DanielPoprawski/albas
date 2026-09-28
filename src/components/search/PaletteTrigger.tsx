@@ -1,5 +1,5 @@
 import { forwardRef, type KeyboardEvent } from 'react';
-import { Search } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 
 export const KBD =
@@ -35,7 +35,7 @@ const PaletteTrigger = forwardRef<
         className,
       )}
     >
-      <Search size="0.875rem" className="shrink-0 text-accent-2" aria-hidden />
+      <Icon name="search" size="0.875rem" className="text-accent-2" />
       <span className={cn('flex-1 min-w-0 truncate text-[0.8125rem]', query ? 'text-ink' : 'text-ink-muted')}>
         {query || 'Search events, tasks and habits'}
       </span>

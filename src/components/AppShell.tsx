@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { LayoutGrid, ListChecks, Settings as SettingsIcon, Target } from 'lucide-react';
+import { Icon } from './ui/icon';
 import { remindDueEvents, remindDueTodos } from '../notifications';
 import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
@@ -24,10 +24,10 @@ import SidebarCategories from './sidebar/SidebarCategories';
 import type { ActiveView, AddType } from '../types';
 
 const NAV: { view: ActiveView; label: string; icon: ReactNode }[] = [
-  { view: 'calendar', label: 'Dashboard', icon: <LayoutGrid size="1rem" /> },
-  { view: 'todos', label: 'To-Dos', icon: <ListChecks size="1rem" /> },
-  { view: 'habits', label: 'Habits', icon: <Target size="1rem" /> },
-  { view: 'settings', label: 'Settings', icon: <SettingsIcon size="1rem" /> },
+  { view: 'calendar', label: 'Dashboard', icon: <Icon name="grid_view" size="1rem" /> },
+  { view: 'todos', label: 'To-Dos', icon: <Icon name="checklist" size="1rem" /> },
+  { view: 'habits', label: 'Habits', icon: <Icon name="target" size="1rem" /> },
+  { view: 'settings', label: 'Settings', icon: <Icon name="settings" size="1rem" /> },
 ];
 
 function NavLink({

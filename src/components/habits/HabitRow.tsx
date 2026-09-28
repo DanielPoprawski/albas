@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Bell, Check, ChevronDown, GripVertical } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { colorHex } from '../../colors';
 import { useApp } from '../../context/AppContext';
@@ -101,7 +101,7 @@ export default function HabitRow({
             {...attributes}
             {...listeners}
           >
-            <GripVertical size="0.875rem" />
+            <Icon name="drag_indicator" size="0.875rem" />
           </button>
         )}
         <button
@@ -119,9 +119,9 @@ export default function HabitRow({
               : 'bg-surface text-accent hover:bg-accent-tint',
           )}
         >
-          <Check
+          <Icon
+            name="check"
             size="0.8125rem"
-            strokeWidth={3}
             className={cn('transition-opacity', habit.doneToday ? 'opacity-100' : 'opacity-0 group-hover:opacity-35')}
           />
         </button>
@@ -138,7 +138,7 @@ export default function HabitRow({
             <Tag className="shrink-0">{repeatLabel(todo.schedule, firstDayOfWeek)}</Tag>
             {todo.reminder && (
               <span className="flex items-center gap-1 text-meta text-ink-muted whitespace-nowrap">
-                <Bell size="0.75rem" aria-label="Reminder" />
+                <Icon name="notifications" size="0.75rem" aria-label="Reminder" />
                 {todo.time ?? 'due days'}
               </span>
             )}
@@ -176,7 +176,11 @@ export default function HabitRow({
           }}
           className="size-7 shrink-0 flex items-center justify-center border border-transparent text-ink-muted transition-colors hover:text-ink hover:border-line hover:bg-subtle"
         >
-          <ChevronDown size="0.875rem" className={cn('transition-transform duration-200', open && 'rotate-180')} />
+          <Icon
+            name="expand_more"
+            size="0.875rem"
+            className={cn('transition-transform duration-200', open && 'rotate-180')}
+          />
         </button>
       </div>
       {children}

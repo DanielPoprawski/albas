@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Bell } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import Highlighted from '../Highlighted';
 import { Checkbox } from '../ui/checkbox';
@@ -142,7 +142,9 @@ export default function PaletteResults({ s }: { s: SearchState }) {
                   </span>
                 )}
               </span>
-              {item.hasReminder && <Bell size="0.75rem" className="shrink-0 text-accent" aria-label="Has a reminder" />}
+              {item.hasReminder && (
+                <Icon name="notifications" size="0.75rem" className="text-accent" aria-label="Has a reminder" />
+              )}
               <span className="min-w-[5.75rem] shrink-0 text-right text-micro text-ink-secondary tabular-nums">
                 {dateLabel(item, s.firstDayOfWeek)}
               </span>

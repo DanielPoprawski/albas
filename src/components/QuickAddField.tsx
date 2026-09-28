@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, SlidersHorizontal } from 'lucide-react';
+import { Icon } from './ui/icon';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
 import { nextColor } from '../categoryLogic';
@@ -132,10 +132,10 @@ export default function QuickAddField({
             aria-hidden="true"
             className="size-[1.375rem] shrink-0 flex items-center justify-center border border-dashed border-line-strong text-ink-muted transition-colors group-focus-within:border-solid group-focus-within:border-accent group-focus-within:text-accent"
           >
-            <Plus size="0.8125rem" strokeWidth={2.5} />
+            <Icon name="add" size="0.8125rem" />
           </span>
         ) : (
-          <Plus size="0.875rem" strokeWidth={2.5} className="shrink-0 text-ink-muted" aria-hidden="true" />
+          <Icon name="add" size="0.875rem" className="text-ink-muted" />
         )}
         <input
           value={text}
@@ -163,7 +163,7 @@ export default function QuickAddField({
               'size-7 justify-center border border-transparent transition-colors hover:border-line hover:bg-subtle',
           )}
         >
-          <SlidersHorizontal size="0.875rem" />
+          <Icon name="tune" size="0.875rem" />
         </button>
         {open && (
           <AddModal

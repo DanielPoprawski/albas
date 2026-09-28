@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Repeat2, Home, CheckSquare } from 'lucide-react';
+import { Icon } from './ui/icon';
 import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
@@ -18,10 +18,10 @@ const MOBILE_HEADER_BUTTON =
 
 type MobileTab = 'dashboard' | 'habits' | 'tasks';
 
-const TABS: { tab: MobileTab; label: string; Icon: typeof Home }[] = [
-  { tab: 'habits', label: 'Habits', Icon: Repeat2 },
-  { tab: 'dashboard', label: 'Dashboard', Icon: Home },
-  { tab: 'tasks', label: 'Tasks', Icon: CheckSquare },
+const TABS: { tab: MobileTab; label: string; icon: string }[] = [
+  { tab: 'habits', label: 'Habits', icon: 'repeat' },
+  { tab: 'dashboard', label: 'Dashboard', icon: 'home' },
+  { tab: 'tasks', label: 'Tasks', icon: 'check_box' },
 ];
 
 const TAB =
@@ -73,7 +73,7 @@ export default function HomeView() {
             title="Settings"
             onClick={() => setActiveView('settings')}
           >
-            <Settings size="1rem" />
+            <Icon name="settings" size="1rem" />
           </button>
         </div>
       </div>
@@ -87,7 +87,7 @@ export default function HomeView() {
 
       {/* Bottom Tabs */}
       <div className="fixed bottom-0 left-0 z-20 flex h-15 w-full items-center justify-around gap-2 border-t border-line bg-surface">
-        {TABS.map(({ tab, label, Icon }) => (
+        {TABS.map(({ tab, label, icon }) => (
           <button
             type="button"
             key={tab}
@@ -95,7 +95,7 @@ export default function HomeView() {
             onClick={() => setCurrentTab(tab)}
             title={label}
           >
-            <Icon size="1.125rem" strokeWidth={1.5} />
+            <Icon name={icon} size="1.125rem" />
             <span>{label}</span>
           </button>
         ))}

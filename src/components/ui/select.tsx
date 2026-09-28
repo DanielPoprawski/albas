@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Select as SelectPrimitive } from 'radix-ui';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Icon } from './icon';
 
 import { cn } from '@/lib/utils';
 
@@ -32,7 +32,7 @@ function SelectTrigger({ className, children, ...props }: React.ComponentProps<t
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDown size="1rem" className="opacity-60" />
+        <Icon name="expand_more" size="1rem" className="opacity-60" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -60,7 +60,7 @@ function SelectContent({
         {...props}
       >
         <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
-          <ChevronUp size="1rem" />
+          <Icon name="expand_less" size="1rem" />
         </SelectPrimitive.ScrollUpButton>
         <SelectPrimitive.Viewport
           className={cn(
@@ -72,7 +72,7 @@ function SelectContent({
           {children}
         </SelectPrimitive.Viewport>
         <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
-          <ChevronDown size="1rem" />
+          <Icon name="expand_more" size="1rem" />
         </SelectPrimitive.ScrollDownButton>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
@@ -91,7 +91,7 @@ function SelectItem({ className, children, ...props }: React.ComponentProps<type
     >
       <span data-slot="select-item-indicator" className="absolute right-2 flex size-3.5 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <Check size="1rem" />
+          <Icon name="check" size="1rem" />
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>

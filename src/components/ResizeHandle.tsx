@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { EllipsisVertical } from 'lucide-react';
+import { Icon } from './ui/icon';
 import { cn } from '@/lib/utils';
 import { clampRem, LAYOUT_LIMITS } from '../appearance';
 import { useSettings } from '../context/SettingsContext';
@@ -141,7 +141,7 @@ export default function ResizeHandle({ side, onDelta, onEnd, onReset, ariaLabel 
       onPointerDown={handlePointerDown}
       onDoubleClick={onReset}
     >
-      <EllipsisVertical size="1rem" className="shrink-0" aria-hidden />
+      <Icon name="more_vert" size="1rem" />
     </div>
   );
 }

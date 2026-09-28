@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { FIELD_ROW } from './catalog';
 
@@ -43,7 +43,7 @@ export function FieldRow({
           top && 'mt-1',
         )}
       >
-        <X size="0.6875rem" strokeWidth={2.4} />
+        <Icon name="close" size="0.6875rem" />
       </button>
     </div>
   );
@@ -66,7 +66,6 @@ export function SectionGroup({
   onToggle: () => void;
   children: ReactNode;
 }) {
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
     <div className={cn('max-md:border-t max-md:border-line', !expanded && 'hidden max-md:block')}>
       <button
@@ -75,7 +74,7 @@ export function SectionGroup({
         onClick={onToggle}
         className="micro-label hidden w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent py-3.5 text-left transition-colors hover:text-ink max-md:flex"
       >
-        <Chevron size="0.75rem" strokeWidth={3} />
+        <Icon name={expanded ? 'expand_more' : 'chevron_right'} size="0.75rem" />
         {title}
       </button>
       {expanded && <div className="flex flex-col gap-[0.875rem] max-md:pb-3">{children}</div>}

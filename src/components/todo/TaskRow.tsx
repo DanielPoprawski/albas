@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { StarButton } from '../ui/star';
 import { useApp } from '../../context/AppContext';
@@ -102,7 +102,7 @@ export default function TaskRow({
           borderColor: done ? hex : 'var(--t-border-strong)',
         }}
       >
-        {done && <Check size="0.6875rem" strokeWidth={3} className="text-on-accent" />}
+        {done && <Icon name="check" size="0.6875rem" className="text-on-accent" />}
       </button>
 
       <div className="flex-1 min-w-0">

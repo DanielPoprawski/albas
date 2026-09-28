@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { registerFocusTarget } from '../../shortcuts';
 import AddModal from '../AddModal';
@@ -144,7 +144,7 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
             >
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-[0.875rem]">
-                  <Search size="1rem" className="shrink-0 text-accent" aria-hidden />
+                  <Icon name="search" size="1rem" className="text-accent" />
                   <input
                     ref={input}
                     type="search"
@@ -178,7 +178,7 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
                       }}
                       className="shrink-0 text-ink-muted hover:text-ink"
                     >
-                      <X size="0.875rem" />
+                      <Icon name="close" size="0.875rem" />
                     </button>
                   )}
                   <kbd className={KBD}>esc</kbd>

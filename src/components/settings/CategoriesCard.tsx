@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { useApp } from '../../context/AppContext';
 import { colorHex, DEFAULT_COLOR } from '../../colors';
 import { Checkbox } from '../ui/checkbox';
@@ -81,10 +81,10 @@ export function CategoriesCard() {
               </div>
               <div className="flex items-center gap-[0.125rem] flex-shrink-0">
                 <IconButton onClick={() => move(cat.id, -1)} disabled={i === 0} aria-label="Move up">
-                  <ChevronUp size="0.875rem" />
+                  <Icon name="expand_less" size="0.875rem" />
                 </IconButton>
                 <IconButton onClick={() => move(cat.id, 1)} disabled={i === sorted.length - 1} aria-label="Move down">
-                  <ChevronDown size="0.875rem" />
+                  <Icon name="expand_more" size="0.875rem" />
                 </IconButton>
               </div>
               {confirmId === cat.id ? (
@@ -110,7 +110,7 @@ export function CategoriesCard() {
                 </span>
               ) : (
                 <IconButton onClick={() => setConfirmId(cat.id)} aria-label={`Delete ${cat.name}`}>
-                  <Trash2 size="0.875rem" />
+                  <Icon name="delete" size="0.875rem" />
                 </IconButton>
               )}
             </div>
@@ -149,7 +149,7 @@ export function CategoriesCard() {
               }}
             />
             <Button size="sm" onClick={handleAdd} disabled={!newName.trim()} className="gap-xs flex-shrink-0">
-              <Plus size="0.8125rem" />
+              <Icon name="add" size="0.8125rem" />
               Add category
             </Button>
           </div>

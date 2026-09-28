@@ -7,7 +7,7 @@
  *   node scripts/css-audit.mjs --classes     # (a) only; likewise --utilities
  *                                            # (b), --tokens (c), --breakpoint
  *                                            # (d), --inline (e), --px (f),
- *                                            # --icons (g), --theme (h)
+ *                                            # --theme (g)
  *
  * (a) Component classes and `@utility` names declared in `src/App.css` that no
  *     TSX/TS/HTML file references from a class string or `@apply` (dead), plus
@@ -36,9 +36,7 @@
  * (f) No `px` in a TSX class (`w-[9px]`, `tracking-[0.5px]`) beyond the 1–2px
  *     a hairline needs: Settings › Text size scales the `html` font, so
  *     geometry is rem.
- * (g) Every lucide icon passes `size="…rem"` — the default is 24px and a
- *     bare number is px, neither of which scales.
- * (h) Every `@theme` key and every `@keyframes` name is referenced somewhere
+ * (g) Every `@theme` key and every `@keyframes` name is referenced somewhere
  *     (a utility in TSX, `@apply`/`var()` in App.css, or an `animate-[…]`).
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -118,11 +116,9 @@ if (only('--classes')) {
   for (const m of stripped.matchAll(/\.([a-z][a-z0-9-]*)(?=[\s,.:{[>#)])/g)) {
     if (!declared.has(m[1])) declared.set(m[1], 'class');
   }
-  const runtimeInjected = new Set(['lucide']); // lucide-react stamps class="lucide"
   const dead = [];
   const single = [];
   for (const [name] of declared) {
-    if (runtimeInjected.has(name)) continue;
     // Only a class-string position counts: inside quotes, between other
     // classes, or after `@apply` — never the same word in a comment.
     const escaped = name.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -384,38 +380,7 @@ if (only('--px')) {
   } else console.log('✓ no px geometry in classes');
 }
 
-/* ── (g) lucide icons are sized in rem ──────────────────────────────── */
-if (only('--icons')) {
-  const bad = [];
-  for (const s of code) {
-    if (!s.path.endsWith('.tsx')) continue;
-    const imported = s.text.match(/import \{([^}]*)\} from 'lucide-react'/);
-    if (!imported) continue;
-    const names = imported[1]
-      .split(',')
-      .map((n) =>
-        n
-          .trim()
-          .split(/\s+as\s+/)
-          .pop(),
-      )
-      .filter(Boolean);
-    for (const name of names) {
-      for (const m of s.text.matchAll(new RegExp(`<${name}\\b([^>]*)>`, 'g'))) {
-        const attrs = m[1];
-        const line = s.text.slice(0, m.index).split('\n').length;
-        if (!/\bsize=/.test(attrs)) bad.push(`${s.path}:${line}: <${name}> has no size (defaults to 24px)`);
-        else if (/\bsize=\{\s*\d/.test(attrs)) bad.push(`${s.path}:${line}: <${name}> sized in px`);
-      }
-    }
-  }
-  if (bad.length) {
-    fail('lucide icons must pass size="…rem":');
-    bad.forEach(note);
-  } else console.log('✓ every lucide icon is sized in rem');
-}
-
-/* ── (h) nothing declared in @theme or @keyframes goes unused ─────────── */
+/* ── (g) nothing declared in @theme or @keyframes goes unused ─────────── */
 if (only('--theme')) {
   const allCode = code.map((s) => s.text).join('\n');
   const unused = [];

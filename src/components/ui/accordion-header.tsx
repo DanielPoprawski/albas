@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { Icon } from './icon';
 
 /**
  * The band above a collapsible category group (To-Do, Habits), painted in
@@ -47,7 +47,7 @@ export function AccordionHeader({
           title={`Add to ${name}`}
           className="flex items-center px-2 py-2 opacity-60 hover:opacity-100 transition-opacity"
         >
-          <Plus size="0.875rem" strokeWidth={3} />
+          <Icon name="add" size="0.875rem" />
         </button>
       )}
       <span className="font-mono text-micro font-bold tracking-widest text-on-accent/75 tabular-nums pl-2 pr-4">

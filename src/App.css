@@ -42,6 +42,20 @@
 }
 
 /*
+ * Icons: Material Symbols Sharp (`components/ui/icon.tsx`), the fixed-weight
+ * 400 build from `@material-symbols/font-400` with the FILL axis kept — Apache
+ * 2.0, LICENSE beside the file. `block`, not `swap`: a swapped-in fallback
+ * would print the ligature names as text.
+ */
+@font-face {
+  font-family: "Material Symbols Sharp";
+  src: url("/MaterialSymbolsSharp/MaterialSymbolsSharp-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+/*
  * ─────────────────────────────────────────────────────────────────────────
  * Albas redesign — token layer
  * ─────────────────────────────────────────────────────────────────────────
@@ -528,6 +542,37 @@
   @apply bg-surface border border-line;
 }
 
+/* A Material Symbols glyph (`components/ui/icon.tsx`). The element's text is
+   the ligature name, so anything an ancestor sets on text — `uppercase`,
+   `tracking-*`, a heavier weight — is undone here or the ligature breaks and
+   the name shows. A 1em square with overflow hidden, so a name that fails to
+   ligate can't widen a row; the call site's `text-[…rem]` sets the em. */
+@utility icon {
+  font-family: "Material Symbols Sharp";
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  overflow: hidden;
+  flex-shrink: 0;
+  white-space: nowrap;
+  direction: ltr;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "liga";
+  font-variation-settings: "FILL" 0;
+}
+
+/* The solid variant of a glyph — fewer declarations than `icon`, so Tailwind
+   orders it later and it wins on the same element. */
+@utility icon-fill {
+  font-variation-settings: "FILL" 1;
+}
+
 /* A small square icon-only button — calendar nav arrows, the habit-row
    caret, the today-jump control. */
 @utility icon-btn {
@@ -685,13 +730,6 @@
   ::selection {
     background: var(--t-selection);
     color: var(--t-selection-ink);
-  }
-
-  /* lucide draws stroked SVGs at whatever size the call site passes; these two
-     defaults spare every one of them a `flex-shrink-0` and a stray text cursor. */
-  svg.lucide {
-    flex-shrink: 0;
-    user-select: none;
   }
 }
 

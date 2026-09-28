@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { colorHex } from '../../colors';
 import InlineEditor, { InlineEventEditor } from '../InlineEditor';
@@ -72,7 +72,7 @@ export default function EditPanel({ s }: { s: SearchState }) {
             >
               <span className="size-2 border border-line-strong" aria-hidden />
               <span className="flex-1 text-left">None</span>
-              {s.commonCategory === '' && <Check size="0.75rem" className="text-accent" />}
+              {s.commonCategory === '' && <Icon name="check" size="0.75rem" className="text-accent" />}
             </button>
             {s.categoryOptions.map((c) => (
               <button
@@ -88,7 +88,7 @@ export default function EditPanel({ s }: { s: SearchState }) {
                   style={{ background: colorHex(c.colorKey) }}
                 />
                 <span className="flex-1 truncate text-left">{c.name}</span>
-                {s.commonCategory === c.id && <Check size="0.75rem" className="text-accent" />}
+                {s.commonCategory === c.id && <Icon name="check" size="0.75rem" className="text-accent" />}
               </button>
             ))}
           </section>
@@ -100,7 +100,7 @@ export default function EditPanel({ s }: { s: SearchState }) {
           </h4>
           <div className="flex items-center gap-1.5">
             <button type="button" aria-label="Shift earlier" onClick={() => s.applyShift(-1)} className={STEP_BTN}>
-              <ChevronLeft size="0.8125rem" />
+              <Icon name="chevron_left" size="0.8125rem" />
             </button>
             <input
               type="number"
@@ -111,7 +111,7 @@ export default function EditPanel({ s }: { s: SearchState }) {
               className="field-input h-[1.625rem] w-11 px-1 py-0 text-center text-xs"
             />
             <button type="button" aria-label="Shift later" onClick={() => s.applyShift(1)} className={STEP_BTN}>
-              <ChevronRight size="0.8125rem" />
+              <Icon name="chevron_right" size="0.8125rem" />
             </button>
             <span className="text-xs text-ink-secondary">days</span>
           </div>

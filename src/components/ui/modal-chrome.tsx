@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { X } from 'lucide-react';
+import { Icon } from './icon';
 
 import { cn } from '@/lib/utils';
 import { IconButton } from './button';
@@ -49,7 +49,7 @@ export function ModalChrome({ title, onClose, children, footer, cardRef, innerRe
               onClick={onClose}
               className="border-0 size-[1.625rem] text-ink-muted hover:bg-subtle hover:text-ink max-md:size-10"
             >
-              <X size="0.875rem" strokeWidth={2.2} />
+              <Icon name="close" size="0.875rem" />
             </IconButton>
           </div>
           {children}

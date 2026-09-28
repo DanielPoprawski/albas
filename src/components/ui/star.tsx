@@ -1,5 +1,5 @@
-import { Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Icon, type IconSize } from './icon';
 
 /**
  * The importance toggle, one drawing for every surface. It follows the
@@ -16,7 +16,7 @@ export function StarButton({
 }: {
   important: boolean;
   onToggle: () => void;
-  size?: string;
+  size?: IconSize;
   className?: string;
 }) {
   return (
@@ -34,11 +34,7 @@ export function StarButton({
         className,
       )}
     >
-      <Star
-        size={size}
-        strokeWidth={1}
-        className={cn('transition-transform duration-100 active:scale-90', important ? 'fill-current' : 'fill-none')}
-      />
+      <Icon name="star" size={size} fill={important} className="transition-transform duration-100 active:scale-90" />
     </button>
   );
 }

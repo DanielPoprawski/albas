@@ -69,7 +69,7 @@ export default function MonthViewMobile({ weeks, onEditEvent, onEditTodo, onDayC
           month, and animating them would just flicker. */}
       <div className="grid grid-cols-7 border-b flex-shrink-0 border-line bg-subtle">
         {rotateWeek(WEEKDAYS_NARROW, firstDayOfWeek).map((day, i) => (
-          <div key={i} className="py-1 text-center text-xs font-bold text-ink-muted">
+          <div key={i} className="text-center text-xs font-bold text-ink-muted">
             {day}
           </div>
         ))}
