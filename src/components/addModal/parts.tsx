@@ -48,36 +48,3 @@ export function FieldRow({
     </div>
   );
 }
-
-/**
- * A collapsible group of optional fields: a full-width caps header with a
- * chevron, children only mounted while expanded. On the desktop the header
- * goes away and the group is just its rows — hidden entirely while collapsed
- * so it takes no gap slot in the column.
- */
-export function SectionGroup({
-  title,
-  expanded,
-  onToggle,
-  children,
-}: {
-  title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className={cn('max-md:border-t max-md:border-line', !expanded && 'hidden max-md:block')}>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={onToggle}
-        className="micro-label hidden w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent py-3.5 text-left transition-colors hover:text-ink max-md:flex"
-      >
-        <Icon name={expanded ? 'expand_more' : 'chevron_right'} size="0.75rem" />
-        {title}
-      </button>
-      {expanded && <div className="flex flex-col gap-[0.875rem] max-md:pb-3">{children}</div>}
-    </div>
-  );
-}

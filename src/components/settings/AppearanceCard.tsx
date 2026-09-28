@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FONT_SIZES, FONT_STACKS, type FontChoice, type FontSizeChoice } from '../../appearance';
 import { useApp } from '../../context/AppContext';
-import { DEFAULT_COLOR, isHex, PALETTE_COMPACT } from '../../colors';
+import { DEFAULT_ACCENT, isHex, PALETTE_COMPACT } from '../../colors';
 import { Segmented } from '../ui/segmented';
 import { cn } from '@/lib/utils';
 import type { ThemePref } from '../../types';
@@ -30,7 +30,7 @@ const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
  */
 export function AppearanceCard() {
   const { themePref, accent, font, fontSize, setSetting } = useApp();
-  const [custom, setCustom] = useState(accent || DEFAULT_COLOR);
+  const [custom, setCustom] = useState(accent || DEFAULT_ACCENT);
   const fonts = Object.keys(FONT_STACKS) as FontChoice[];
   const sizes = Object.keys(FONT_SIZES) as FontSizeChoice[];
 
@@ -83,7 +83,7 @@ export function AppearanceCard() {
           <label className="flex items-center gap-[0.25rem] setting-desc mt-0">
             <input
               type="color"
-              value={isHex(custom) ? custom : DEFAULT_COLOR}
+              value={isHex(custom) ? custom : DEFAULT_ACCENT}
               onChange={(e) => {
                 setCustom(e.target.value);
                 setSetting('accent', e.target.value);

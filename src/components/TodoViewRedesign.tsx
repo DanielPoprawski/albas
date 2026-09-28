@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { colorHex } from '../colors';
 import { useApp } from '../context/AppContext';
 import { fmt } from '../dates';
-import { todoKey } from '../itemKeys';
-import { byDashboardOrder, GENERAL, isDone } from '../todoLogic';
+import { seedKey } from '../itemKeys';
+import { byDashboardOrder, bySort, GENERAL, isDone, isTask } from '../seedLogic';
 import TaskRow from './todo/TaskRow';
 import AddModal from './AddModal';
 import { useInlineEdit } from './useInlineEdit';
@@ -13,48 +12,39 @@ import SearchPalette from './search/SearchPalette';
 import SelectionBar from './bulk/SelectionBar';
 import { useListSelection } from './bulk/useListSelection';
 import { toSearchItems } from './search/searchItems';
-import type { Todo } from '../types';
+import type { Seed } from '../types';
 
 export default function TodoViewRedesign() {
-  const { todos, categoriesFor, categoryById, firstDayOfWeek, hiddenCategoryIds: hiddenIds, showCompleted } = useApp();
-  const categories = categoriesFor('tasks');
+  const { seeds, lists, listById, tagById, colorOf, firstDayOfWeek, hiddenListIds, isVisible, showCompleted } =
+    useApp();
   const today = fmt(new Date());
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const { expandedId, toggleExpanded, setEditing, editModal } = useInlineEdit();
-  /** The category id to pre-fill when adding from a category's header bar. */
+  /** The list id to pre-fill when adding from a list's header bar. */
   const [addingIn, setAddingIn] = useState<string | undefined>();
 
-  // Filter to only tasks (not habits/chores)
-  const tasks = todos.filter((t) => t.schedule.type === 'once');
-
-  // Separate active and completed tasks
+  const tasks = seeds.filter(isTask);
   const activeTasks = tasks.filter((t) => !isDone(t));
   const completedTasks = tasks.filter(isDone);
 
-  const isVisible = (t: Todo) => !hiddenIds.has(t.category);
-
-  // Filter active tasks by checked categories
   const visibleActiveTasks = activeTasks.filter(isVisible);
 
-  // General: the default category, topmost
-  const generalTasks = hiddenIds.has('')
+  // General: the unfiled to-dos, topmost
+  const generalTasks = hiddenListIds.has('')
     ? []
-    : visibleActiveTasks.filter((t) => t.category === '').sort(byDashboardOrder);
+    : visibleActiveTasks.filter((t) => t.list === '').sort(byDashboardOrder);
   const generalCollapsed = collapsedIds.has('');
 
-  // Category sections for active categories with tasks
-  const categorySections = categories
-    .filter((c) => !hiddenIds.has(c.id))
-    .map((cat) => {
-      const catTasks = visibleActiveTasks.filter((t) => t.category === cat.id).sort(byDashboardOrder);
-      return {
-        id: cat.id,
-        name: cat.name,
-        color: colorHex(cat.colorKey),
-        tasks: catTasks,
-        collapsed: collapsedIds.has(cat.id),
-      };
-    })
+  // One section per list with to-dos in it, in the user's order
+  const listSections = [...lists]
+    .sort(bySort)
+    .filter((l) => !hiddenListIds.has(l.id))
+    .map((l) => ({
+      id: l.id,
+      name: l.name,
+      tasks: visibleActiveTasks.filter((t) => t.list === l.id).sort(byDashboardOrder),
+      collapsed: collapsedIds.has(l.id),
+    }))
     .filter((s) => s.tasks.length > 0);
 
   // Completed section (always last, gray header, optional)
@@ -62,38 +52,38 @@ export default function TodoViewRedesign() {
 
   // Selection runs over the rows in the order they are drawn, so a Shift
   // range reads top to bottom.
-  const drawn = [...generalTasks, ...categorySections.flatMap((s) => s.tasks), ...completedVisible];
-  const orderedKeys = [...new Set(drawn.map(todoKey))];
-  const generalKeys = tasks.filter((t) => t.category === '').map(todoKey);
+  const drawn = [...generalTasks, ...listSections.flatMap((s) => s.tasks), ...completedVisible];
+  const orderedKeys = [...new Set(drawn.map(seedKey))];
+  const generalKeys = tasks.filter((t) => t.list === '').map(seedKey);
   const selection = useListSelection(orderedKeys, generalKeys);
   const selectedItems =
     selection.selected.size === 0
       ? []
       : toSearchItems(
-          [],
-          [],
-          tasks.filter((t) => selection.selected.has(todoKey(t))),
-          categoryById,
+          tasks.filter((t) => selection.selected.has(seedKey(t))),
+          listById,
+          tagById,
+          colorOf,
           firstDayOfWeek,
           today,
         );
 
-  const rowProps = (task: Todo) => ({
+  const rowProps = (task: Seed) => ({
     task,
     today,
     onEdit: setEditing,
     expanded: expandedId === task.id,
     onToggleExpand: () => toggleExpanded(task.id),
-    selected: selection.isSelected(todoKey(task)),
-    onRowClick: (e: React.MouseEvent) => selection.onRowClick(e, todoKey(task)),
+    selected: selection.isSelected(seedKey(task)),
+    onRowClick: (e: React.MouseEvent) => selection.onRowClick(e, seedKey(task)),
     onContextMenu: selection.onContextMenu,
   });
 
-  const handleToggleSection = (catId: string) => {
+  const handleToggleSection = (listId: string) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(catId)) next.delete(catId);
-      else next.add(catId);
+      if (next.has(listId)) next.delete(listId);
+      else next.add(listId);
       return next;
     });
   };
@@ -107,12 +97,12 @@ export default function TodoViewRedesign() {
           <span aria-hidden />
         </div>
 
-        <QuickAddField type="task" className="mx-4 mt-4 mb-4 shadow-pop" />
+        <QuickAddField kind="task" className="mx-4 mt-4 mb-4 shadow-pop" />
         {selection.selected.size > 0 && <SelectionBar items={selectedItems} scope="tasks" selection={selection} />}
 
         {/* Task List */}
         <div className="flex-1 overflow-y-auto px-4 pb-4">
-          {/* General Section: the topmost default category */}
+          {/* General Section: the unfiled to-dos, topmost */}
           {generalTasks.length > 0 && (
             <div className="mb-6">
               <AccordionHeader
@@ -132,12 +122,11 @@ export default function TodoViewRedesign() {
             </div>
           )}
 
-          {/* Category Sections */}
-          {categorySections.map((section) => (
+          {/* List Sections */}
+          {listSections.map((section) => (
             <div key={section.id} className="mb-6">
               <AccordionHeader
                 name={section.name}
-                color={section.color}
                 count={section.tasks.length}
                 open={!section.collapsed}
                 onToggle={() => handleToggleSection(section.id)}
@@ -174,7 +163,7 @@ export default function TodoViewRedesign() {
             </div>
           )}
 
-          {generalTasks.length === 0 && categorySections.length === 0 && (
+          {generalTasks.length === 0 && listSections.length === 0 && (
             <div className="text-center py-6 text-micro text-ink-muted">
               Nothing here yet — type in the "New task" field above to add your first to-do.
             </div>
@@ -184,7 +173,7 @@ export default function TodoViewRedesign() {
 
       {editModal}
       {addingIn !== undefined && (
-        <AddModal defaultType="task" defaultCategory={addingIn} onClose={() => setAddingIn(undefined)} />
+        <AddModal defaultDoable defaultList={addingIn} onClose={() => setAddingIn(undefined)} />
       )}
     </>
   );

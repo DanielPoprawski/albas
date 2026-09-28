@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS app_sessions (
 CREATE TABLE IF NOT EXISTS shares (
   owner_id   INTEGER NOT NULL REFERENCES accounts(id),
   grantee_id INTEGER NOT NULL REFERENCES accounts(id),
+  -- The row's existence is the grant (all tables). `calendar`/`todos` were
+  -- the per-group flags of the two-flag era; kept so older databases open
+  -- unchanged, never read or written.
   calendar   INTEGER NOT NULL DEFAULT 0,
   todos      INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (owner_id, grantee_id)

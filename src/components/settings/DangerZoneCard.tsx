@@ -20,15 +20,15 @@ interface WipeSpec {
  * and only shows while signed in.
  */
 export function DangerZoneCard({ onAccountDeleted }: { onAccountDeleted: () => Promise<void> }) {
-  const { deleteAllEvents, deleteAllTodos, signedIn, syncToken } = useApp();
+  const { deleteAll, signedIn, syncToken } = useApp();
 
   const wipes: WipeSpec[] = [
-    { label: 'Delete all events', what: 'every event on your calendar', run: deleteAllEvents },
-    { label: 'Delete all tasks', what: 'every one-time to-do, done or not', run: () => deleteAllTodos('task') },
+    { label: 'Delete all events', what: 'every event on your calendar', run: () => deleteAll('events') },
+    { label: 'Delete all tasks', what: 'every one-time to-do, done or not', run: () => deleteAll('todos') },
     {
       label: 'Delete all habits',
       what: 'every habit along with its whole completion history',
-      run: () => deleteAllTodos('habit'),
+      run: () => deleteAll('habits'),
     },
   ];
 

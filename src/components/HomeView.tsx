@@ -10,7 +10,7 @@ import TasksSection from './todo/TasksSection';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
 import { useInlineEdit } from './useInlineEdit';
-import type { Todo } from '../types';
+import type { Seed } from '../types';
 
 /** The phone header's square icon button — must match `CalendarNav`'s view picker so the bar's two corners agree. */
 const MOBILE_HEADER_BUTTON =
@@ -122,10 +122,10 @@ function MobileCalendar() {
 }
 
 /** Dashboard screen: mini calendar + habits + tasks. */
-function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
+function DashboardScreen({ setEditing }: { setEditing: (s: Seed | null) => void }) {
   return (
     <div className={SCREEN}>
-      <QuickAddField type="event" className="mx-2 mt-2" />
+      <QuickAddField kind="event" className="mx-2 mt-2" />
       {/* Edge to edge: every pixel of side padding is a letter of an event
           title that doesn't fit in a cell. */}
       <div className="shrink-0 border-b border-line">
@@ -140,11 +140,11 @@ function DashboardScreen({ setEditing }: { setEditing: (t: Todo | null) => void 
 }
 
 /** Habits screen: full list of habits. */
-function HabitsScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
+function HabitsScreen({ setEditing }: { setEditing: (s: Seed | null) => void }) {
   return (
     <div className={SCREEN}>
       <div className={CONTENT}>
-        <QuickAddField type="habit" className="mb-3" />
+        <QuickAddField kind="habit" className="mb-3" />
         <HabitsSection onEdit={setEditing} />
       </div>
     </div>
@@ -152,11 +152,11 @@ function HabitsScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) 
 }
 
 /** Tasks screen: full list of tasks. */
-function TasksScreen({ setEditing }: { setEditing: (t: Todo | null) => void }) {
+function TasksScreen({ setEditing }: { setEditing: (s: Seed | null) => void }) {
   return (
     <div className={SCREEN}>
       <div className={CONTENT}>
-        <QuickAddField type="task" className="mb-3" />
+        <QuickAddField kind="task" className="mb-3" />
         <TasksSection onEdit={setEditing} />
       </div>
     </div>

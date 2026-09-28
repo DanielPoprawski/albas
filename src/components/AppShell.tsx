@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Icon } from './ui/icon';
-import { remindDueEvents, remindDueTodos } from '../notifications';
+import { remindDue } from '../notifications';
 import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
@@ -20,8 +20,8 @@ import { cn, initialsOf } from '@/lib/utils';
 import { inTauri } from '../persistence';
 import { useIsMobile } from '../useMedia';
 import { useEditorMode, useShortcuts } from '../shortcuts';
-import SidebarCategories from './sidebar/SidebarCategories';
-import type { ActiveView, AddType } from '../types';
+import SidebarOrganize from './sidebar/SidebarOrganize';
+import type { ActiveView } from '../types';
 
 const NAV: { view: ActiveView; label: string; icon: ReactNode }[] = [
   { view: 'calendar', label: 'Dashboard', icon: <Icon name="grid_view" size="1rem" /> },
@@ -79,13 +79,10 @@ function Sidebar({ view, onNavigate }: { view: ActiveView; onNavigate: (view: Ac
         ))}
       </div>
 
-      {/* Categories show only on the tabs they apply to; habits carry their own colour */}
-      {(view === 'calendar' || view === 'todos') && (
+      {/* Lists and tags filter every screen but Settings */}
+      {view !== 'settings' && (
         <div className={'flex flex-col gap-2'}>
-          <SidebarCategories
-            showCompletedRow={view === 'todos'}
-            currentScope={view === 'calendar' ? 'calendar' : 'tasks'}
-          />
+          <SidebarOrganize />
         </div>
       )}
 
@@ -177,8 +174,7 @@ export default function AppShell() {
     activeView,
     setActiveView,
     calendarMode,
-    todos,
-    events,
+    allSeeds,
     loaded,
     welcomeDone,
     firstDayOfWeek,
@@ -199,7 +195,7 @@ export default function AppShell() {
   // Ctrl+N's target, owned here rather than threaded through every screen so
   // it works no matter which route is active — `AddModal` itself already
   // knows how to render standalone (see the calendar day-click callers).
-  const [addRequest, setAddRequest] = useState<{ type: AddType; date?: string } | null>(null);
+  const [addRequest, setAddRequest] = useState<{ doable: boolean; repeating?: boolean; date?: string } | null>(null);
 
   // The handle sits on the sidebar's *right* edge, so dragging right widens it.
   const sidebarResize = useResizableWidth('sidebar', 1);
@@ -207,9 +203,9 @@ export default function AppShell() {
   useShortcuts({
     newItem() {
       const date = selectedDate ?? fmt(new Date());
-      if (activeView === 'calendar') setAddRequest({ type: 'event', date });
-      else if (activeView === 'todos') setAddRequest({ type: 'task', date });
-      else if (activeView === 'habits') setAddRequest({ type: 'habit', date });
+      if (activeView === 'calendar') setAddRequest({ doable: false, date });
+      else if (activeView === 'todos') setAddRequest({ doable: true, date });
+      else if (activeView === 'habits') setAddRequest({ doable: true, repeating: true, date });
       // settings: no item to create.
     },
     navigate: setActiveView,
@@ -225,21 +221,18 @@ export default function AppShell() {
     },
   });
 
-  // Remind about due to-dos and upcoming events on launch, then re-check
-  // periodically. 5-minute cadence so short event offsets (10 min) can't
-  // fall between polls; to-do reminders self-dedupe to once a day.
+  // Remind about upcoming seeds on launch, then re-check periodically.
+  // 5-minute cadence so short leads (10 min) can't fall between polls; each
+  // occurrence+lead fires at most once.
   useEffect(() => {
     if (!loaded) return; // don't notify against empty pre-load state
-    const check = () => {
-      remindDueTodos(todos, firstDayOfWeek);
-      remindDueEvents(events);
-    };
+    const check = () => remindDue(allSeeds, firstDayOfWeek);
     check();
     const id = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [todos, events, loaded, firstDayOfWeek]);
+  }, [allSeeds, loaded, firstDayOfWeek]);
 
-  if (!loaded) return null; // load is a few ms; avoids seed/empty flicker
+  if (!loaded) return null; // load is a few ms; avoids an empty flicker
   // Accounts are a Tauri-only feature (the browser dev server has no sync), so
   // the gate never appears there. Dismissing it or signing in flips welcomeDone.
   if (inTauri() && !welcomeDone) return <Welcome />;
@@ -308,7 +301,12 @@ export default function AppShell() {
           not just the routes that already render their own AddModal for a
           day click or an edit. */}
       {addRequest && (
-        <AddModal defaultType={addRequest.type} defaultDate={addRequest.date} onClose={() => setAddRequest(null)} />
+        <AddModal
+          defaultDoable={addRequest.doable}
+          defaultRepeating={addRequest.repeating}
+          defaultDate={addRequest.date}
+          onClose={() => setAddRequest(null)}
+        />
       )}
     </div>
   );

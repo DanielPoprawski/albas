@@ -34,15 +34,22 @@ unnecessary. A new file or dependency needs a reason a smaller edit couldn't cov
   `build.gradle.kts` files are load-bearing for the barcode scanner's CameraX. Don't "tidy" them.
 
 ## Data & sync invariants
-- **Synced column = 4 touches**: `db.rs` (`SCHEMA` + `user_version` migration), `src-tauri/src/sync.rs`
-  `TABLES`, `sharedLogic.ts` (+ `persistence.ts` both branches and `src/ipc.ts`). Mismatch = silent no-sync. `todos.category` /
-  `events.category` hold a category **id** ('' = none); repeating to-dos (habits) ignore it — their colour is
-  their own `colorKey`, `sort`/`routine` are habit-only, and `habitsLayout` is a synced setting. A new column on a shipped sync-server table
-  needs an `ensure_column()` call in `schema.rs` `init_db`, not just `SCHEMA`.
+- **Synced column = 4 touches**: `db.rs` (`SCHEMA_V10` + `user_version` migration), `src-tauri/src/sync.rs`
+  `TABLES`, `sharedLogic.ts` (+ `persistence.ts` both branches and `src/ipc.ts`). Mismatch = silent no-sync.
+  Synced tables are `seeds`, `done` (pk `seed_id,date`), `lists`, `tags`; the pre-v10 tables (`habits`,
+  `events`, `tasks`, `periods`, `categories`, `habit_completions`) still exist in old files, unread, and
+  `sync.rs` `LEGACY_TABLES` swallows their server rows. **One entity, `Seed`** (`src/types.ts`): `track`
+  null = event, else doable; `repeat.type` none = one-off; `seedLogic.ts` is the one recurrence/streak/label
+  engine and the views are filters (`isTask`/`isHabit`/dated). `seed.list` is a list id ('' = unfiled),
+  `seed.tags` are ordered tag ids and the **last** one drives colour and icon; `color` null = inherit
+  (`seed.color ?? lastTag.color ?? 'grey'`). `sort`/`routine` are habit-only, `habitsLayout` a synced
+  setting. A new column on a shipped sync-server table needs an `ensure_column()` call in `schema.rs`
+  `init_db`, not just `SCHEMA`.
 - Server stores opaque `(account, table, pk) → payload`, never parses it. Two clocks: `updated_at`
   (device, last-write-wins per row) and `seq` (server, resume point). `__`-prefixed settings are local
-  only. Sharing is read-only (`calendar`/`todos`), cached in `shared_rows`, ids `${owner}:${pk}`;
-  a `grantRev` bump forces a full snapshot.
+  only. Sharing is read-only and all-or-nothing (a `shares` row is the grant), cached in `shared_rows`,
+  ids `${owner}:${pk}` (a shared seed's `list` and `tags` are namespaced too); a `grantRev` bump forces
+  a full snapshot.
 - One origin `albas.danni-dev.com`; changing it invalidates all passkeys. `src/syncServer.ts` (no
   `/sync`) and `sync.rs` `DEFAULT_URL` (with `/sync`) move together; add the old URL to `db.rs`
   `SUPERSEDED_URLS` first, since a stored `__sync_url` beats the default. Blank Settings URL = default,
@@ -73,11 +80,13 @@ unnecessary. A new file or dependency needs a reason a smaller edit couldn't cov
   `localStorage` blob under `bun run dev`.
 - Never hardcode hex — use the `--t-*` tokens in `App.css` (`:root` + a full `[data-theme='dark']`
   restatement; `@theme inline` re-exports them as `bg-accent`/`text-ink`/`border-line`/…). Text on the
-  accent is `text-on-accent`, never `text-white`. `src/colors.ts` mirrors the light hexes as **data
-  identities** only. `bun run audit:css` enforces: mirror matches `:root`, no `#hex` in TSX, no dead
-  App.css class, every utility resolves to a `@theme` key (an unknown one compiles to *nothing*), no
-  `@media (max-width…)` in App.css (phone layout is `max-md:`, 768px = `useMedia.ts`), and inline
-  `style={}` only for runtime data with a `// dynamic:` comment within the 3 lines above.
+  accent is `text-on-accent`, never `text-white`. Item colours are `ColorKey`s (12 keys, `src/types.ts`)
+  painted through `src/colors.ts` `COLOR_CLASSES[key]` literal classes over the `--t-c-<key>{,-tint,-line,-ink}`
+  token families; `ink`/`paper` swap sides on dark. `bun run audit:css` enforces: every key has its
+  tokens in both themes, no `#hex` in TSX, no dead App.css class, every utility resolves to a `@theme` key
+  (an unknown one compiles to *nothing*), no `@media (max-width…)` in App.css (phone layout is `max-md:`,
+  768px = `useMedia.ts`), and inline `style={}` only for runtime data with a `// dynamic:` comment within
+  the 3 lines above.
 - App.css order: tokens → `@theme` → `@utility`s → `@layer base` (`* { font-family }` must be here) →
   unlayered resets → `@layer components` (multi-file classes only) → keyframes. Component classes lose
   to utilities on the same element. Reuse `components/ui/` (no barrel) and `forms/shared.tsx` before
@@ -88,11 +97,13 @@ unnecessary. A new file or dependency needs a reason a smaller edit couldn't cov
   stylesheets) beyond the `// dynamic:` exception. Don't lift `className` strings into `const`s; if a set
   of classes must be shared, express the variation as a small JS map (`variant → classes`), and only when
   the string would otherwise sit far from its element or is reused 5+ times — otherwise keep the literal.
-- **rem, not px**: Settings › Text size scales `html` font-size, so lucide icons take `size="1rem"`,
+- **rem, not px**: Settings › Text size scales `html` font-size, so icons (`components/ui/icon.tsx`, Material Symbols ligatures) take `size="1rem"`,
   calendar geometry is `@theme` `--spacing-hour-h/gutter-w/lane-h/lane-row`, text sizes are Tailwind's
   `text-xs`…`text-lg` or `text-micro/meta/ui/h1`. px only for 1–2px hairlines. Radius 0, no focus
   outlines, by design. `min-h-0` on every `flex flex-col` ancestor of `HourGrid`.
-- Creating things goes through `createItem.ts` `buildCreate()` (`QuickAddField`, calendar clicks, Ctrl+N).
+- Creating things goes through `createItem.ts` `buildCreate()` (`QuickAddField`, calendar clicks, Ctrl+N);
+  the Add modal has no type switch — a doable checkbox beside the title and one options list
+  (`addModal/catalog.ts` `OPTIONS` with `when` predicates) cover events, to-dos and habits.
   **Leaving a modal saves it**: `useModalDismiss` routes Escape/scrim/×/Android back to `commit()`; only
   Cancel discards. `nlDate.ts` = casual chrono in titles, strict day-first in `DateField`. Shortcuts +
   their Settings list = `shortcuts.ts` `SHORTCUTS`.

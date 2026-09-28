@@ -48,12 +48,11 @@ fn req(changes: Vec<Change>) -> SyncReq {
     }
 }
 
-fn grant(c: &Connection, owner: i64, grantee: i64, calendar: bool, todos: bool) {
+fn grant(c: &Connection, owner: i64, grantee: i64) {
     c.execute(
-        "INSERT INTO shares (owner_id, grantee_id, calendar, todos) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(owner_id, grantee_id) DO UPDATE SET
-           calendar = excluded.calendar, todos = excluded.todos",
-        params![owner, grantee, calendar as i64, todos as i64],
+        "INSERT INTO shares (owner_id, grantee_id) VALUES (?1, ?2)
+         ON CONFLICT(owner_id, grantee_id) DO NOTHING",
+        params![owner, grantee],
     )
     .unwrap();
     c.execute(
@@ -86,7 +85,7 @@ fn rename_validates_and_bumps_grantees() {
     let alice = make_account(&c, "alice");
     let bob = make_account(&c, "bob");
     make_account(&c, "carol");
-    grant(&c, alice, bob, true, false);
+    grant(&c, alice, bob);
     let rev = grant_rev(&c, bob);
 
     assert!(matches!(
@@ -502,24 +501,25 @@ fn legacy_v2_accounts_schema_migrates_tokens_out() {
 }
 
 /// Sharing exposes exactly the granted table groups, to exactly the
-/// grantee — never a table outside a group, never a third account.
+/// grantee — never a table outside the synced set, never a third account.
 #[test]
 fn share_filtering_and_isolation() {
     let mut c = mem(None);
     let alice = make_account(&c, "alice");
     let bob = make_account(&c, "bob");
     let carol = make_account(&c, "carol");
-    grant(&c, alice, bob, true, false); // calendar only
+    grant(&c, alice, bob);
     let tx = c.transaction().unwrap();
 
     apply_sync(
         &tx,
         alice,
         &req(vec![
-            change("events", "e1", "{\"title\":\"dinner\"}", 100),
-            change("periods", "p1", "{\"name\":\"trip\"}", 100),
-            change("habits", "h1", "{\"name\":\"run\"}", 100),
-            change("scratch", "s1", "{\"n\":1}", 100),
+            change("seeds", "s1", "{\"title\":\"dinner\"}", 100),
+            change("done", "s1\u{1}2026-01-01", "{\"value\":1}", 100),
+            change("lists", "l1", "{\"name\":\"Work\"}", 100),
+            change("tags", "t1", "{\"name\":\"errand\"}", 100),
+            change("scratch", "x1", "{\"n\":1}", 100),
         ]),
     )
     .unwrap();
@@ -536,11 +536,12 @@ fn share_filtering_and_isolation() {
     )
     .unwrap();
     let tbls: Vec<&str> = bob_pull.shared.iter().map(|s| s.tbl.as_str()).collect();
-    assert!(tbls.contains(&"events") && tbls.contains(&"periods"));
-    assert!(!tbls.contains(&"habits"), "todos group was not granted");
+    for t in ["seeds", "done", "lists", "tags"] {
+        assert!(tbls.contains(&t), "{t} rides along with the grant");
+    }
     assert!(
         !tbls.contains(&"scratch"),
-        "a table outside every group is never shareable"
+        "a table outside the synced set is never shareable"
     );
     assert!(bob_pull.shared.iter().all(|s| s.from == "alice"));
     assert!(
@@ -560,17 +561,17 @@ fn grant_rev_mismatch_sends_full_snapshot() {
     let mut c = mem(None);
     let alice = make_account(&c, "alice");
     let bob = make_account(&c, "bob");
-    grant(&c, alice, bob, true, false);
+    grant(&c, alice, bob);
     let tx = c.transaction().unwrap();
 
     apply_sync(
         &tx,
         alice,
         &req(vec![
-            change("events", "e1", "{\"title\":\"kept\"}", 100),
+            change("seeds", "e1", "{\"title\":\"kept\"}", 100),
             Change {
                 deleted: true,
-                ..change("events", "e2", "{\"title\":\"gone\"}", 100)
+                ..change("seeds", "e2", "{\"title\":\"gone\"}", 100)
             },
         ]),
     )
@@ -603,7 +604,7 @@ fn grant_rev_mismatch_sends_full_snapshot() {
         alice,
         &req(vec![Change {
             deleted: true,
-            ..change("events", "e1", "{}", 200)
+            ..change("seeds", "e1", "{}", 200)
         }]),
     )
     .unwrap();
@@ -639,10 +640,10 @@ fn share_changes_bump_grantee_rev() {
         .unwrap()
     };
     assert_eq!(rev(bob), 0);
-    grant(&c, alice, bob, true, true);
+    grant(&c, alice, bob);
     assert_eq!(rev(bob), 1);
-    grant(&c, alice, bob, true, false);
-    assert_eq!(rev(bob), 2);
+    grant(&c, alice, bob);
+    assert_eq!(rev(bob), 2, "re-granting still bumps");
     assert_eq!(rev(alice), 0, "the owner's own rev is untouched");
 }
 
@@ -702,8 +703,8 @@ fn delete_account_cascades_and_bumps_grantees() {
         [alice],
     )
     .unwrap();
-    grant(&c, alice, bob, true, false); // alice -> bob: bob must rebuild
-    grant(&c, carol, alice, true, true); // carol -> alice: carol is untouched
+    grant(&c, alice, bob); // alice -> bob: bob must rebuild
+    grant(&c, carol, alice); // carol -> alice: carol is untouched
     let bob_rev = grant_rev(&c, bob);
     let carol_rev = grant_rev(&c, carol);
 
@@ -769,38 +770,36 @@ fn list_accounts_includes_tokens_passkeys_and_rows() {
 /// The admin pair is named explicitly, listed server-wide, and still bumps
 /// the grantee's `grant_rev` like the self-service routes do.
 #[test]
-fn set_share_upserts_then_removes() {
+fn set_share_grants_then_removes() {
     let c = mem(None);
     let alice = make_account(&c, "alice");
     let bob = make_account(&c, "bob");
 
-    set_share_db(&c, "alice", "bob", true, false).unwrap();
+    set_share_db(&c, "alice", "bob", true).unwrap();
     let list = list_shares_db(&c).unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(
         (list[0].owner_name.as_str(), list[0].grantee_name.as_str()),
         ("alice", "bob")
     );
-    assert!(list[0].calendar && !list[0].todos);
     assert_eq!(grant_rev(&c, bob), 1);
 
-    set_share_db(&c, "alice", "bob", true, true).unwrap();
+    set_share_db(&c, "alice", "bob", true).unwrap();
     let list = list_shares_db(&c).unwrap();
-    assert_eq!(list.len(), 1, "upsert, not a second row");
-    assert!(list[0].todos);
-    assert_eq!(grant_rev(&c, bob), 2);
+    assert_eq!(list.len(), 1, "granting again is not a second row");
+    assert_eq!(grant_rev(&c, bob), 2, "but it still bumps");
 
-    set_share_db(&c, "alice", "bob", false, false).unwrap();
+    set_share_db(&c, "alice", "bob", false).unwrap();
     assert!(list_shares_db(&c).unwrap().is_empty());
     assert_eq!(grant_rev(&c, bob), 3, "removal bumps too");
     assert_eq!(grant_rev(&c, alice), 0, "the owner's own rev is untouched");
 
     assert!(matches!(
-        set_share_db(&c, "alice", "nobody", true, true),
+        set_share_db(&c, "alice", "nobody", true),
         Err(AdminError::NotFound)
     ));
     assert!(matches!(
-        set_share_db(&c, "alice", "alice", true, true),
+        set_share_db(&c, "alice", "alice", true),
         Err(AdminError::Invalid(_))
     ));
 }
@@ -1064,13 +1063,11 @@ async fn shares_routes_hide_unknown_names_and_refuse_self() {
     let alice_token = mint_token(&c, alice, "t").unwrap();
     let bob_token = mint_token(&c, bob, "t").unwrap();
     let state = state_for(c);
-    let body = |calendar: bool, todos: bool| Json(ShareBody { calendar, todos });
 
     let unknown = shares_put(
         State(state.clone()),
         authed(alice, &alice_token),
         Path("nobody".into()),
-        body(true, true),
     )
     .await
     .unwrap()
@@ -1081,7 +1078,6 @@ async fn shares_routes_hide_unknown_names_and_refuse_self() {
         State(state.clone()),
         authed(alice, &alice_token),
         Path("alice".into()),
-        body(true, true),
     )
     .await
     .unwrap_err();
@@ -1091,7 +1087,6 @@ async fn shares_routes_hide_unknown_names_and_refuse_self() {
         State(state.clone()),
         authed(alice, &alice_token),
         Path("bob".into()),
-        body(true, false),
     )
     .await
     .unwrap()
@@ -1106,8 +1101,11 @@ async fn shares_routes_hide_unknown_names_and_refuse_self() {
     )
     .unwrap();
     assert_eq!(alices["outgoing"][0]["name"], "bob");
-    assert_eq!(alices["outgoing"][0]["calendar"], true);
-    assert_eq!(alices["outgoing"][0]["todos"], false);
+    assert_eq!(
+        alices["outgoing"][0].as_object().unwrap().len(),
+        1,
+        "a grant is just a name"
+    );
     assert!(alices["incoming"].as_array().unwrap().is_empty());
     let bobs = serde_json::to_value(
         shares_get(State(state.clone()), authed(bob, &bob_token))

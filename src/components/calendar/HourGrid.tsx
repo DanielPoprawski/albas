@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
+import { COLOR_CLASSES } from '../../colors';
+import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
-import { shortTime, timeToMinutes, type Occurrence } from '../../eventLogic';
-import { colorHex } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
-import type { CalendarEvent } from '../../types';
+import { type Occurrence, shortTime, timeToMinutes } from '../../seedLogic';
+import { seedTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
+import { Icon } from '../ui/icon';
 
 /** `top`/`height` for a point `min` minutes into the day, in hour-grid units. */
 function atMinutes(min: number): string {
@@ -18,13 +20,13 @@ interface Positioned {
   lanes: number;
 }
 
-/** Greedy overlap layout: cluster overlapping events, assign lanes within each cluster. */
+/** Greedy overlap layout: cluster overlapping occurrences, assign lanes within each cluster. */
 function layoutDay(occs: Occurrence[]): Positioned[] {
   const items = occs
-    .filter((o) => o.event.startTime)
+    .filter((o) => o.seed.time)
     .map((o) => {
-      const startMin = timeToMinutes(o.event.startTime!);
-      const rawEnd = o.event.endTime ? timeToMinutes(o.event.endTime) : startMin + 60;
+      const startMin = timeToMinutes(o.seed.time!);
+      const rawEnd = o.seed.endTime ? timeToMinutes(o.seed.endTime) : startMin + 60;
       return { o, startMin, endMin: Math.min(1440, Math.max(rawEnd, startMin + 30)) };
     })
     .sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
@@ -62,15 +64,16 @@ function hourLabel(h: number): string {
 
 interface Props {
   days: string[]; // 1 (day view) or 7 (week view) YYYY-MM-DD strings
-  /** Timed single-day occurrences only (bars live in the all-day section). */
+  /** Timed single-day occurrences only (bars and chips live in the all-day section). */
   occurrences: Occurrence[];
-  onEditEvent: (event: CalendarEvent, occurrenceDate: string) => void;
+  onEdit: (o: Occurrence) => void;
   onSelectDate?: (dateStr: string) => void;
   /** A click on empty grid: the day and the hour (`HH:00`) under the pointer. */
   onAddAt?: (dateStr: string, time: string) => void;
 }
 
-export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate, onAddAt }: Props) {
+export default function HourGrid({ days, occurrences, onEdit, onSelectDate, onAddAt }: Props) {
+  const { colorOf, iconOf } = useApp();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -145,39 +148,41 @@ export default function HourGrid({ days, occurrences, onEditEvent, onSelectDate,
                 </div>
               )}
 
-              {/* timed events */}
+              {/* timed blocks: a tint fill, a mark-coloured left rule and text (via `border-current`) */}
               {positioned.map(({ occ, startMin, endMin, lane, lanes }) => {
-                const hex = colorHex(occ.event.colorKey);
+                const c = COLOR_CLASSES[colorOf(occ.seed)];
+                const icon = iconOf(occ.seed);
                 const minutes = endMin - startMin;
                 return (
                   <div
                     key={occ.key}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onEditEvent(occ.event, occ.startDate);
+                      onEdit(occ);
                     }}
-                    title={sharedTitleAttr(occ.event)}
-                    className="absolute px-xs py-0.5 cursor-pointer overflow-hidden hover:opacity-90 hover:shadow-pop"
-                    // dynamic: the event's own time span, lane, and colour
+                    title={sharedTitleAttr(occ.seed)}
+                    className={cn(
+                      'absolute px-xs py-0.5 cursor-pointer overflow-hidden hover:opacity-90 hover:shadow-pop border-l-3 border-current',
+                      c.tint,
+                      c.text,
+                    )}
+                    // dynamic: the occurrence's own time span and lane, dimmed when shared
                     style={{
                       top: atMinutes(startMin),
                       height: `calc(${atMinutes(minutes)} - 0.125rem)`,
                       left: `calc(${(lane / lanes) * 100}% + 0.125rem)`,
                       width: `calc(${(1 / lanes) * 100}% - 0.25rem)`,
-                      backgroundColor: `${hex}26`,
-                      borderLeft: `0.1875rem solid ${hex}`,
-                      opacity: sharedOpacity(occ.event),
+                      opacity: sharedOpacity(occ.seed),
                     }}
                   >
-                    {/* dynamic: the event's own colour */}
-                    <div className="text-xs font-bold overflow-hidden whitespace-nowrap" style={{ color: hex }}>
-                      {eventTitle(occ.event)}
+                    <div className="flex items-center gap-1 text-xs font-bold overflow-hidden whitespace-nowrap">
+                      {icon && <Icon name={icon} size="0.75rem" />}
+                      <span className="min-w-0 truncate">{seedTitle(occ.seed)}</span>
                     </div>
-                    {/* dynamic: the event's own colour */}
                     {minutes >= 45 && (
-                      <div className="text-xs opacity-70 overflow-hidden whitespace-nowrap" style={{ color: hex }}>
-                        {shortTime(occ.event.startTime!)}
-                        {occ.event.endTime ? ` – ${shortTime(occ.event.endTime)}` : ''}
+                      <div className="text-xs opacity-70 overflow-hidden whitespace-nowrap">
+                        {shortTime(occ.seed.time!)}
+                        {occ.seed.endTime ? ` – ${shortTime(occ.seed.endTime)}` : ''}
                       </div>
                     )}
                   </div>

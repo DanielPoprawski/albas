@@ -121,45 +121,71 @@
   --t-ink-secondary: #6b7280;
   --t-ink-muted: #9ca3af;
 
-  /* Category accents — the mark colour, plus the tint/hairline/ink trio a
-     chip is drawn from. Taken from the To-Do category defs and the calendar
-     `.event.*` rules in the Dashboard design. */
-  --t-cat-purple: #a855f7;
-  --t-cat-purple-tint: #f3e8ff;
-  --t-cat-purple-line: #e9d5ff;
-  --t-cat-purple-ink: #6b21a8;
+  /* Item colours — the twelve keys anything can wear (`ColorKey`), each
+     as the mark colour plus the tint/hairline/ink trio a chip is drawn
+     from. Small marks only: dots, pills, bars, habit squares. `ink` and
+     `paper` are the theme's own text and page colours and swap sides on
+     dark. Paired with `src/colors.ts` COLOR_CLASSES; the audit asserts
+     every key has all four tokens in both themes. */
+  --t-c-ink: #1a202c;
+  --t-c-ink-tint: #e5e7eb;
+  --t-c-ink-line: #cbd5e1;
+  --t-c-ink-ink: #1a202c;
 
-  --t-cat-amber: #f59e0b;
-  --t-cat-amber-tint: #fef3c7;
-  --t-cat-amber-line: #fcd34d;
-  --t-cat-amber-ink: #92400e;
+  --t-c-paper: #ffffff;
+  --t-c-paper-tint: #ffffff;
+  --t-c-paper-line: #d1d5db;
+  --t-c-paper-ink: #374151;
 
-  --t-cat-green: #10b981;
-  --t-cat-green-tint: #dcfce7;
-  --t-cat-green-line: #bbf7d0;
-  --t-cat-green-ink: #166534;
+  --t-c-grey: #6b7280;
+  --t-c-grey-tint: #f3f4f6;
+  --t-c-grey-line: #e5e7eb;
+  --t-c-grey-ink: #374151;
 
-  --t-cat-blue: #3b82f6;
-  --t-cat-blue-tint: #dbeafe;
-  --t-cat-blue-line: #bfdbfe;
-  --t-cat-blue-ink: #1e40af;
+  --t-c-grey-dark: #374151;
+  --t-c-grey-dark-tint: #e5e7eb;
+  --t-c-grey-dark-line: #d1d5db;
+  --t-c-grey-dark-ink: #1f2937;
 
-  --t-cat-pink: #ec4899;
-  --t-cat-pink-tint: #fce7f3;
-  --t-cat-pink-line: #fbcfe8;
-  --t-cat-pink-ink: #831843;
+  --t-c-red: #ef4444;
+  --t-c-red-tint: #fee2e2;
+  --t-c-red-line: #fecaca;
+  --t-c-red-ink: #991b1b;
 
-  /* Red is the danger colour doubling as a category mark — the dashboard's
-     habit palette uses it for its second row. */
-  --t-cat-red: #ef4444;
-  --t-cat-red-tint: #fee2e2;
-  --t-cat-red-line: #fecaca;
-  --t-cat-red-ink: #991b1b;
+  --t-c-orange: #f97316;
+  --t-c-orange-tint: #ffedd5;
+  --t-c-orange-line: #fed7aa;
+  --t-c-orange-ink: #9a3412;
 
-  --t-cat-teal: #06b6d4;
-  --t-cat-teal-tint: #cffafe;
-  --t-cat-teal-line: #a5f3fc;
-  --t-cat-teal-ink: #0e7490;
+  --t-c-yellow: #eab308;
+  --t-c-yellow-tint: #fef9c3;
+  --t-c-yellow-line: #fef08a;
+  --t-c-yellow-ink: #854d0e;
+
+  --t-c-green: #10b981;
+  --t-c-green-tint: #dcfce7;
+  --t-c-green-line: #bbf7d0;
+  --t-c-green-ink: #166534;
+
+  --t-c-teal: #06b6d4;
+  --t-c-teal-tint: #cffafe;
+  --t-c-teal-line: #a5f3fc;
+  --t-c-teal-ink: #0e7490;
+
+  --t-c-blue: #3b82f6;
+  --t-c-blue-tint: #dbeafe;
+  --t-c-blue-line: #bfdbfe;
+  --t-c-blue-ink: #1e40af;
+
+  --t-c-purple: #a855f7;
+  --t-c-purple-tint: #f3e8ff;
+  --t-c-purple-line: #e9d5ff;
+  --t-c-purple-ink: #6b21a8;
+
+  --t-c-pink: #ec4899;
+  --t-c-pink-tint: #fce7f3;
+  --t-c-pink-line: #fbcfe8;
+  --t-c-pink-ink: #831843;
 
   /* Status */
   --t-danger: #ef4444;
@@ -192,13 +218,13 @@
      future theme can move it without touching a single call site. */
   --t-on-accent: #ffffff;
 
-  /* Status roles beyond danger/success. These alias the category ramp on
+  /* Status roles beyond danger/success. These alias the item-colour ramp on
      purpose — the ramp already has light and dark values tuned for both
      small marks and callout surfaces — so a `var()` here needs no dark
      restatement. Only the roles something paints with exist. */
-  --t-warn: var(--t-cat-amber);
-  --t-warn-tint: var(--t-cat-amber-tint);
-  --t-danger-tint: var(--t-cat-red-tint);
+  --t-warn: var(--t-c-orange);
+  --t-warn-tint: var(--t-c-orange-tint);
+  --t-danger-tint: var(--t-c-red-tint);
 
   /* Text selection and the search-match `mark`. One name so a theme can
      decouple them from the accent tint later. */
@@ -282,54 +308,78 @@
   --t-ink-muted: #6f757f;
 
   /*
-   * Category ramps.
+   * Item colours.
    *
-   * These are seven small-mark hues in four variants. The mark itself
-   * (`--t-cat-*`) is brightened a little and otherwise kept — it is a dot or
-   * a 2px bar and must stay recognisably the same colour across themes.
-   *
-   * The trio behind it is *not* uniformly darkened. `-tint` is the chip's
-   * fill, so it becomes a low-lightness, low-saturation version of the hue
-   * that sits just above `--t-surface`; `-line` is its hairline, one step
-   * brighter than the tint rather than one step darker as in light; and
-   * `-ink` flips outright — in light it is the darkest value of the ramp
-   * (dark text on a pale chip), here it must be the *lightest* (pale text on
-   * a dark chip), or every chip label would be invisible.
+   * The mark itself (`--t-c-*`) is brightened a little and otherwise kept —
+   * it is a dot or a 2px bar and must stay recognisably the same colour
+   * across themes. The trio behind it is *not* uniformly darkened: `-tint`
+   * is the chip's fill, so it becomes a low-lightness, low-saturation
+   * version of the hue just above `--t-surface`; `-line` is its hairline,
+   * one step brighter than the tint rather than one step darker as in
+   * light; and `-ink` flips outright — in light it is the darkest value of
+   * the ramp (dark text on a pale chip), here it must be the *lightest*
+   * (pale text on a dark chip), or every chip label would be invisible.
+   * `ink` and `paper` swap: ink is the light text, paper the dark page.
    */
-  --t-cat-purple: #b06bf8;
-  --t-cat-purple-tint: #2a1d3d;
-  --t-cat-purple-line: #46305f;
-  --t-cat-purple-ink: #ddc2fb;
+  --t-c-ink: #e8eaed;
+  --t-c-ink-tint: #2a2d33;
+  --t-c-ink-line: #3d4149;
+  --t-c-ink-ink: #e8eaed;
 
-  --t-cat-amber: #fbbf24;
-  --t-cat-amber-tint: #38290f;
-  --t-cat-amber-line: #5c4318;
-  --t-cat-amber-ink: #fcd77e;
+  --t-c-paper: #0e1013;
+  --t-c-paper-tint: #16191e;
+  --t-c-paper-line: #2a2d33;
+  --t-c-paper-ink: #a0a6b0;
 
-  --t-cat-green: #34d399;
-  --t-cat-green-tint: #102f24;
-  --t-cat-green-line: #1c4d3a;
-  --t-cat-green-ink: #86efc4;
+  --t-c-grey: #9ca3af;
+  --t-c-grey-tint: #23262c;
+  --t-c-grey-line: #363a42;
+  --t-c-grey-ink: #d1d5db;
 
-  --t-cat-blue: #60a5fa;
-  --t-cat-blue-tint: #14243d;
-  --t-cat-blue-line: #22406b;
-  --t-cat-blue-ink: #a8cbfc;
+  --t-c-grey-dark: #6b7280;
+  --t-c-grey-dark-tint: #1e2127;
+  --t-c-grey-dark-line: #2f333a;
+  --t-c-grey-dark-ink: #b0b6c0;
 
-  --t-cat-pink: #f472b6;
-  --t-cat-pink-tint: #3a1a2b;
-  --t-cat-pink-line: #5e2c46;
-  --t-cat-pink-ink: #f9b4d5;
+  --t-c-red: #f87171;
+  --t-c-red-tint: #3a1a1a;
+  --t-c-red-line: #5e2a2a;
+  --t-c-red-ink: #fbb0b0;
 
-  --t-cat-red: #f87171;
-  --t-cat-red-tint: #3a1a1a;
-  --t-cat-red-line: #5e2a2a;
-  --t-cat-red-ink: #fbb0b0;
+  --t-c-orange: #fb923c;
+  --t-c-orange-tint: #3b2412;
+  --t-c-orange-line: #5f3a1c;
+  --t-c-orange-ink: #fdba74;
 
-  --t-cat-teal: #22d3ee;
-  --t-cat-teal-tint: #0e2c33;
-  --t-cat-teal-line: #185059;
-  --t-cat-teal-ink: #8ce7f6;
+  --t-c-yellow: #facc15;
+  --t-c-yellow-tint: #362d0c;
+  --t-c-yellow-line: #574a14;
+  --t-c-yellow-ink: #fde68a;
+
+  --t-c-green: #34d399;
+  --t-c-green-tint: #102f24;
+  --t-c-green-line: #1c4d3a;
+  --t-c-green-ink: #86efc4;
+
+  --t-c-teal: #22d3ee;
+  --t-c-teal-tint: #0e2c33;
+  --t-c-teal-line: #185059;
+  --t-c-teal-ink: #8ce7f6;
+
+  --t-c-blue: #60a5fa;
+  --t-c-blue-tint: #14243d;
+  --t-c-blue-line: #22406b;
+  --t-c-blue-ink: #a8cbfc;
+
+  --t-c-purple: #b06bf8;
+  --t-c-purple-tint: #2a1d3d;
+  --t-c-purple-line: #46305f;
+  --t-c-purple-ink: #ddc2fb;
+
+  --t-c-pink: #f472b6;
+  --t-c-pink-tint: #3a1a2b;
+  --t-c-pink-line: #5e2c46;
+  --t-c-pink-ink: #f9b4d5;
 
   /* Status. Both are used as marks and as text on a dark surface, so both
      move up the ramp; `--t-warn-ink` is a body-copy amber and needs the most. */
@@ -400,34 +450,54 @@
   --color-ink-secondary: var(--t-ink-secondary);
   --color-ink-muted: var(--t-ink-muted);
 
-  --color-cat-purple: var(--t-cat-purple);
-  --color-cat-purple-tint: var(--t-cat-purple-tint);
-  --color-cat-purple-line: var(--t-cat-purple-line);
-  --color-cat-purple-ink: var(--t-cat-purple-ink);
-  --color-cat-amber: var(--t-cat-amber);
-  --color-cat-amber-tint: var(--t-cat-amber-tint);
-  --color-cat-amber-line: var(--t-cat-amber-line);
-  --color-cat-amber-ink: var(--t-cat-amber-ink);
-  --color-cat-green: var(--t-cat-green);
-  --color-cat-green-tint: var(--t-cat-green-tint);
-  --color-cat-green-line: var(--t-cat-green-line);
-  --color-cat-green-ink: var(--t-cat-green-ink);
-  --color-cat-blue: var(--t-cat-blue);
-  --color-cat-blue-tint: var(--t-cat-blue-tint);
-  --color-cat-blue-line: var(--t-cat-blue-line);
-  --color-cat-blue-ink: var(--t-cat-blue-ink);
-  --color-cat-pink: var(--t-cat-pink);
-  --color-cat-pink-tint: var(--t-cat-pink-tint);
-  --color-cat-pink-line: var(--t-cat-pink-line);
-  --color-cat-pink-ink: var(--t-cat-pink-ink);
-  --color-cat-red: var(--t-cat-red);
-  --color-cat-red-tint: var(--t-cat-red-tint);
-  --color-cat-red-line: var(--t-cat-red-line);
-  --color-cat-red-ink: var(--t-cat-red-ink);
-  --color-cat-teal: var(--t-cat-teal);
-  --color-cat-teal-tint: var(--t-cat-teal-tint);
-  --color-cat-teal-line: var(--t-cat-teal-line);
-  --color-cat-teal-ink: var(--t-cat-teal-ink);
+  --color-c-ink: var(--t-c-ink);
+  --color-c-ink-tint: var(--t-c-ink-tint);
+  --color-c-ink-line: var(--t-c-ink-line);
+  --color-c-ink-ink: var(--t-c-ink-ink);
+  --color-c-paper: var(--t-c-paper);
+  --color-c-paper-tint: var(--t-c-paper-tint);
+  --color-c-paper-line: var(--t-c-paper-line);
+  --color-c-paper-ink: var(--t-c-paper-ink);
+  --color-c-grey: var(--t-c-grey);
+  --color-c-grey-tint: var(--t-c-grey-tint);
+  --color-c-grey-line: var(--t-c-grey-line);
+  --color-c-grey-ink: var(--t-c-grey-ink);
+  --color-c-grey-dark: var(--t-c-grey-dark);
+  --color-c-grey-dark-tint: var(--t-c-grey-dark-tint);
+  --color-c-grey-dark-line: var(--t-c-grey-dark-line);
+  --color-c-grey-dark-ink: var(--t-c-grey-dark-ink);
+  --color-c-red: var(--t-c-red);
+  --color-c-red-tint: var(--t-c-red-tint);
+  --color-c-red-line: var(--t-c-red-line);
+  --color-c-red-ink: var(--t-c-red-ink);
+  --color-c-orange: var(--t-c-orange);
+  --color-c-orange-tint: var(--t-c-orange-tint);
+  --color-c-orange-line: var(--t-c-orange-line);
+  --color-c-orange-ink: var(--t-c-orange-ink);
+  --color-c-yellow: var(--t-c-yellow);
+  --color-c-yellow-tint: var(--t-c-yellow-tint);
+  --color-c-yellow-line: var(--t-c-yellow-line);
+  --color-c-yellow-ink: var(--t-c-yellow-ink);
+  --color-c-green: var(--t-c-green);
+  --color-c-green-tint: var(--t-c-green-tint);
+  --color-c-green-line: var(--t-c-green-line);
+  --color-c-green-ink: var(--t-c-green-ink);
+  --color-c-teal: var(--t-c-teal);
+  --color-c-teal-tint: var(--t-c-teal-tint);
+  --color-c-teal-line: var(--t-c-teal-line);
+  --color-c-teal-ink: var(--t-c-teal-ink);
+  --color-c-blue: var(--t-c-blue);
+  --color-c-blue-tint: var(--t-c-blue-tint);
+  --color-c-blue-line: var(--t-c-blue-line);
+  --color-c-blue-ink: var(--t-c-blue-ink);
+  --color-c-purple: var(--t-c-purple);
+  --color-c-purple-tint: var(--t-c-purple-tint);
+  --color-c-purple-line: var(--t-c-purple-line);
+  --color-c-purple-ink: var(--t-c-purple-ink);
+  --color-c-pink: var(--t-c-pink);
+  --color-c-pink-tint: var(--t-c-pink-tint);
+  --color-c-pink-line: var(--t-c-pink-line);
+  --color-c-pink-ink: var(--t-c-pink-ink);
 
   --color-danger: var(--t-danger);
   --color-danger-tint: var(--t-danger-tint);

@@ -7,7 +7,8 @@ import { useBrowserSignIn, usePasswordSignIn } from './auth/signInHooks';
 import { normalizeSyncUrl, syncEndpoint } from '../syncServer';
 import { AccountSigninCard, ProfileCard, SessionCard, SessionsCard } from './settings/AccountCards';
 import { AppearanceCard } from './settings/AppearanceCard';
-import { CategoriesCard } from './settings/CategoriesCard';
+import { ListsCard } from './settings/ListsCard';
+import { TagsCard } from './settings/TagsCard';
 import { DangerZoneCard } from './settings/DangerZoneCard';
 import { ImportCard, SharingCard } from './settings/IntegrationsCards';
 import { AboutCard, PreferencesCard, ShortcutsCard } from './settings/misc';
@@ -141,7 +142,8 @@ export default function Settings() {
 
         <AppearanceCard />
 
-        <CategoriesCard />
+        <ListsCard />
+        <TagsCard />
 
         <PreferencesCard />
 

@@ -1,6 +1,7 @@
-import { type ReactNode, useId, useRef } from 'react';
+import { type ReactNode, useId } from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { CATEGORY_PALETTE, colorHex, PALETTE } from '../../colors';
+import { COLOR_CLASSES, COLOR_KEYS, COLOR_LABELS, DEFAULT_COLOR } from '../../colors';
+import type { ColorKey } from '../../types';
 import { useIsMobile } from '../../useMedia';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '../ui/checkbox';
@@ -44,71 +45,46 @@ export function Select<T extends string>({
 }
 
 /**
- * Colour picker: the 12 category hues plus the wheel. On a phone the same
- * thirteen cells wrap onto two rows of seven, since a 13-wide row is too
- * tight to tap; on desktop they sit in one row.
- *
- * The wheel opens the OS colour picker via a hidden `input[type=color]`, so any
- * hex is reachable; the swatches are just the fast path.
+ * Colour picker: the twelve `ColorKey`s, plus an "Auto" cell when the caller
+ * allows null (a seed inheriting its last tag's colour). On a phone the cells
+ * wrap onto two rows; on desktop they sit in one.
  */
-export function ColorPicker({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
-  const customRef = useRef<HTMLInputElement>(null);
+export function ColorPicker({
+  value,
+  onChange,
+  allowAuto,
+  auto,
+}: {
+  value: ColorKey | null;
+  onChange: (key: ColorKey | null) => void;
+  /** Offer the Auto cell (value null). */
+  allowAuto?: boolean;
+  /** What Auto currently resolves to, drawn in the Auto cell. */
+  auto?: ColorKey;
+}) {
   const isMobile = useIsMobile();
-  const hex = colorHex(value);
-  const isCustom = !PALETTE.includes(hex);
-
-  const swatch = (c: string) => (
+  const cell = (key: ColorKey | null, label: string, paint: ColorKey) => (
     <button
-      key={c}
+      key={key ?? 'auto'}
       type="button"
-      title={c}
-      onClick={() => onChange(c)}
-      className={`aspect-square transition-all ${
-        hex.toLowerCase() === c.toLowerCase()
+      title={label}
+      aria-pressed={value === key}
+      onClick={() => onChange(key)}
+      className={cn(
+        'aspect-square border transition-all',
+        COLOR_CLASSES[paint].bg,
+        key === null ? 'border-dashed border-line-strong' : COLOR_CLASSES[paint].line,
+        value === key
           ? 'ring-2 ring-ink/70 ring-offset-1 ring-offset-transparent scale-110'
-          : 'opacity-70 hover:opacity-100 hover:scale-110'
-      }`}
-      // dynamic: the swatch is the colour it offers
-      style={{ backgroundColor: c }}
-    />
-  );
-
-  const wheel = (
-    <button
-      type="button"
-      title="Custom color"
-      onClick={() => customRef.current?.click()}
-      className={`aspect-square relative transition-all ${
-        isCustom ? 'ring-2 ring-ink/70 scale-110' : 'opacity-90 hover:opacity-100 hover:scale-110'
-      }`}
-      // dynamic: the wheel shows the custom colour once one is picked
-      style={{
-        background: isCustom
-          ? hex
-          : 'conic-gradient(#ef4444, #f59e0b, #84cc16, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)',
-      }}
-    >
-      {/* punched-out centre marks it as "pick anything", not a colour itself */}
-      {!isCustom && <span className="absolute inset-[30%] bg-surface" />}
-    </button>
-  );
-
-  const hidden = (
-    <input
-      ref={customRef}
-      type="color"
-      className="sr-only"
-      value={hex}
-      onChange={(e) => onChange(e.target.value)}
-      tabIndex={-1}
+          : 'opacity-70 hover:opacity-100 hover:scale-110',
+      )}
     />
   );
 
   return (
     <div className={cn('grid items-center', isMobile ? 'grid-cols-7 gap-xs' : 'grid-cols-13 gap-1 max-w-[22rem]')}>
-      {CATEGORY_PALETTE.map(swatch)}
-      {wheel}
-      {hidden}
+      {allowAuto && cell(null, 'Auto', auto ?? DEFAULT_COLOR)}
+      {COLOR_KEYS.map((key) => cell(key, COLOR_LABELS[key], key))}
     </div>
   );
 }
@@ -145,27 +121,31 @@ export function CheckboxRow({
 
 /**
  * A `ColorPicker` in a small panel anchored to whatever it wraps — a sidebar
- * row or the new-category swatch. Controlled by the caller, so the menu's
- * "Color" item and the swatch button can both open it.
+ * row or the modal's colour dot. Controlled by the caller, so a menu item and
+ * the swatch button can both open it.
  */
 export function ColorPopover({
   open,
   onOpenChange,
   value,
   onChange,
+  allowAuto,
+  auto,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  value: string;
-  onChange: (hex: string) => void;
+  value: ColorKey | null;
+  onChange: (key: ColorKey | null) => void;
+  allowAuto?: boolean;
+  auto?: ColorKey;
   children: ReactNode;
 }) {
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <PopoverPrimitive.Anchor asChild>{children}</PopoverPrimitive.Anchor>
       <PopoverContent align="start" className="w-auto">
-        <ColorPicker value={value} onChange={onChange} />
+        <ColorPicker value={value} onChange={onChange} allowAuto={allowAuto} auto={auto} />
       </PopoverContent>
     </PopoverPrimitive.Root>
   );

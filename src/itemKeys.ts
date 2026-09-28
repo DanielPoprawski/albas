@@ -1,9 +1,5 @@
-import type { CalendarEvent, ItemKey, Todo } from './types';
+import type { ItemKey, Seed } from './types';
 
-export function eventKey(e: CalendarEvent): ItemKey {
-  return `event:${e.id}`;
-}
-
-export function todoKey(t: Todo): ItemKey {
-  return `todo:${t.id}`;
+export function seedKey(s: Pick<Seed, 'id'>): ItemKey {
+  return `seed:${s.id}`;
 }

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
-import { GENERAL } from '../../todoLogic';
+import { bySort, GENERAL } from '../../seedLogic';
 import { Select } from '../forms/shared';
 import type { SearchItem } from '../search/types';
 import { BulkNotice, DeleteConfirm } from './BulkControls';
@@ -26,18 +26,17 @@ export default function SelectionBar({
   selection: ListSelection;
   className?: string;
 }) {
-  const { categoriesFor } = useApp();
+  const { lists } = useApp();
   const actions = useBulkActions(items);
   const n = items.length;
 
-  const categoryOptions = [
+  const listOptions = [
     { value: '', label: GENERAL },
-    ...categoriesFor('tasks').map((c) => ({ value: c.id, label: c.name })),
+    ...[...lists].sort(bySort).map((l) => ({ value: l.id, label: l.name })),
   ];
-  // The category every selected to-do shares, or General when they differ.
-  const first = items[0];
-  const firstCategory = first && first.kind !== 'event' ? first.todo.category : '';
-  const common = items.every((i) => i.kind !== 'event' && i.todo.category === firstCategory) ? firstCategory : '';
+  // The list every selected seed shares, or General when they differ.
+  const firstList = items[0]?.seed.list ?? '';
+  const common = items.every((i) => i.seed.list === firstList) ? firstList : '';
 
   return (
     <div className={cn('panel mx-4 mb-4 flex flex-col', className)} role="region" aria-label="Selection">
@@ -70,8 +69,8 @@ export default function SelectionBar({
         {scope === 'tasks' && (
           <>
             <label className="flex items-center gap-1.5 text-xs text-ink-secondary">
-              Category
-              <Select options={categoryOptions} value={common} onChange={actions.applyCategory} className="w-auto" />
+              List
+              <Select options={listOptions} value={common} onChange={actions.applyList} className="w-auto" />
             </label>
             <button
               type="button"

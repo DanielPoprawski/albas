@@ -3,10 +3,10 @@ import { jumpTo } from '../../calendarNav';
 import { useBulkActions } from '../bulk/useBulkActions';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
-import { byCategoryOrder } from '../../categoryLogic';
 import { REMINDER_QUICK, type ReminderChoice } from '../../reminders';
 import { parseQuery } from '../../searchMatch';
-import type { CalendarEvent, Category, CategoryScope, Todo } from '../../types';
+import { bySort } from '../../seedLogic';
+import type { Seed } from '../../types';
 import { MAX_HITS, matchAll, rankHits, tabOf, toSearchItems } from './searchItems';
 import type { ScopeTab, SearchItem, SearchPage } from './types';
 
@@ -30,11 +30,11 @@ function common<T>(values: T[]): T | null {
 export function useSearchState(page: SearchPage) {
   const app = useApp();
   const {
-    events,
-    sharedEvents,
-    todos,
-    categories,
-    categoryById,
+    allSeeds,
+    lists,
+    listById,
+    tagById,
+    colorOf,
     firstDayOfWeek,
     getSetting,
     setActiveView,
@@ -49,14 +49,14 @@ export function useSearchState(page: SearchPage) {
   const [tab, setTab] = useState<ScopeTab>(DEFAULT_TAB[page]);
   const [active, setActive] = useState(0);
   const [shiftN, setShiftN] = useState(1);
-  const [editing, setEditing] = useState<{ event?: CalendarEvent; todo?: Todo } | null>(null);
+  const [editing, setEditing] = useState<Seed | null>(null);
 
   const todayStr = fmt(new Date());
   const autoRegex = getSetting('__search_auto_regex') === '1';
 
   const items = useMemo(
-    () => toSearchItems(events, sharedEvents, todos, categoryById, firstDayOfWeek, todayStr),
-    [events, sharedEvents, todos, categoryById, firstDayOfWeek, todayStr],
+    () => toSearchItems(allSeeds, listById, tagById, colorOf, firstDayOfWeek, todayStr),
+    [allSeeds, listById, tagById, colorOf, firstDayOfWeek, todayStr],
   );
   const itemByKey = useMemo(() => new Map(items.map((i) => [i.key, i])), [items]);
 
@@ -97,31 +97,18 @@ export function useSearchState(page: SearchPage) {
     return n;
   }, [selectedItems, tabMatches]);
 
-  const commonCategory = common(selectedItems.map((i) => (i.kind === 'event' ? i.event.category : i.todo.category)));
+  const commonList = common(selectedItems.map((i) => i.seed.list));
   const commonReminder = common<ReminderChoice | 'mixed'>(
     selectedItems.map((i) => {
-      if (i.kind === 'event') {
-        const r = i.event.reminders;
-        if (r.length === 0) return 'none';
-        if (r.length === 1 && (REMINDER_QUICK as readonly number[]).includes(r[0])) return r[0];
-        return 'mixed';
-      }
-      return i.todo.reminder ? 0 : 'none';
+      const r = i.seed.reminders;
+      if (r.length === 0) return 'none';
+      if (r.length === 1 && (REMINDER_QUICK as readonly number[]).includes(r[0])) return r[0];
+      return 'mixed';
     }),
   );
-  const datedCount = selectedItems.filter((i) => i.kind === 'event' || (i.kind === 'task' && i.todo.dueDate)).length;
+  const datedCount = selectedItems.filter((i) => i.seed.date).length;
 
-  /** Categories the selection could move to: any whose scopes cover a selected kind. Habits have none. */
-  const categoryOptions = useMemo<Category[]>(() => {
-    const scopes = new Set<CategoryScope>();
-    for (const i of selectedItems) {
-      if (i.kind === 'event') scopes.add('calendar');
-      else if (i.kind === 'task') scopes.add('tasks');
-    }
-    return categories.filter((c) => c.scopes.some((s) => scopes.has(s))).sort(byCategoryOrder);
-  }, [categories, selectedItems]);
-  /** Whether the selection holds anything a category applies to. */
-  const categorisable = selectedItems.some((i) => i.kind !== 'habit');
+  const listOptions = useMemo(() => [...lists].sort(bySort), [lists]);
 
   // --- selection ---
 
@@ -178,7 +165,7 @@ export function useSearchState(page: SearchPage) {
   /**
    * Row click / Enter. On the calendar the item's date is what you want; on
    * the list pages it's the item itself, opened lightly in the panel. A shared
-   * event can't be edited, so it always jumps — switching to the calendar.
+   * seed can't be edited, so it always jumps — switching to the calendar.
    */
   const primaryAction = useCallback(
     (item: SearchItem) => {
@@ -195,12 +182,10 @@ export function useSearchState(page: SearchPage) {
   );
 
   const openFullEditor = useCallback(() => {
-    if (selectedItems.length !== 1) return;
-    const item = selectedItems[0];
-    setEditing(item.kind === 'event' ? { event: item.event } : { todo: item.todo });
+    if (selectedItems.length === 1) setEditing(selectedItems[0].seed);
   }, [selectedItems]);
 
-  const { applyCategory, applyReminder } = bulk;
+  const { applyList, applyReminder } = bulk;
 
   const applyShift = useCallback((dir: 1 | -1) => bulk.applyShift(shiftN * dir), [bulk.applyShift, shiftN]);
 
@@ -233,11 +218,10 @@ export function useSearchState(page: SearchPage) {
     selectedItems,
     visibleSelectedCount,
     missingCount,
-    commonCategory,
-    categorisable,
+    commonList,
     commonReminder,
     datedCount,
-    categoryOptions,
+    listOptions,
     firstDayOfWeek,
     // actions
     toggleSelect,
@@ -246,7 +230,7 @@ export function useSearchState(page: SearchPage) {
     clearSelection,
     primaryAction,
     openFullEditor,
-    applyCategory,
+    applyList,
     applyShift,
     applyReminder,
     applyDelete,

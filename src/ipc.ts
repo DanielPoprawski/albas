@@ -13,16 +13,7 @@
  * matching Rust signature reads snake_case (e.g. `key_id` -> `keyId`).
  */
 
-import type { CalendarEvent, LegacyPeriod, LegacyTask, RawSharedRow, ShareGrant, Todo } from './types';
-
-/** Mirrors Rust's `Category` (`db.rs`) — DB shape, `scopes` still a CSV string. */
-export interface CategoryRow {
-  id: string;
-  name: string;
-  colorKey: string;
-  scopes: string;
-  sort: number;
-}
+import type { List, RawSharedRow, Seed, ShareGrant, Tag } from './types';
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
@@ -30,19 +21,19 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 }
 
 // ---------------------------------------------------------------------------
-// settings
+// store
 // ---------------------------------------------------------------------------
 
 /** Mirrors Rust's `AppData` (`db.rs`) — the whole-DB snapshot `load_state` returns. */
 export interface AppDataState {
-  tasks: LegacyTask[];
-  habits: Todo[];
-  events: CalendarEvent[];
-  periods: LegacyPeriod[];
-  categories: CategoryRow[];
+  seeds: Seed[];
+  lists: List[];
+  tags: Tag[];
   settings: Record<string, string>;
-  needsLegacyImport: boolean;
 }
+
+/** Settings › Danger zone wipes: events, one-off to-dos, or habits. */
+export type WipeKind = 'events' | 'todos' | 'habits';
 
 export function loadState(): Promise<AppDataState> {
   return invoke('load_state');
@@ -52,71 +43,37 @@ export function setSetting(key: string, value: string): Promise<void> {
   return invoke('set_setting', { key, value });
 }
 
-// ---------------------------------------------------------------------------
-// todos / habits
-// ---------------------------------------------------------------------------
-
-export function saveHabit(habit: Todo): Promise<void> {
-  return invoke('save_habit', { habit });
+export function saveSeed(seed: Seed): Promise<void> {
+  return invoke('save_seed', { seed });
 }
 
-export function deleteHabit(id: string): Promise<void> {
-  return invoke('delete_habit', { id });
+export function deleteSeed(id: string): Promise<void> {
+  return invoke('delete_seed', { id });
 }
 
-export function setCompletion(habitId: string, date: string, value: number): Promise<void> {
-  return invoke('set_completion', { habitId, date, value });
+export function setDone(seedId: string, date: string, value: number): Promise<void> {
+  return invoke('set_done', { seedId, date, value });
 }
 
-/** Legacy-conversion writes only — nothing creates new rows in this table any more. */
-/** Legacy-conversion writes only. */
-export function deleteTask(id: string): Promise<void> {
-  return invoke('delete_task', { id });
+/** Tombstones every live seed of one kind (with its done rows) in one transaction. */
+export function deleteAll(kind: WipeKind): Promise<void> {
+  return invoke('delete_all', { kind });
 }
 
-/** Tauri only: one-time import of the pre-SQLite localStorage blob. */
-export function importLegacy(tasks: LegacyTask[], habits: Todo[]): Promise<void> {
-  return invoke('import_legacy', { tasks, habits });
+export function saveList(list: List): Promise<void> {
+  return invoke('save_list', { list });
 }
 
-// ---------------------------------------------------------------------------
-// events
-// ---------------------------------------------------------------------------
-
-export function saveEvent(event: CalendarEvent): Promise<void> {
-  return invoke('save_event', { event });
+export function deleteList(id: string): Promise<void> {
+  return invoke('delete_list', { id });
 }
 
-export function deleteEvent(id: string): Promise<void> {
-  return invoke('delete_event', { id });
+export function saveTag(tag: Tag): Promise<void> {
+  return invoke('save_tag', { tag });
 }
 
-/** Settings › Danger zone. Tombstones every live event (and legacy period) in one transaction. */
-export function deleteAllEvents(): Promise<void> {
-  return invoke('delete_all_events');
-}
-
-/** Settings › Danger zone. Tombstones every live task or every live habit (with its completions). */
-export function deleteAllTodos(kind: 'task' | 'habit'): Promise<void> {
-  return invoke('delete_all_todos', { kind });
-}
-
-/** Legacy-conversion writes only. */
-/** Legacy-conversion writes only. */
-export function deletePeriod(id: string): Promise<void> {
-  return invoke('delete_period', { id });
-}
-
-// ---------------------------------------------------------------------------
-// categories
-// ---------------------------------------------------------------------------
-
-export function saveCategory(category: CategoryRow): Promise<void> {
-  return invoke('save_category', { category });
-}
-
-export function deleteCategory(id: string): Promise<void> {
-  return invoke('delete_category', { id });
+export function deleteTag(id: string): Promise<void> {
+  return invoke('delete_tag', { id });
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +199,9 @@ export function sharesList(): Promise<SharesRes> {
   return invoke('shares_list');
 }
 
-export function sharesSet(name: string, calendar: boolean, todos: boolean): Promise<void> {
-  return invoke('shares_set', { name, calendar, todos });
+/** Grants (`true`) or revokes everything — seeds, done rows, lists and tags — to one account. */
+export function sharesSet(name: string, granted: boolean): Promise<void> {
+  return invoke('shares_set', { name, granted });
 }
 
 export function syncSignOut(): Promise<void> {

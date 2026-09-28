@@ -3,7 +3,9 @@ import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import Highlighted from '../Highlighted';
 import { Checkbox } from '../ui/checkbox';
-import { KIND_LABEL, MAX_HITS, dateLabel } from './searchItems';
+import { COLOR_CLASSES } from '../../colors';
+import { isDone, isTask, kindLabel } from '../../seedLogic';
+import { MAX_HITS, dateLabel } from './searchItems';
 import type { ScopeTab } from './types';
 import type { SearchState } from './useSearchState';
 
@@ -86,9 +88,8 @@ export default function PaletteResults({ s }: { s: SearchState }) {
           const { item } = hit;
           const isActive = i === s.active;
           const isSelected = s.selected.has(item.key);
-          const second = [item.categoryName, item.kind === 'event' ? item.event.description : '']
-            .filter(Boolean)
-            .join(' · ');
+          const notes = item.seed.track ? '' : item.seed.notes;
+          const second = [item.listName, notes].filter(Boolean).join(' · ');
           return (
             <li
               key={item.key}
@@ -113,32 +114,21 @@ export default function PaletteResults({ s }: { s: SearchState }) {
               ) : (
                 <span className="size-4 shrink-0" aria-hidden />
               )}
-              <span
-                className="size-2 shrink-0"
-                aria-hidden
-                // dynamic: the item's own colour
-                style={{ background: item.color }}
-              />
+              <span className={cn('size-2 shrink-0', COLOR_CLASSES[item.color].bg)} aria-hidden />
               <span className="flex-1 min-w-0">
                 <span
                   className={cn(
                     'block truncate text-[0.8125rem] font-medium text-ink',
-                    item.kind === 'task' &&
-                      Object.values(item.todo.completions).some((v) => v >= item.todo.target) &&
-                      'line-through opacity-55',
+                    isTask(item.seed) && isDone(item.seed) && 'line-through opacity-55',
                   )}
                 >
                   <Highlighted text={item.title} positions={hit.positions[0]} />
                 </span>
                 {second && (
                   <span className="block truncate text-micro text-ink-muted">
-                    {item.categoryName && (
-                      <Highlighted text={item.categoryName} positions={hit.positions[item.fields.length - 1]} />
-                    )}
-                    {item.categoryName && item.kind === 'event' && item.event.description && ' · '}
-                    {item.kind === 'event' && item.event.description && (
-                      <Highlighted text={item.event.description} positions={hit.positions[1]} />
-                    )}
+                    {item.listName && <Highlighted text={item.listName} positions={hit.positions[2]} />}
+                    {item.listName && notes && ' · '}
+                    {notes && <Highlighted text={notes} positions={hit.positions[1]} />}
                   </span>
                 )}
               </span>
@@ -149,7 +139,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
                 {dateLabel(item, s.firstDayOfWeek)}
               </span>
               <span className="w-9 shrink-0 text-[0.5625rem] font-bold uppercase text-ink-muted">
-                {KIND_LABEL[item.kind]}
+                {kindLabel(item.seed)}
               </span>
             </li>
           );

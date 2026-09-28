@@ -9,74 +9,10 @@ pub struct Db(pub Mutex<Connection>);
 /// updated_at/deleted never leave Rust: they exist for sync (`sync.rs` pushes
 /// by `updated_at` and tombstones by `deleted`), and the frontend only ever
 /// sees live rows.
-const SCHEMA: &str = "
+const SCHEMA_META: &str = "
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS tasks (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  category TEXT NOT NULL DEFAULT 'General',
-  completed INTEGER NOT NULL DEFAULT 0,
-  date TEXT,
-  updated_at INTEGER NOT NULL,
-  deleted INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS habits (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  color_key TEXT NOT NULL DEFAULT 'primary',
-  kind TEXT NOT NULL,
-  unit TEXT NOT NULL DEFAULT '',
-  target REAL NOT NULL DEFAULT 1,
-  schedule TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  reminder INTEGER NOT NULL DEFAULT 0,
-  due_date TEXT,
-  time TEXT,
-  category TEXT NOT NULL DEFAULT '',
-  important INTEGER NOT NULL DEFAULT 0,
-  notes TEXT NOT NULL DEFAULT '',
-  sort INTEGER NOT NULL DEFAULT 0,
-  routine TEXT NOT NULL DEFAULT '',
-  updated_at INTEGER NOT NULL,
-  deleted INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS habit_completions (
-  habit_id TEXT NOT NULL,
-  date TEXT NOT NULL,
-  value REAL NOT NULL,
-  updated_at INTEGER NOT NULL,
-  deleted INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (habit_id, date)
-);
-CREATE TABLE IF NOT EXISTS events (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  color_key TEXT NOT NULL DEFAULT 'primary',
-  all_day INTEGER NOT NULL DEFAULT 0,
-  start_date TEXT NOT NULL,
-  start_time TEXT,
-  end_date TEXT NOT NULL,
-  end_time TEXT,
-  recurrence TEXT NOT NULL DEFAULT '{\"type\":\"none\"}',
-  reminders TEXT NOT NULL DEFAULT '[]',
-  category TEXT NOT NULL DEFAULT '',
-  updated_at INTEGER NOT NULL,
-  deleted INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS periods (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  color_key TEXT NOT NULL DEFAULT 'primary',
-  start_date TEXT NOT NULL,
-  end_date TEXT NOT NULL,
-  notes TEXT NOT NULL DEFAULT '',
-  habit_ids TEXT NOT NULL DEFAULT '[]',
-  updated_at INTEGER NOT NULL,
-  deleted INTEGER NOT NULL DEFAULT 0
 );
 ";
 
@@ -98,11 +34,8 @@ CREATE TABLE IF NOT EXISTS shared_rows (
 );
 ";
 
-/// v6 addition (custom categories): a synced table of user-defined groupings
-/// shared by to-dos, habits, and events — `scopes` is a CSV of
-/// `calendar|tasks|habits` saying which. `habits.category` / `events.category`
-/// now hold a category **id** (empty = none) instead of free text; `tasks`
-/// (legacy, import-only) is untouched since nothing writes new rows there.
+/// v6 addition (custom categories), kept only so a pre-v6 database can walk
+/// the ladder: v10 folds `categories` into `lists` and never reads it again.
 const SCHEMA_V6: &str = "
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,
@@ -116,21 +49,80 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 ";
 
+/// v10 (seeds): to-dos, habits and events are one table. `color` is a named
+/// key ('' = inherit from the last tag, else grey), `list` a list id ('' =
+/// unfiled), `tags` a JSON array of tag ids, `repeat`/`reminders` JSON, and
+/// `track` the JSON doable rule ('' = not doable, i.e. an event). `done` holds
+/// one row per completed occurrence. The pre-v10 tables (`tasks`, `habits`,
+/// `habit_completions`, `events`, `periods`, `categories`) stay in an upgraded
+/// file untouched — never dropped — but nothing reads or syncs them.
+const SCHEMA_V10: &str = "
+CREATE TABLE IF NOT EXISTS seeds (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT '',
+  list TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  important INTEGER NOT NULL DEFAULT 0,
+  sort INTEGER NOT NULL DEFAULT 0,
+  routine TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  date TEXT,
+  time TEXT,
+  end_date TEXT,
+  end_time TEXT,
+  repeat TEXT NOT NULL DEFAULT '{\"type\":\"none\"}',
+  track TEXT NOT NULL DEFAULT '',
+  reminders TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS done (
+  seed_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  value REAL NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (seed_id, date)
+);
+CREATE TABLE IF NOT EXISTS lists (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS tags (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT 'grey',
+  icon TEXT NOT NULL DEFAULT '',
+  sort INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+";
+
+const CURRENT_VERSION: i64 = 10;
+
 /// The full current schema, for tests that need a throwaway in-memory DB.
 #[cfg(test)]
 pub fn test_schema() -> String {
-    format!("{SCHEMA}{SCHEMA_V5}{SCHEMA_V6}")
+    format!("{SCHEMA_META}{SCHEMA_V5}{SCHEMA_V10}")
 }
 
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-    // SCHEMA is kept at the current shape, so a fresh database gets every
-    // column outright and the ALTERs below are only for upgrading an existing
-    // one. Running them on a fresh DB would fail with "duplicate column name".
     if version < 1 {
-        conn.execute_batch(SCHEMA)?;
+        // A fresh file gets only the current tables; the ladder below exists
+        // to bring an older file's legacy tables to the shape `migrate_v10`
+        // reads, and running its ALTERs here would fail on missing tables.
+        conn.execute_batch(SCHEMA_META)?;
+        conn.execute_batch(SCHEMA_V5)?;
+        conn.execute_batch(SCHEMA_V10)?;
     } else {
         // v2 (todo unification): habits became unified to-dos with an
         // optional due day (once to-dos) and time of day.
@@ -148,8 +140,7 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
                  ALTER TABLE habits ADD COLUMN important INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
-        // v6 (custom categories): events gained a category column too; a
-        // fresh database gets it straight from SCHEMA above instead.
+        // v6 (custom categories): events gained a category column too.
         if version < 6 {
             conn.execute_batch("ALTER TABLE events ADD COLUMN category TEXT NOT NULL DEFAULT '';")?;
         }
@@ -165,34 +156,36 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
                  ALTER TABLE habits ADD COLUMN routine TEXT NOT NULL DEFAULT '';",
             )?;
         }
+        // v7: weight tracking was removed; drop its table wherever it still exists.
+        conn.execute_batch("DROP TABLE IF EXISTS weights;")?;
+        // v5 (shared rows cache) and v6 (custom categories): CREATE TABLE IF
+        // NOT EXISTS, so replaying is harmless.
+        if version < 5 {
+            conn.execute_batch(SCHEMA_V5)?;
+        }
+        if version < 6 {
+            conn.execute_batch(SCHEMA_V6)?;
+        }
+        // v9: habits stopped borrowing their category's colour. Copy it into
+        // each repeating to-do's own `color_key` once so nothing changes on
+        // screen; needs the categories table, hence after the v6 step.
+        if version < 9 {
+            conn.execute(
+                "UPDATE habits SET
+                   color_key = (SELECT c.color_key FROM categories c WHERE c.id = habits.category AND c.deleted = 0),
+                   updated_at = ?1
+                 WHERE category != '' AND schedule NOT LIKE '%once%'
+                   AND EXISTS (SELECT 1 FROM categories c WHERE c.id = habits.category AND c.deleted = 0)",
+                params![now_ms()],
+            )?;
+        }
+        // v10 (seeds): create the new tables and copy every live row across.
+        if version < 10 {
+            conn.execute_batch(SCHEMA_V10)?;
+            migrate_v10(&conn)?;
+        }
     }
-    // v7: weight tracking was removed; drop its table wherever it still exists.
-    conn.execute_batch("DROP TABLE IF EXISTS weights;")?;
-    // v5 (shared rows cache). CREATE TABLE IF NOT EXISTS, so replaying is
-    // harmless.
-    if version < 5 {
-        conn.execute_batch(SCHEMA_V5)?;
-    }
-    // v6 (custom categories). CREATE TABLE IF NOT EXISTS, so replaying is
-    // harmless — same pattern as v5.
-    if version < 6 {
-        conn.execute_batch(SCHEMA_V6)?;
-    }
-    // v9: habits stopped borrowing their category's colour. Copy it into each
-    // repeating to-do's own `color_key` once so nothing changes on screen;
-    // needs the categories table, hence after the v6 step. Bumping
-    // `updated_at` lets the copy sync (same value from every device).
-    if (1..9).contains(&version) {
-        conn.execute(
-            "UPDATE habits SET
-               color_key = (SELECT c.color_key FROM categories c WHERE c.id = habits.category AND c.deleted = 0),
-               updated_at = ?1
-             WHERE category != '' AND schedule NOT LIKE '%once%'
-               AND EXISTS (SELECT 1 FROM categories c WHERE c.id = habits.category AND c.deleted = 0)",
-            params![now_ms()],
-        )?;
-    }
-    conn.pragma_update(None, "user_version", 9)?;
+    conn.pragma_update(None, "user_version", CURRENT_VERSION)?;
     repoint_default_server(&conn)?;
     Ok(conn)
 }
@@ -236,7 +229,7 @@ fn repoint_default_server(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 /// User preferences live in `meta` under this prefix so they can't collide with
-/// internal bookkeeping keys like `legacy_import_done`.
+/// internal bookkeeping keys like the sync watermarks.
 const SETTING_PREFIX: &str = "setting:";
 /// Where `token_store.rs` keeps the real bearer token on mobile (no keyring
 /// there). Never handed to the WebView: `load_state` filters it out and
@@ -244,9 +237,8 @@ const SETTING_PREFIX: &str = "setting:";
 /// `token_store::{get,set,clear}`.
 pub(crate) const TOKEN_SECRET_SETTING: &str = "__sync_token_secret";
 
-/// Unprefixed `meta` access, for bookkeeping the frontend never sees —
-/// `legacy_import_done`, the sync watermarks. Settings go through the
-/// prefixed pair below.
+/// Unprefixed `meta` access, for bookkeeping the frontend never sees — the
+/// sync watermarks. Settings go through the prefixed pair below.
 pub fn read_meta(conn: &Connection, key: &str) -> Option<String> {
     conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
         r.get::<_, String>(0)
@@ -295,243 +287,611 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Task {
-    pub id: String,
-    pub title: String,
-    pub category: String,
-    pub completed: bool,
-    pub date: Option<String>,
+// --- v10 migration ----------------------------------------------------------
+
+/// The named colour nearest to a pre-v10 `color_key`. Those were hexes from a
+/// picker (or the three legacy names), so this is a one-way snap: neutrals by
+/// lightness, everything else by hue distance to the eight palette hues.
+fn snap_color(key: &str) -> &'static str {
+    match key {
+        "primary" => return "purple",
+        "secondary" => return "green",
+        "tertiary" => return "pink",
+        _ => {}
+    }
+    let Some((h, s, l)) = hex_to_hsl(key) else {
+        return "grey";
+    };
+    if s < 0.15 {
+        return if l < 0.2 {
+            "ink"
+        } else if l > 0.9 {
+            "paper"
+        } else if l < 0.5 {
+            "grey-dark"
+        } else {
+            "grey"
+        };
+    }
+    const HUES: [(&str, f64); 8] = [
+        ("red", 0.0),
+        ("orange", 30.0),
+        ("yellow", 55.0),
+        ("green", 150.0),
+        ("teal", 190.0),
+        ("blue", 220.0),
+        ("purple", 275.0),
+        ("pink", 330.0),
+    ];
+    HUES.iter()
+        .map(|(name, centre)| {
+            let d = (h - centre).abs() % 360.0;
+            (*name, d.min(360.0 - d))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(name, _)| name)
+        .unwrap_or("grey")
 }
 
+/// `#rgb` or `#rrggbb` → (hue in degrees, saturation, lightness), or None.
+fn hex_to_hsl(hex: &str) -> Option<(f64, f64, f64)> {
+    let digits = hex.strip_prefix('#')?;
+    let expanded: String = match digits.len() {
+        3 => digits.chars().flat_map(|c| [c, c]).collect(),
+        6 => digits.to_string(),
+        _ => return None,
+    };
+    let channel = |i: usize| u8::from_str_radix(&expanded[i..i + 2], 16).ok();
+    let (r, g, b) = (channel(0)?, channel(2)?, channel(4)?);
+    let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    if d == 0.0 {
+        return Some((0.0, 0.0, l));
+    }
+    let s = d / (1.0 - (2.0 * l - 1.0).abs());
+    let h = if max == r {
+        60.0 * (((g - b) / d) % 6.0)
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    Some(((h + 360.0) % 360.0, s, l))
+}
+
+fn json_num(v: &serde_json::Value, key: &str, default: i64) -> i64 {
+    match v.get(key).and_then(|n| n.as_f64()) {
+        Some(n) if n >= 1.0 => n as i64,
+        _ => default,
+    }
+}
+
+fn json_days(v: &serde_json::Value) -> Vec<i64> {
+    v.get("days")
+        .and_then(|d| d.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|d| d.as_i64())
+                .filter(|d| (0..=6).contains(d))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn every(n: i64, unit: &str) -> serde_json::Value {
+    serde_json::json!({ "type": "every", "n": n, "unit": unit })
+}
+
+/// A to-do's `schedule` (v1–v9 shape, plus the two pre-unification ones the
+/// frontend used to repair on load) → a v10 `repeat`.
+fn schedule_to_repeat(schedule: &str) -> serde_json::Value {
+    let s: serde_json::Value = serde_json::from_str(schedule).unwrap_or(serde_json::Value::Null);
+    let kind = s.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    match kind {
+        "once" => serde_json::json!({ "type": "none" }),
+        "daily" => every(1, "day"),
+        "weekdays" => {
+            let mut days = json_days(&s);
+            if days.is_empty() {
+                days = vec![1, 2, 3, 4, 5];
+            }
+            let mut r = every(1, "week");
+            r["days"] = serde_json::json!(days);
+            r
+        }
+        "interval" | "chore" => {
+            let mut r = every(json_num(&s, "every", 1), "day");
+            if kind == "chore" {
+                r["fromDone"] = serde_json::json!(true);
+            }
+            r
+        }
+        "every" => {
+            let unit = s
+                .get("unit")
+                .and_then(|u| u.as_str())
+                .filter(|u| matches!(*u, "week" | "month"))
+                .unwrap_or("day");
+            let mut r = every(json_num(&s, "n", 1), unit);
+            if s.get("fromDone").and_then(|f| f.as_bool()) == Some(true) {
+                r["fromDone"] = serde_json::json!(true);
+            }
+            r
+        }
+        "timesPer" => serde_json::json!({
+            "type": "timesPer",
+            "times": json_num(&s, "times", 1),
+            "per": if s.get("per").and_then(|p| p.as_str()) == Some("month") { "month" } else { "week" },
+        }),
+        _ => every(1, "day"),
+    }
+}
+
+/// An event's `recurrence` → a v10 `repeat`, carrying `until` and `exdates`.
+fn recurrence_to_repeat(recurrence: &str) -> serde_json::Value {
+    let s: serde_json::Value = serde_json::from_str(recurrence).unwrap_or(serde_json::Value::Null);
+    let n = json_num(&s, "interval", 1);
+    let mut r = match s.get("type").and_then(|t| t.as_str()).unwrap_or("none") {
+        "daily" => every(n, "day"),
+        "weekdays" => {
+            let mut r = every(n, "week");
+            r["days"] = serde_json::json!([1, 2, 3, 4, 5]);
+            r
+        }
+        "weekly" => {
+            let mut r = every(n, "week");
+            let days = json_days(&s);
+            if !days.is_empty() {
+                r["days"] = serde_json::json!(days);
+            }
+            r
+        }
+        "monthly" => every(n, "month"),
+        "yearly" => every(n, "year"),
+        _ => return serde_json::json!({ "type": "none" }),
+    };
+    if let Some(until) = s.get("until").and_then(|u| u.as_str()) {
+        r["until"] = serde_json::json!(until);
+    }
+    if let Some(ex) = s.get("exdates").and_then(|e| e.as_array())
+        && !ex.is_empty()
+    {
+        r["exdates"] = serde_json::Value::Array(ex.clone());
+    }
+    r
+}
+
+type HabitRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    f64,
+    String,
+    String,
+    i64,
+    Option<String>,
+    Option<String>,
+    String,
+    i64,
+    String,
+    i64,
+    String,
+    i64,
+);
+
+type EventRow = (
+    String,
+    String,
+    String,
+    i64,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+    String,
+    String,
+    i64,
+);
+
+/// Copies every live pre-v10 row into the seed tables, keeping ids and
+/// `updated_at`, then zeroes the push watermark so the whole set goes to the
+/// server once. Old tables are left as they were.
+fn migrate_v10(conn: &Connection) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    // Categories → lists, and a lookup for the colour a categorised event or
+    // once to-do painted with (habits already own theirs since v9).
+    tx.execute(
+        "INSERT OR IGNORE INTO lists (id, name, sort, updated_at, deleted)
+         SELECT id, name, sort, updated_at, 0 FROM categories WHERE deleted = 0",
+        [],
+    )?;
+    let category_colors: HashMap<String, String> = tx
+        .prepare("SELECT id, color_key FROM categories WHERE deleted = 0")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    // Events and once to-dos painted from their category, or the neutral grey
+    // when they had none — so an uncategorised one gets no colour of its own
+    // (null) rather than the purple default its `color_key` column held.
+    let painted = |category: &str| -> String {
+        category_colors
+            .get(category)
+            .map(|c| snap_color(c).to_string())
+            .unwrap_or_default()
+    };
+
+    const INSERT_SEED: &str = "INSERT OR IGNORE INTO seeds
+        (id, title, notes, color, list, tags, important, sort, routine, created_at,
+         date, time, end_date, end_time, repeat, track, reminders, updated_at, deleted)
+        VALUES (?1, ?2, ?3, ?4, ?5, '[]', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, 0)";
+
+    // To-dos and habits.
+    let habits: Vec<HabitRow> = tx
+        .prepare(
+            "SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time,
+                    category, important, notes, sort, routine, updated_at
+             FROM habits WHERE deleted = 0",
+        )?
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+                r.get(11)?,
+                r.get(12)?,
+                r.get(13)?,
+                r.get(14)?,
+                r.get(15)?,
+                r.get(16)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    for (
+        id,
+        name,
+        color_key,
+        kind,
+        unit,
+        target,
+        schedule,
+        created_at,
+        reminder,
+        due_date,
+        time,
+        category,
+        important,
+        notes,
+        sort,
+        routine,
+        updated_at,
+    ) in habits
+    {
+        let repeat = schedule_to_repeat(&schedule);
+        let once = repeat["type"] == "none";
+        let date = if once {
+            due_date
+        } else {
+            Some(due_date.unwrap_or_else(|| created_at.clone()))
+        };
+        let color = if once {
+            painted(&category)
+        } else {
+            snap_color(&color_key).to_string()
+        };
+        let track = if kind == "measurable" {
+            serde_json::json!({ "kind": "count", "unit": unit, "target": target })
+        } else {
+            serde_json::json!({ "kind": "check" })
+        };
+        tx.execute(
+            INSERT_SEED,
+            params![
+                id,
+                name,
+                notes,
+                color,
+                category,
+                important,
+                sort,
+                routine,
+                created_at,
+                date,
+                time,
+                Option::<String>::None,
+                Option::<String>::None,
+                repeat.to_string(),
+                track.to_string(),
+                if reminder != 0 { "[0]" } else { "[]" },
+                updated_at
+            ],
+        )?;
+    }
+
+    // Events.
+    let events: Vec<EventRow> = tx
+        .prepare(
+            "SELECT id, title, description, all_day, start_date, start_time, end_date, end_time,
+                    recurrence, reminders, category, updated_at
+             FROM events WHERE deleted = 0",
+        )?
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+                r.get(11)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    for (
+        id,
+        title,
+        description,
+        all_day,
+        start_date,
+        start_time,
+        end_date,
+        end_time,
+        recurrence,
+        reminders,
+        category,
+        updated_at,
+    ) in events
+    {
+        let all_day = all_day != 0;
+        let end_date = (end_date != start_date).then_some(end_date);
+        let reminders: serde_json::Value =
+            serde_json::from_str(&reminders).unwrap_or_else(|_| serde_json::json!([]));
+        tx.execute(
+            INSERT_SEED,
+            params![
+                id,
+                title,
+                description,
+                painted(&category),
+                category,
+                0,
+                0,
+                "",
+                start_date,
+                Some(start_date.clone()),
+                if all_day { None } else { start_time },
+                end_date,
+                if all_day { None } else { end_time },
+                recurrence_to_repeat(&recurrence).to_string(),
+                "",
+                reminders.to_string(),
+                updated_at
+            ],
+        )?;
+    }
+
+    // Legacy once tasks (import-only table; normally empty by now) and
+    // periods (all-day spans the frontend already showed as events).
+    tx.execute(
+        "INSERT OR IGNORE INTO seeds (id, title, created_at, date, track, updated_at)
+         SELECT id, title, COALESCE(date, date('now')), date, '{\"kind\":\"check\"}', updated_at
+         FROM tasks WHERE deleted = 0",
+        [],
+    )?;
+    tx.execute(
+        "INSERT OR IGNORE INTO done (seed_id, date, value, updated_at, deleted)
+         SELECT id, COALESCE(date, date('now')), 1, updated_at, 0
+         FROM tasks WHERE deleted = 0 AND completed != 0",
+        [],
+    )?;
+    tx.execute(
+        "INSERT OR IGNORE INTO seeds (id, title, notes, created_at, date, end_date, updated_at)
+         SELECT id, name, notes, start_date, start_date,
+                CASE WHEN end_date != start_date THEN end_date END, updated_at
+         FROM periods WHERE deleted = 0",
+        [],
+    )?;
+
+    // Completions follow their rows.
+    tx.execute(
+        "INSERT OR IGNORE INTO done (seed_id, date, value, updated_at, deleted)
+         SELECT habit_id, date, value, updated_at, 0 FROM habit_completions
+         WHERE deleted = 0 AND habit_id IN (SELECT id FROM seeds)",
+        [],
+    )?;
+
+    write_meta(&tx, crate::sync::META_PUSH_AT, "0")?;
+    tx.commit()
+}
+
+// --- rows -------------------------------------------------------------------
+
+/// One thing on the timeline. `color`/`track` are `None`/`Null` where the
+/// column holds '' (see `SCHEMA_V10`); `tags`, `repeat`, `reminders` are the
+/// JSON the frontend wrote, passed through untouched.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Habit {
+pub struct Seed {
     pub id: String,
-    pub name: String,
-    pub color_key: String,
-    pub kind: String,
-    pub unit: String,
-    pub target: f64,
-    pub schedule: serde_json::Value,
-    pub created_at: String,
-    pub reminder: bool,
+    pub title: String,
     #[serde(default)]
-    pub due_date: Option<String>,
+    pub notes: String,
     #[serde(default)]
-    pub time: Option<String>,
-    /// Free-text grouping for to-dos; empty means uncategorised.
+    pub color: Option<String>,
     #[serde(default)]
-    pub category: String,
+    pub list: String,
+    pub tags: serde_json::Value,
     #[serde(default)]
     pub important: bool,
-    /// Free-text notes; empty when none.
-    #[serde(default)]
-    pub notes: String,
-    /// Manual order among repeating to-dos (the Habits list); 0 for rows
-    /// that predate it.
     #[serde(default)]
     pub sort: i64,
-    /// Habit routine tag: '' | 'morning' | 'afternoon' | 'evening'.
     #[serde(default)]
     pub routine: String,
+    pub created_at: String,
     #[serde(default)]
-    pub completions: HashMap<String, f64>,
+    pub date: Option<String>,
+    #[serde(default)]
+    pub time: Option<String>,
+    #[serde(default)]
+    pub end_date: Option<String>,
+    #[serde(default)]
+    pub end_time: Option<String>,
+    pub repeat: serde_json::Value,
+    #[serde(default)]
+    pub track: serde_json::Value,
+    pub reminders: serde_json::Value,
+    #[serde(default)]
+    pub done: HashMap<String, f64>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Event {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub color_key: String,
-    pub all_day: bool,
-    pub start_date: String,
-    pub start_time: Option<String>,
-    pub end_date: String,
-    pub end_time: Option<String>,
-    pub recurrence: serde_json::Value,
-    pub reminders: serde_json::Value,
-    /// Category id; empty means uncategorised. Mirrors `habits.category`.
-    #[serde(default)]
-    pub category: String,
-}
-
-/// A user-defined grouping shared by to-dos, habits, and events. `scopes` is
-/// a CSV of `calendar|tasks|habits` — kept as a plain string column (like
-/// every other JSON/CSV-ish column here) rather than a join table, since the
-/// server never parses payloads and a join table would need its own sync
-/// handling. `created_at` (the DB column) never reaches JSON, same as
-/// `updated_at`/`deleted` — nothing on the frontend needs it, so
-/// `upsert_category` stamps it once on insert and leaves it alone after.
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Category {
+pub struct List {
     pub id: String,
     pub name: String,
-    pub color_key: String,
-    pub scopes: String,
     pub sort: i64,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Period {
+pub struct Tag {
     pub id: String,
     pub name: String,
-    pub color_key: String,
-    pub start_date: String,
-    pub end_date: String,
-    pub notes: String,
-    pub habit_ids: serde_json::Value,
+    pub color: String,
+    pub icon: String,
+    pub sort: i64,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppData {
-    pub tasks: Vec<Task>,
-    pub habits: Vec<Habit>,
-    pub events: Vec<Event>,
-    pub periods: Vec<Period>,
-    pub categories: Vec<Category>,
+    pub seeds: Vec<Seed>,
+    pub lists: Vec<List>,
+    pub tags: Vec<Tag>,
     pub settings: HashMap<String, String>,
-    pub needs_legacy_import: bool,
-}
-
-fn json_col(v: &serde_json::Value) -> String {
-    v.to_string()
 }
 
 fn parse_json(s: String) -> serde_json::Value {
     serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)
 }
 
+/// `track` column ↔ JSON: '' is "not doable", which the frontend sees as null.
+fn track_col(v: &serde_json::Value) -> String {
+    if v.is_null() {
+        String::new()
+    } else {
+        v.to_string()
+    }
+}
+
 #[tauri::command]
 pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
     let conn = db.0.lock().map_err(err)?;
 
-    let tasks = conn
-        .prepare("SELECT id, title, category, completed, date FROM tasks WHERE deleted = 0")
+    let mut done: HashMap<String, HashMap<String, f64>> = HashMap::new();
+    conn.prepare("SELECT seed_id, date, value FROM done WHERE deleted = 0 AND value > 0")
         .map_err(err)?
         .query_map([], |r| {
-            Ok(Task {
-                id: r.get(0)?,
-                title: r.get(1)?,
-                category: r.get(2)?,
-                completed: r.get::<_, i64>(3)? != 0,
-                date: r.get(4)?,
-            })
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, f64>(2)?,
+            ))
         })
         .map_err(err)?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(err)?;
+        .map_err(err)?
+        .into_iter()
+        .for_each(|(seed_id, date, value)| {
+            done.entry(seed_id).or_default().insert(date, value);
+        });
 
-    let mut completions: HashMap<String, HashMap<String, f64>> = HashMap::new();
-    conn.prepare(
-        "SELECT habit_id, date, value FROM habit_completions WHERE deleted = 0 AND value > 0",
-    )
-    .map_err(err)?
-    .query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, f64>(2)?,
-        ))
-    })
-    .map_err(err)?
-    .collect::<rusqlite::Result<Vec<_>>>()
-    .map_err(err)?
-    .into_iter()
-    .for_each(|(habit_id, date, value)| {
-        completions.entry(habit_id).or_default().insert(date, value);
-    });
-
-    let habits = conn
-        .prepare("SELECT id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important, notes, sort, routine FROM habits WHERE deleted = 0")
+    let seeds = conn
+        .prepare(
+            "SELECT id, title, notes, color, list, tags, important, sort, routine, created_at,
+                    date, time, end_date, end_time, repeat, track, reminders
+             FROM seeds WHERE deleted = 0",
+        )
         .map_err(err)?
         .query_map([], |r| {
-            Ok(Habit {
+            let color: String = r.get(3)?;
+            let track: String = r.get(15)?;
+            Ok(Seed {
                 id: r.get(0)?,
-                name: r.get(1)?,
-                color_key: r.get(2)?,
-                kind: r.get(3)?,
-                unit: r.get(4)?,
-                target: r.get(5)?,
-                schedule: parse_json(r.get(6)?),
-                created_at: r.get(7)?,
-                reminder: r.get::<_, i64>(8)? != 0,
-                due_date: r.get(9)?,
-                time: r.get(10)?,
-                category: r.get(11)?,
-                important: r.get::<_, i64>(12)? != 0,
-                notes: r.get(13)?,
-                sort: r.get(14)?,
-                routine: r.get(15)?,
-                completions: HashMap::new(),
+                title: r.get(1)?,
+                notes: r.get(2)?,
+                color: (!color.is_empty()).then_some(color),
+                list: r.get(4)?,
+                tags: parse_json(r.get(5)?),
+                important: r.get::<_, i64>(6)? != 0,
+                sort: r.get(7)?,
+                routine: r.get(8)?,
+                created_at: r.get(9)?,
+                date: r.get(10)?,
+                time: r.get(11)?,
+                end_date: r.get(12)?,
+                end_time: r.get(13)?,
+                repeat: parse_json(r.get(14)?),
+                track: if track.is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    parse_json(track)
+                },
+                reminders: parse_json(r.get(16)?),
+                done: HashMap::new(),
             })
         })
         .map_err(err)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(err)?
         .into_iter()
-        .map(|mut h| {
-            h.completions = completions.remove(&h.id).unwrap_or_default();
-            h
+        .map(|mut s| {
+            s.done = done.remove(&s.id).unwrap_or_default();
+            s
         })
         .collect();
 
-    let events = conn
-        .prepare("SELECT id, title, description, color_key, all_day, start_date, start_time, end_date, end_time, recurrence, reminders, category FROM events WHERE deleted = 0")
+    let lists = conn
+        .prepare("SELECT id, name, sort FROM lists WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
-            Ok(Event {
+            Ok(List {
                 id: r.get(0)?,
-                title: r.get(1)?,
-                description: r.get(2)?,
-                color_key: r.get(3)?,
-                all_day: r.get::<_, i64>(4)? != 0,
-                start_date: r.get(5)?,
-                start_time: r.get(6)?,
-                end_date: r.get(7)?,
-                end_time: r.get(8)?,
-                recurrence: parse_json(r.get(9)?),
-                reminders: parse_json(r.get(10)?),
-                category: r.get(11)?,
+                name: r.get(1)?,
+                sort: r.get(2)?,
             })
         })
         .map_err(err)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(err)?;
 
-    let periods = conn
-        .prepare("SELECT id, name, color_key, start_date, end_date, notes, habit_ids FROM periods WHERE deleted = 0")
+    let tags = conn
+        .prepare("SELECT id, name, color, icon, sort FROM tags WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
-            Ok(Period {
+            Ok(Tag {
                 id: r.get(0)?,
                 name: r.get(1)?,
-                color_key: r.get(2)?,
-                start_date: r.get(3)?,
-                end_date: r.get(4)?,
-                notes: r.get(5)?,
-                habit_ids: parse_json(r.get(6)?),
-            })
-        })
-        .map_err(err)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(err)?;
-
-    let categories = conn
-        .prepare("SELECT id, name, color_key, scopes, sort FROM categories WHERE deleted = 0")
-        .map_err(err)?
-        .query_map([], |r| {
-            Ok(Category {
-                id: r.get(0)?,
-                name: r.get(1)?,
-                color_key: r.get(2)?,
-                scopes: r.get(3)?,
+                color: r.get(2)?,
+                icon: r.get(3)?,
                 sort: r.get(4)?,
             })
         })
@@ -552,62 +912,54 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         .map(|(k, v)| (k[SETTING_PREFIX.len()..].to_string(), v))
         .collect();
 
-    let needs_legacy_import = conn
-        .query_row(
-            "SELECT value FROM meta WHERE key = 'legacy_import_done'",
-            [],
-            |r| r.get::<_, String>(0),
-        )
-        .is_err();
-
     Ok(AppData {
-        tasks,
-        habits,
-        events,
-        periods,
-        categories,
+        seeds,
+        lists,
+        tags,
         settings,
-        needs_legacy_import,
     })
 }
 
-fn upsert_task(conn: &Connection, t: &Task) -> rusqlite::Result<()> {
+fn upsert_seed(conn: &Connection, s: &Seed) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO tasks (id, title, category, completed, date, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)
-         ON CONFLICT(id) DO UPDATE SET title=?2, category=?3, completed=?4, date=?5, updated_at=?6, deleted=0",
-        params![t.id, t.title, t.category, t.completed as i64, t.date, now_ms()],
-    )?;
-    Ok(())
-}
-
-fn upsert_habit(conn: &Connection, h: &Habit) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important, notes, sort, routine, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, 0)
-         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, kind=?4, unit=?5, target=?6, schedule=?7, created_at=?8, reminder=?9, due_date=?10, time=?11, category=?12, important=?13, notes=?14, sort=?15, routine=?16, updated_at=?17, deleted=0",
+        "INSERT INTO seeds (id, title, notes, color, list, tags, important, sort, routine, created_at,
+             date, time, end_date, end_time, repeat, track, reminders, updated_at, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, 0)
+         ON CONFLICT(id) DO UPDATE SET title=?2, notes=?3, color=?4, list=?5, tags=?6, important=?7,
+             sort=?8, routine=?9, created_at=?10, date=?11, time=?12, end_date=?13, end_time=?14,
+             repeat=?15, track=?16, reminders=?17, updated_at=?18, deleted=0",
         params![
-            h.id, h.name, h.color_key, h.kind, h.unit, h.target,
-            json_col(&h.schedule), h.created_at, h.reminder as i64,
-            h.due_date, h.time, h.category, h.important as i64, h.notes, h.sort, h.routine, now_ms()
+            s.id,
+            s.title,
+            s.notes,
+            s.color.clone().unwrap_or_default(),
+            s.list,
+            s.tags.to_string(),
+            s.important as i64,
+            s.sort,
+            s.routine,
+            s.created_at,
+            s.date,
+            s.time,
+            s.end_date,
+            s.end_time,
+            s.repeat.to_string(),
+            track_col(&s.track),
+            s.reminders.to_string(),
+            now_ms()
         ],
     )?;
     Ok(())
 }
 
-fn upsert_completion(
-    conn: &Connection,
-    habit_id: &str,
-    date: &str,
-    value: f64,
-) -> rusqlite::Result<()> {
+fn upsert_done(conn: &Connection, seed_id: &str, date: &str, value: f64) -> rusqlite::Result<()> {
     // value <= 0 tombstones the row instead of deleting it, so sync can propagate the clear
     conn.execute(
-        "INSERT INTO habit_completions (habit_id, date, value, updated_at, deleted)
+        "INSERT INTO done (seed_id, date, value, updated_at, deleted)
          VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT(habit_id, date) DO UPDATE SET value=?3, updated_at=?4, deleted=?5",
+         ON CONFLICT(seed_id, date) DO UPDATE SET value=?3, updated_at=?4, deleted=?5",
         params![
-            habit_id,
+            seed_id,
             date,
             value.max(0.0),
             now_ms(),
@@ -626,50 +978,30 @@ fn tombstone(conn: &Connection, table: &str, id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Settings › Danger zone: tombstone every live event (and every legacy
-/// period, which the frontend folds into events on load). One transaction and
-/// one `updated_at`, so the push after this carries the whole wipe as one
-/// batch of tombstones and other devices delete the same rows.
-fn wipe_events(conn: &Connection) -> rusqlite::Result<()> {
-    let tx = conn.unchecked_transaction()?;
-    let now = now_ms();
-    tx.execute(
-        "UPDATE events SET deleted = 1, updated_at = ?1 WHERE deleted = 0",
-        params![now],
-    )?;
-    tx.execute(
-        "UPDATE periods SET deleted = 1, updated_at = ?1 WHERE deleted = 0",
-        params![now],
-    )?;
-    tx.commit()
-}
-
-/// Settings › Danger zone: tombstone every live to-do of one kind. Tasks and
-/// habits share the `habits` table, told apart by the JSON `schedule` column
-/// (`{"type":"once"}` is a task — the same test as `isRepeating` in
-/// `src/todoLogic.ts`). Completions go with their rows.
-fn wipe_todos(conn: &Connection, kind: &str) -> Result<(), String> {
-    let cmp = match kind {
-        "task" => "=",
-        "habit" => "!=",
-        other => return Err(format!("unknown to-do kind {other:?}")),
+/// Settings › Danger zone: tombstone every live seed of one kind — the same
+/// three filters the views use (`track` empty = event; otherwise `repeat`
+/// none = to-do, else habit). Done rows go with their seeds, in one
+/// transaction with one `updated_at`, so the push after this carries the
+/// whole wipe as one batch of tombstones and other devices delete the same rows.
+fn wipe_seeds(conn: &Connection, kind: &str) -> Result<(), String> {
+    let filter = match kind {
+        "events" => "track = ''",
+        "todos" => "track != '' AND json_extract(repeat, '$.type') = 'none'",
+        "habits" => "track != '' AND json_extract(repeat, '$.type') != 'none'",
+        other => return Err(format!("unknown seed kind {other:?}")),
     };
     let tx = conn.unchecked_transaction().map_err(err)?;
     let now = now_ms();
     tx.execute(
         &format!(
-            "UPDATE habit_completions SET deleted = 1, updated_at = ?1
-             WHERE deleted = 0 AND habit_id IN (
-               SELECT id FROM habits WHERE deleted = 0 AND json_extract(schedule, '$.type') {cmp} 'once')"
+            "UPDATE done SET deleted = 1, updated_at = ?1
+             WHERE deleted = 0 AND seed_id IN (SELECT id FROM seeds WHERE deleted = 0 AND {filter})"
         ),
         params![now],
     )
     .map_err(err)?;
     tx.execute(
-        &format!(
-            "UPDATE habits SET deleted = 1, updated_at = ?1
-             WHERE deleted = 0 AND json_extract(schedule, '$.type') {cmp} 'once'"
-        ),
+        &format!("UPDATE seeds SET deleted = 1, updated_at = ?1 WHERE deleted = 0 AND {filter}"),
         params![now],
     )
     .map_err(err)?;
@@ -677,172 +1009,67 @@ fn wipe_todos(conn: &Connection, kind: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn delete_all_events(db: tauri::State<Db>) -> Result<(), String> {
-    wipe_events(&*db.0.lock().map_err(err)?).map_err(err)
+pub fn delete_all(db: tauri::State<Db>, kind: String) -> Result<(), String> {
+    wipe_seeds(&*db.0.lock().map_err(err)?, &kind)
 }
 
 #[tauri::command]
-pub fn delete_all_todos(db: tauri::State<Db>, kind: String) -> Result<(), String> {
-    wipe_todos(&*db.0.lock().map_err(err)?, &kind)
+pub fn save_seed(db: tauri::State<Db>, seed: Seed) -> Result<(), String> {
+    upsert_seed(&*db.0.lock().map_err(err)?, &seed).map_err(err)
 }
 
 #[tauri::command]
-pub fn save_task(db: tauri::State<Db>, task: Task) -> Result<(), String> {
-    upsert_task(&*db.0.lock().map_err(err)?, &task).map_err(err)
+pub fn delete_seed(db: tauri::State<Db>, id: String) -> Result<(), String> {
+    tombstone(&*db.0.lock().map_err(err)?, "seeds", &id).map_err(err)
 }
 
 #[tauri::command]
-pub fn delete_task(db: tauri::State<Db>, id: String) -> Result<(), String> {
-    tombstone(&*db.0.lock().map_err(err)?, "tasks", &id).map_err(err)
-}
-
-#[tauri::command]
-pub fn save_habit(db: tauri::State<Db>, habit: Habit) -> Result<(), String> {
-    upsert_habit(&*db.0.lock().map_err(err)?, &habit).map_err(err)
-}
-
-#[tauri::command]
-pub fn delete_habit(db: tauri::State<Db>, id: String) -> Result<(), String> {
-    tombstone(&*db.0.lock().map_err(err)?, "habits", &id).map_err(err)
-}
-
-#[tauri::command]
-pub fn set_completion(
+pub fn set_done(
     db: tauri::State<Db>,
-    habit_id: String,
+    seed_id: String,
     date: String,
     value: f64,
 ) -> Result<(), String> {
-    upsert_completion(&*db.0.lock().map_err(err)?, &habit_id, &date, value).map_err(err)
+    upsert_done(&*db.0.lock().map_err(err)?, &seed_id, &date, value).map_err(err)
 }
 
 #[tauri::command]
-pub fn save_event(db: tauri::State<Db>, event: Event) -> Result<(), String> {
+pub fn save_list(db: tauri::State<Db>, list: List) -> Result<(), String> {
     let conn = db.0.lock().map_err(err)?;
     conn.execute(
-        "INSERT INTO events (id, title, description, color_key, all_day, start_date, start_time, end_date, end_time, recurrence, reminders, category, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0)
-         ON CONFLICT(id) DO UPDATE SET title=?2, description=?3, color_key=?4, all_day=?5, start_date=?6, start_time=?7, end_date=?8, end_time=?9, recurrence=?10, reminders=?11, category=?12, updated_at=?13, deleted=0",
-        params![
-            event.id, event.title, event.description, event.color_key, event.all_day as i64,
-            event.start_date, event.start_time, event.end_date, event.end_time,
-            json_col(&event.recurrence), json_col(&event.reminders), event.category, now_ms()
-        ],
+        "INSERT INTO lists (id, name, sort, updated_at, deleted) VALUES (?1, ?2, ?3, ?4, 0)
+         ON CONFLICT(id) DO UPDATE SET name=?2, sort=?3, updated_at=?4, deleted=0",
+        params![list.id, list.name, list.sort, now_ms()],
     )
     .map_err(err)?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_event(db: tauri::State<Db>, id: String) -> Result<(), String> {
-    tombstone(&*db.0.lock().map_err(err)?, "events", &id).map_err(err)
-}
-
-fn upsert_category(conn: &Connection, c: &Category) -> rusqlite::Result<()> {
-    // created_at is stamped only on insert (the `?6` binding); the DO UPDATE
-    // branch deliberately omits it from the SET list, so an edit never
-    // disturbs the row's original creation time.
-    conn.execute(
-        "INSERT INTO categories (id, name, color_key, scopes, sort, created_at, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, 0)
-         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, scopes=?4, sort=?5, updated_at=?6, deleted=0",
-        params![c.id, c.name, c.color_key, c.scopes, c.sort, now_ms()],
-    )?;
-    Ok(())
+pub fn delete_list(db: tauri::State<Db>, id: String) -> Result<(), String> {
+    tombstone(&*db.0.lock().map_err(err)?, "lists", &id).map_err(err)
 }
 
 #[tauri::command]
-pub fn list_categories(db: tauri::State<Db>) -> Result<Vec<Category>, String> {
-    let conn = db.0.lock().map_err(err)?;
-    let mut stmt = conn
-        .prepare("SELECT id, name, color_key, scopes, sort FROM categories WHERE deleted = 0")
-        .map_err(err)?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok(Category {
-                id: r.get(0)?,
-                name: r.get(1)?,
-                color_key: r.get(2)?,
-                scopes: r.get(3)?,
-                sort: r.get(4)?,
-            })
-        })
-        .map_err(err)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(err)?;
-    Ok(rows)
-}
-
-#[tauri::command]
-pub fn save_category(db: tauri::State<Db>, category: Category) -> Result<(), String> {
-    upsert_category(&*db.0.lock().map_err(err)?, &category).map_err(err)
-}
-
-#[tauri::command]
-pub fn delete_category(db: tauri::State<Db>, id: String) -> Result<(), String> {
-    tombstone(&*db.0.lock().map_err(err)?, "categories", &id).map_err(err)
-}
-
-#[tauri::command]
-pub fn save_period(db: tauri::State<Db>, period: Period) -> Result<(), String> {
+pub fn save_tag(db: tauri::State<Db>, tag: Tag) -> Result<(), String> {
     let conn = db.0.lock().map_err(err)?;
     conn.execute(
-        "INSERT INTO periods (id, name, color_key, start_date, end_date, notes, habit_ids, updated_at, deleted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0)
-         ON CONFLICT(id) DO UPDATE SET name=?2, color_key=?3, start_date=?4, end_date=?5, notes=?6, habit_ids=?7, updated_at=?8, deleted=0",
-        params![
-            period.id, period.name, period.color_key, period.start_date,
-            period.end_date, period.notes, json_col(&period.habit_ids), now_ms()
-        ],
+        "INSERT INTO tags (id, name, color, icon, sort, updated_at, deleted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)
+         ON CONFLICT(id) DO UPDATE SET name=?2, color=?3, icon=?4, sort=?5, updated_at=?6, deleted=0",
+        params![tag.id, tag.name, tag.color, tag.icon, tag.sort, now_ms()],
     )
     .map_err(err)?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_period(db: tauri::State<Db>, id: String) -> Result<(), String> {
-    tombstone(&*db.0.lock().map_err(err)?, "periods", &id).map_err(err)
-}
-
-/// One-time import of the pre-SQLite localStorage blob. Transactional and
-/// guarded by a meta flag so StrictMode double-effects can't import twice.
-#[tauri::command]
-pub fn import_legacy(
-    db: tauri::State<Db>,
-    tasks: Vec<Task>,
-    habits: Vec<Habit>,
-) -> Result<(), String> {
-    let mut guard = db.0.lock().map_err(err)?;
-    let tx = guard.transaction().map_err(err)?;
-    let already: bool = tx
-        .query_row(
-            "SELECT value FROM meta WHERE key = 'legacy_import_done'",
-            [],
-            |r| r.get::<_, String>(0),
-        )
-        .is_ok();
-    if !already {
-        for t in &tasks {
-            upsert_task(&tx, t).map_err(err)?;
-        }
-        for h in &habits {
-            upsert_habit(&tx, h).map_err(err)?;
-            for (date, value) in &h.completions {
-                upsert_completion(&tx, &h.id, date, *value).map_err(err)?;
-            }
-        }
-        tx.execute(
-            "INSERT INTO meta (key, value) VALUES ('legacy_import_done', '1')",
-            [],
-        )
-        .map_err(err)?;
-    }
-    tx.commit().map_err(err)
+pub fn delete_tag(db: tauri::State<Db>, id: String) -> Result<(), String> {
+    tombstone(&*db.0.lock().map_err(err)?, "tags", &id).map_err(err)
 }
 
 /// One raw row another account shared with this one. The payload is the
 /// column-name → value object the server relayed; the frontend
-/// (`sharedLogic.ts`) turns it into typed events/todos.
+/// (`sharedLogic.ts`) turns it into typed seeds, lists and tags.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedRow {
@@ -882,13 +1109,12 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(&test_schema()).unwrap();
         conn.execute_batch(
-            "INSERT INTO habits (id, name, kind, schedule, created_at, updated_at)
-             VALUES ('t1', 'task', 'yesno', '{\"type\":\"once\"}', '2026-01-01', 1),
-                    ('h1', 'habit', 'yesno', '{\"type\":\"daily\"}', '2026-01-01', 1);
-             INSERT INTO habit_completions (habit_id, date, value, updated_at)
-             VALUES ('t1', '2026-01-02', 1, 1), ('h1', '2026-01-02', 1, 1);
-             INSERT INTO events (id, title, start_date, end_date, updated_at)
-             VALUES ('e1', 'event', '2026-01-01', '2026-01-01', 1);",
+            "INSERT INTO seeds (id, title, created_at, repeat, track, updated_at)
+             VALUES ('t1', 'task', '2026-01-01', '{\"type\":\"none\"}', '{\"kind\":\"check\"}', 1),
+                    ('h1', 'habit', '2026-01-01', '{\"type\":\"every\",\"n\":1,\"unit\":\"day\"}', '{\"kind\":\"check\"}', 1),
+                    ('e1', 'event', '2026-01-01', '{\"type\":\"none\"}', '', 1);
+             INSERT INTO done (seed_id, date, value, updated_at)
+             VALUES ('t1', '2026-01-02', 1, 1), ('h1', '2026-01-02', 1, 1);",
         )
         .unwrap();
         conn
@@ -907,14 +1133,14 @@ mod tests {
     }
 
     #[test]
-    fn wipe_tasks_leaves_habits() {
+    fn wipe_todos_leaves_habits() {
         let c = conn();
-        wipe_todos(&c, "task").unwrap();
-        assert_eq!(live(&c, "habits", "id"), ["h1"]);
-        assert_eq!(live(&c, "habit_completions", "habit_id"), ["h1"]);
+        wipe_seeds(&c, "todos").unwrap();
+        assert_eq!(live(&c, "seeds", "id"), ["e1", "h1"]);
+        assert_eq!(live(&c, "done", "seed_id"), ["h1"]);
         // A tombstone is a newer write: it must outrank the row it replaces.
         let ts: i64 = c
-            .query_row("SELECT updated_at FROM habits WHERE id = 't1'", [], |r| {
+            .query_row("SELECT updated_at FROM seeds WHERE id = 't1'", [], |r| {
                 r.get(0)
             })
             .unwrap();
@@ -922,23 +1148,46 @@ mod tests {
     }
 
     #[test]
-    fn wipe_habits_leaves_tasks() {
+    fn wipe_habits_leaves_todos() {
         let c = conn();
-        wipe_todos(&c, "habit").unwrap();
-        assert_eq!(live(&c, "habits", "id"), ["t1"]);
-        assert_eq!(live(&c, "habit_completions", "habit_id"), ["t1"]);
+        wipe_seeds(&c, "habits").unwrap();
+        assert_eq!(live(&c, "seeds", "id"), ["e1", "t1"]);
+        assert_eq!(live(&c, "done", "seed_id"), ["t1"]);
+    }
+
+    #[test]
+    fn wipe_events_leaves_doables() {
+        let c = conn();
+        wipe_seeds(&c, "events").unwrap();
+        assert_eq!(live(&c, "seeds", "id"), ["h1", "t1"]);
+        assert_eq!(live(&c, "done", "seed_id"), ["h1", "t1"]);
     }
 
     #[test]
     fn wipe_rejects_unknown_kind() {
-        assert!(wipe_todos(&conn(), "period").is_err());
+        assert!(wipe_seeds(&conn(), "periods").is_err());
     }
 
     #[test]
-    fn wipe_events_tombstones_every_event() {
-        let c = conn();
-        wipe_events(&c).unwrap();
-        assert!(live(&c, "events", "id").is_empty());
+    fn snap_color_picks_nearest_hue_and_grey_for_neutrals() {
+        assert_eq!(snap_color("#ef4444"), "red");
+        assert_eq!(snap_color("#f59e0b"), "orange");
+        assert_eq!(snap_color("#eab308"), "yellow");
+        assert_eq!(snap_color("#10b981"), "green");
+        assert_eq!(snap_color("#06b6d4"), "teal");
+        assert_eq!(snap_color("#3b82f6"), "blue");
+        assert_eq!(snap_color("#a855f7"), "purple");
+        assert_eq!(snap_color("#ec4899"), "pink");
+        assert_eq!(snap_color("#f00"), "red");
+        assert_eq!(snap_color("#000000"), "ink");
+        assert_eq!(snap_color("#ffffff"), "paper");
+        assert_eq!(snap_color("#4b5563"), "grey-dark");
+        assert_eq!(snap_color("#9ca3af"), "grey");
+        assert_eq!(snap_color("primary"), "purple");
+        assert_eq!(snap_color("secondary"), "green");
+        assert_eq!(snap_color("tertiary"), "pink");
+        assert_eq!(snap_color("not a colour"), "grey");
+        assert_eq!(snap_color(""), "grey");
     }
 
     /// A database file `open()` can be pointed at, deleted with its WAL
@@ -1000,6 +1249,20 @@ CREATE TABLE weights (date TEXT PRIMARY KEY, kg REAL NOT NULL, updated_at INTEGE
 PRAGMA user_version = 1;
 ";
 
+    /// The steps v1 → v9 took, so a test can build a v9 file without going
+    /// through `open()` (which would carry it straight to v10).
+    const V1_TO_V9: &str = "
+ALTER TABLE habits ADD COLUMN due_date TEXT;
+ALTER TABLE habits ADD COLUMN time TEXT;
+ALTER TABLE habits ADD COLUMN category TEXT NOT NULL DEFAULT '';
+ALTER TABLE habits ADD COLUMN important INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN category TEXT NOT NULL DEFAULT '';
+ALTER TABLE habits ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+ALTER TABLE habits ADD COLUMN sort INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE habits ADD COLUMN routine TEXT NOT NULL DEFAULT '';
+DROP TABLE weights;
+";
+
     fn columns(conn: &Connection, table: &str) -> Vec<String> {
         conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
             .unwrap()
@@ -1023,16 +1286,18 @@ PRAGMA user_version = 1;
             .unwrap()
     }
 
-    const CURRENT_VERSION: i64 = 9;
-
-    /// Every table an upgraded database has, with the columns it has, must
-    /// match a database created fresh from `SCHEMA` — the CLAUDE.md rule that
-    /// `SCHEMA` stays at the current shape and the `ALTER`s reproduce it.
-    /// Column *order* legitimately differs (`ADD COLUMN` appends, `SCHEMA`
-    /// groups), and nothing here selects `*` or inserts positionally.
+    /// Every table a fresh database has must exist in an upgraded one with the
+    /// same columns — the CLAUDE.md rule that the schema constants stay at the
+    /// current shape and the ladder reproduces it. An upgraded file keeps its
+    /// legacy tables on top (never dropped), and column *order* legitimately
+    /// differs (`ADD COLUMN` appends); nothing here selects `*` or inserts
+    /// positionally.
     fn assert_same_shape(upgraded: &Connection, fresh: &Connection) {
-        assert_eq!(tables(upgraded), tables(fresh));
         for table in tables(fresh) {
+            assert!(
+                tables(upgraded).contains(&table),
+                "{table} missing after upgrade"
+            );
             let mut have = columns(upgraded, &table);
             let mut want = columns(fresh, &table);
             have.sort();
@@ -1041,13 +1306,45 @@ PRAGMA user_version = 1;
         }
     }
 
+    type SeedRow = (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        String,
+        String,
+    );
+
+    /// (title, color, date, end_date, repeat, track, reminders) of a live seed.
+    fn seed_row(c: &Connection, id: &str) -> SeedRow {
+        c.query_row(
+            "SELECT title, color, date, end_date, repeat, track, reminders FROM seeds WHERE id = ?1 AND deleted = 0",
+            [id],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ))
+            },
+        )
+        .unwrap()
+    }
+
     #[test]
     fn fresh_database_is_at_the_current_version() {
         let db = TempDb::new("fresh");
         let c = open(&db.0).unwrap();
         assert_eq!(user_version(&c), CURRENT_VERSION);
-        assert!(tables(&c).contains(&"categories".to_string()));
-        assert!(!tables(&c).contains(&"weights".to_string()));
+        assert_eq!(
+            tables(&c),
+            ["done", "lists", "meta", "seeds", "shared_rows", "tags"]
+        );
         // Reopening neither re-runs an ALTER (which would fail on a duplicate
         // column) nor moves the version.
         drop(c);
@@ -1080,51 +1377,46 @@ PRAGMA user_version = 1;
         assert_eq!(user_version(&c), CURRENT_VERSION);
         assert_same_shape(&c, &fresh);
 
-        // Rows survive with the new columns at their defaults.
-        let (name, category, important, notes, due, sort, routine): (
-            String,
-            String,
-            i64,
-            String,
-            Option<String>,
-            i64,
-            String,
-        ) = c
+        // The ladder ran to v9 (the legacy row has every later column)…
+        let (category, notes, routine): (String, String, String) = c
             .query_row(
-                "SELECT name, category, important, notes, due_date, sort, routine FROM habits WHERE id = 'h1'",
+                "SELECT category, notes, routine FROM habits WHERE id = 'h1'",
                 [],
-                |r| {
-                    Ok((
-                        r.get(0)?,
-                        r.get(1)?,
-                        r.get(2)?,
-                        r.get(3)?,
-                        r.get(4)?,
-                        r.get(5)?,
-                        r.get(6)?,
-                    ))
-                },
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .unwrap();
         assert_eq!(
-            (
-                name.as_str(),
-                category.as_str(),
-                important,
-                notes.as_str(),
-                due,
-                sort,
-                routine.as_str()
-            ),
-            ("run", "", 0, "", None, 0, "")
+            (category.as_str(), notes.as_str(), routine.as_str()),
+            ("", "", "")
         );
-        let event_category: String = c
-            .query_row("SELECT category FROM events WHERE id = 'e1'", [], |r| {
+        // …and v10 copied the rows into seeds with their `updated_at`.
+        let (title, color, date, end, repeat, track, _) = seed_row(&c, "h1");
+        assert_eq!(title, "run");
+        assert_eq!(color, "purple"); // legacy 'primary'
+        assert_eq!(date.as_deref(), Some("2026-01-01")); // anchored on created_at
+        assert_eq!(end, None);
+        assert_eq!(repeat, r#"{"n":1,"type":"every","unit":"day"}"#);
+        assert_eq!(track, r#"{"kind":"check"}"#);
+        let (title, _, date, _, repeat, track, _) = seed_row(&c, "e1");
+        assert_eq!(
+            (title.as_str(), date.as_deref()),
+            ("dentist", Some("2026-01-03"))
+        );
+        assert_eq!(
+            (repeat.as_str(), track.as_str()),
+            (r#"{"type":"none"}"#, "")
+        );
+        assert_eq!(live(&c, "done", "seed_id"), ["h1"]);
+        let at: i64 = c
+            .query_row("SELECT updated_at FROM seeds WHERE id = 'h1'", [], |r| {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(event_category, "");
-        assert_eq!(live(&c, "habit_completions", "habit_id"), ["h1"]);
+        assert_eq!(at, 1);
+        assert_eq!(
+            read_meta(&c, crate::sync::META_PUSH_AT).as_deref(),
+            Some("0")
+        );
         assert_eq!(read_meta(&c, "legacy_import_done").as_deref(), Some("1"));
 
         // A second open is a no-op.
@@ -1132,11 +1424,12 @@ PRAGMA user_version = 1;
         let c = open(&old.0).unwrap();
         assert_eq!(user_version(&c), CURRENT_VERSION);
         assert_same_shape(&c, &fresh);
+        assert_eq!(live(&c, "seeds", "id"), ["e1", "h1"]);
     }
 
     /// The v5/v6 steps are `CREATE TABLE IF NOT EXISTS` and column adds; a
     /// database that already took the v2 and v4 steps must get only what it
-    /// still lacks.
+    /// still lacks before v10 copies its rows.
     #[test]
     fn a_version_4_database_gets_only_the_later_steps() {
         let old = TempDb::new("v4");
@@ -1160,52 +1453,239 @@ PRAGMA user_version = 1;
         let c = open(&old.0).unwrap();
         assert_eq!(user_version(&c), CURRENT_VERSION);
         assert_same_shape(&c, &fresh);
-        let (due, important): (Option<String>, i64) = c
+        let (date, important, repeat): (Option<String>, i64, String) = c
             .query_row(
-                "SELECT due_date, important FROM habits WHERE id = 't1'",
+                "SELECT date, important, repeat FROM seeds WHERE id = 't1'",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .unwrap();
-        assert_eq!((due.as_deref(), important), (Some("2026-02-01"), 1));
+        assert_eq!(
+            (date.as_deref(), important, repeat.as_str()),
+            (Some("2026-02-01"), 1, r#"{"type":"none"}"#)
+        );
     }
 
-    /// v9: a repeating to-do in a category takes that category's colour as
-    /// its own; a once to-do and an uncategorised habit keep theirs, and the
-    /// copied row's `updated_at` moves so the copy syncs.
+    /// v10 on a current (v9) file: every kind of row lands in the seed tables
+    /// with its dates, rules, colour and completions intact.
     #[test]
-    fn a_version_8_database_copies_category_colours_onto_habits() {
-        let old = TempDb::new("v8");
+    fn a_version_9_database_migrates_rows_into_seeds() {
+        let old = TempDb::new("v9");
         {
-            // A current database wound back to the v8 shape.
-            let c = open(&old.0).unwrap();
+            let c = Connection::open(&old.0).unwrap();
+            c.execute_batch(SCHEMA_V1).unwrap();
+            c.execute_batch(V1_TO_V9).unwrap();
+            c.execute_batch(SCHEMA_V5).unwrap();
+            c.execute_batch(SCHEMA_V6).unwrap();
             c.execute_batch(
-                "ALTER TABLE habits DROP COLUMN sort;
-                 ALTER TABLE habits DROP COLUMN routine;
-                 INSERT INTO categories (id, name, color_key, scopes, sort, created_at, updated_at)
-                 VALUES ('c1', 'Wellness', '#f59e0b', 'habits', 0, 1, 1);
-                 INSERT INTO habits (id, name, color_key, kind, schedule, category, created_at, updated_at)
-                 VALUES ('h1', 'run', '#a855f7', 'yesno', '{\"type\":\"daily\"}', 'c1', '2026-01-01', 1),
-                        ('h2', 'read', '#a855f7', 'yesno', '{\"type\":\"daily\"}', '', '2026-01-01', 1),
-                        ('t1', 'milk', '#a855f7', 'yesno', '{\"type\":\"once\"}', 'c1', '2026-01-01', 1);
-                 PRAGMA user_version = 8;",
+                "INSERT INTO categories (id, name, color_key, scopes, sort, created_at, updated_at)
+                 VALUES ('c1', 'Work', '#3b82f6', 'calendar,tasks', 2, 1, 7);
+                 INSERT INTO habits (id, name, color_key, kind, unit, target, schedule, created_at, reminder, due_date, time, category, important, notes, sort, routine, updated_at, deleted)
+                 VALUES ('chore', 'bins', '#10b981', 'yesno', '', 1, '{\"type\":\"every\",\"n\":2,\"unit\":\"week\",\"fromDone\":true}', '2026-01-01', 1, NULL, '08:00', '', 0, 'blue bin', 3, 'morning', 11, 0),
+                        ('gym', 'gym', '#ec4899', 'measurable', 'km', 5, '{\"type\":\"weekdays\",\"days\":[1,3,5]}', '2026-01-01', 0, '2026-01-05', NULL, '', 0, '', 1, '', 12, 0),
+                        ('read', 'read', '#f59e0b', 'yesno', '', 1, '{\"type\":\"timesPer\",\"times\":3,\"per\":\"week\"}', '2026-01-01', 0, NULL, NULL, '', 0, '', 2, '', 13, 0),
+                        ('milk', 'milk', '#a855f7', 'yesno', '', 1, '{\"type\":\"once\"}', '2026-01-01', 0, '2026-02-01', NULL, 'c1', 1, '', 0, '', 14, 0),
+                        ('gone', 'gone', '#a855f7', 'yesno', '', 1, '{\"type\":\"once\"}', '2026-01-01', 0, NULL, NULL, '', 0, '', 0, '', 15, 1);
+                 INSERT INTO habit_completions (habit_id, date, value, updated_at, deleted)
+                 VALUES ('chore', '2026-01-10', 1, 16, 0), ('gym', '2026-01-05', 5, 17, 0), ('gym', '2026-01-07', 2, 18, 1);
+                 INSERT INTO events (id, title, description, color_key, all_day, start_date, start_time, end_date, end_time, recurrence, reminders, category, updated_at)
+                 VALUES ('standup', 'Standup', 'daily sync', '#a855f7', 0, '2026-01-05', '09:00', '2026-01-05', '09:15',
+                         '{\"type\":\"weekly\",\"interval\":1,\"days\":[1,3],\"until\":\"2026-03-01\",\"exdates\":[\"2026-01-12\"]}', '[10,60]', 'c1', 21),
+                        ('trip', 'Trip', '', '#a855f7', 1, '2026-02-10', '10:00', '2026-02-14', '11:00', '{\"type\":\"none\"}', '[]', '', 22);
+                 INSERT INTO tasks (id, title, category, completed, date, updated_at)
+                 VALUES ('old', 'old task', 'General', 1, '2025-12-01', 31);
+                 INSERT INTO periods (id, name, color_key, start_date, end_date, notes, habit_ids, updated_at)
+                 VALUES ('p1', 'Program', '#06b6d4', '2026-03-01', '2026-05-24', '12 weeks', '[\"gym\"]', 41);
+                 INSERT INTO meta VALUES ('sync_push_at', '999');
+                 PRAGMA user_version = 9;",
             )
             .unwrap();
         }
         let c = open(&old.0).unwrap();
         assert_eq!(user_version(&c), CURRENT_VERSION);
-        let colour = |id: &str| -> (String, i64) {
-            c.query_row(
-                "SELECT color_key, updated_at FROM habits WHERE id = ?1",
-                [id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+        assert_eq!(
+            live(&c, "seeds", "id"),
+            [
+                "chore", "gym", "milk", "old", "p1", "read", "standup", "trip"
+            ]
+        );
+
+        let (_, color, date, _, repeat, track, reminders) = seed_row(&c, "chore");
+        assert_eq!(color, "green");
+        assert_eq!(date.as_deref(), Some("2026-01-01"));
+        assert_eq!(
+            repeat,
+            r#"{"fromDone":true,"n":2,"type":"every","unit":"week"}"#
+        );
+        assert_eq!(
+            (track.as_str(), reminders.as_str()),
+            (r#"{"kind":"check"}"#, "[0]")
+        );
+        let (notes, routine, sort, time): (String, String, i64, Option<String>) = c
+            .query_row(
+                "SELECT notes, routine, sort, time FROM seeds WHERE id = 'chore'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
+            .unwrap();
+        assert_eq!(
+            (notes.as_str(), routine.as_str(), sort, time.as_deref()),
+            ("blue bin", "morning", 3, Some("08:00"))
+        );
+
+        let (_, color, date, _, repeat, track, _) = seed_row(&c, "gym");
+        assert_eq!(color, "pink");
+        assert_eq!(date.as_deref(), Some("2026-01-05"));
+        assert_eq!(
+            repeat,
+            r#"{"days":[1,3,5],"n":1,"type":"every","unit":"week"}"#
+        );
+        assert_eq!(track, r#"{"kind":"count","target":5.0,"unit":"km"}"#);
+
+        let (_, _, _, _, repeat, _, _) = seed_row(&c, "read");
+        assert_eq!(repeat, r#"{"per":"week","times":3,"type":"timesPer"}"#);
+
+        // A once to-do in a category paints with the category's colour.
+        let (_, color, date, _, repeat, _, _) = seed_row(&c, "milk");
+        assert_eq!(
+            (color.as_str(), date.as_deref(), repeat.as_str()),
+            ("blue", Some("2026-02-01"), r#"{"type":"none"}"#)
+        );
+        let list: String = c
+            .query_row("SELECT list FROM seeds WHERE id = 'milk'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(list, "c1");
+
+        let (title, color, date, end, repeat, track, reminders) = seed_row(&c, "standup");
+        assert_eq!(
+            (title.as_str(), color.as_str(), date.as_deref(), end),
+            ("Standup", "blue", Some("2026-01-05"), None)
+        );
+        assert_eq!(
+            repeat,
+            r#"{"days":[1,3],"exdates":["2026-01-12"],"n":1,"type":"every","unit":"week","until":"2026-03-01"}"#
+        );
+        assert_eq!((track.as_str(), reminders.as_str()), ("", "[10,60]"));
+        let (notes, time, end_time): (String, Option<String>, Option<String>) = c
+            .query_row(
+                "SELECT notes, time, end_time FROM seeds WHERE id = 'standup'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (notes.as_str(), time.as_deref(), end_time.as_deref()),
+            ("daily sync", Some("09:00"), Some("09:15"))
+        );
+
+        // All-day span: times dropped, end kept.
+        let (_, _, date, end, _, _, _) = seed_row(&c, "trip");
+        assert_eq!(
+            (date.as_deref(), end.as_deref()),
+            (Some("2026-02-10"), Some("2026-02-14"))
+        );
+        let time: Option<String> = c
+            .query_row("SELECT time FROM seeds WHERE id = 'trip'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(time, None);
+
+        let (title, _, date, _, _, track, _) = seed_row(&c, "old");
+        assert_eq!(
+            (title.as_str(), date.as_deref(), track.as_str()),
+            ("old task", Some("2025-12-01"), r#"{"kind":"check"}"#)
+        );
+        // A period had no category, so it painted neutral: no colour of its own.
+        let (_, color, date, end, _, track, _) = seed_row(&c, "p1");
+        assert_eq!(
+            (
+                color.as_str(),
+                date.as_deref(),
+                end.as_deref(),
+                track.as_str()
+            ),
+            ("", Some("2026-03-01"), Some("2026-05-24"), "")
+        );
+
+        // Completions: live ones follow their seeds, tombstoned ones don't.
+        let done: Vec<(String, String, f64)> = c
+            .prepare("SELECT seed_id, date, value FROM done WHERE deleted = 0 ORDER BY 1, 2")
             .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            done,
+            [
+                ("chore".to_string(), "2026-01-10".to_string(), 1.0),
+                ("gym".to_string(), "2026-01-05".to_string(), 5.0),
+                ("old".to_string(), "2025-12-01".to_string(), 1.0),
+            ]
+        );
+
+        // Categories became lists; timestamps survived; the push watermark
+        // was reset so the whole set goes to the server once.
+        let (name, sort, at): (String, i64, i64) = c
+            .query_row(
+                "SELECT name, sort, updated_at FROM lists WHERE id = 'c1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((name.as_str(), sort, at), ("Work", 2, 7));
+        let at: i64 = c
+            .query_row(
+                "SELECT updated_at FROM seeds WHERE id = 'standup'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(at, 21);
+        assert_eq!(
+            read_meta(&c, crate::sync::META_PUSH_AT).as_deref(),
+            Some("0")
+        );
+        // The legacy tables are still there, untouched.
+        assert_eq!(live(&c, "habits", "id"), ["chore", "gym", "milk", "read"]);
+    }
+
+    #[test]
+    fn save_and_load_round_trip_a_seed() {
+        let c = conn();
+        let seed = Seed {
+            id: "s1".into(),
+            title: "Water plants".into(),
+            notes: "".into(),
+            color: None,
+            list: "".into(),
+            tags: serde_json::json!(["tg"]),
+            important: true,
+            sort: 0,
+            routine: "".into(),
+            created_at: "2026-01-01".into(),
+            date: Some("2026-01-04".into()),
+            time: None,
+            end_date: None,
+            end_time: None,
+            repeat: serde_json::json!({ "type": "every", "n": 3, "unit": "day", "fromDone": true }),
+            track: serde_json::Value::Null,
+            reminders: serde_json::json!([]),
+            done: HashMap::new(),
         };
-        let (h1, h1_at) = colour("h1");
-        assert_eq!(h1, "#f59e0b");
-        assert!(h1_at > 1);
-        assert_eq!(colour("h2"), ("#a855f7".to_string(), 1));
-        assert_eq!(colour("t1"), ("#a855f7".to_string(), 1));
+        upsert_seed(&c, &seed).unwrap();
+        let (color, track, tags): (String, String, String) = c
+            .query_row(
+                "SELECT color, track, tags FROM seeds WHERE id = 's1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (color.as_str(), track.as_str(), tags.as_str()),
+            ("", "", r#"["tg"]"#)
+        );
+        upsert_done(&c, "s1", "2026-01-04", 1.0).unwrap();
+        upsert_done(&c, "s1", "2026-01-04", 0.0).unwrap();
+        assert!(live(&c, "done", "seed_id").iter().all(|id| id != "s1"));
     }
 }

@@ -20,13 +20,19 @@ export interface UiContextType {
   setActiveView: (view: ActiveView) => void;
   setCalendarMode: (mode: CalendarMode) => void;
   /**
-   * Categories the user has unchecked in the sidebar — empty means "show
-   * everything". One set for every screen, so hiding Work on the To-Do page
-   * hides it on the dashboard and the Habits page too. `''` is General.
+   * Lists and tags the user has unchecked in the sidebar — empty means "show
+   * everything". One set each for every screen, so hiding Work on the To-Do
+   * page hides it on the dashboard and the Habits page too. A seed is hidden
+   * by its list (`''` is unfiled) or by any of its tags.
    */
-  hiddenCategoryIds: Set<string>;
-  toggleHiddenCategory: (id: string) => void;
-  setHiddenCategoryIds: (ids: Set<string>) => void;
+  hiddenListIds: Set<string>;
+  toggleHiddenList: (id: string) => void;
+  setHiddenListIds: (ids: Set<string>) => void;
+  hiddenTagIds: Set<string>;
+  toggleHiddenTag: (id: string) => void;
+  setHiddenTagIds: (ids: Set<string>) => void;
+  /** Whether a seed passes both hidden sets. */
+  isVisible: (seed: { list: string; tags: string[] }) => boolean;
   /** Whether the To-Do page shows its Completed section. */
   showCompleted: boolean;
   setShowCompleted: (show: boolean) => void;
@@ -54,7 +60,8 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
   });
   const [activeView, setActiveView] = useState<ActiveView>('calendar');
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('month');
-  const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Set<string>>(() => new Set());
+  const [hiddenListIds, setHiddenListIds] = useState<Set<string>>(() => new Set());
+  const [hiddenTagIds, setHiddenTagIds] = useState<Set<string>>(() => new Set());
   const [showCompleted, setShowCompleted] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<Set<ItemKey>>(() => new Set());
   const [inserting, setInserting] = useState(false);
@@ -70,14 +77,19 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
     setShowRightPanel((prev) => !prev);
   }, []);
 
-  const toggleHiddenCategory = useCallback((id: string) => {
-    setHiddenCategoryIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggle = (id: string) => (prev: Set<string>) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  };
+  const toggleHiddenList = useCallback((id: string) => setHiddenListIds(toggle(id)), []);
+  const toggleHiddenTag = useCallback((id: string) => setHiddenTagIds(toggle(id)), []);
+  const isVisible = useCallback(
+    (seed: { list: string; tags: string[] }) =>
+      !hiddenListIds.has(seed.list) && !seed.tags.some((t) => hiddenTagIds.has(t)),
+    [hiddenListIds, hiddenTagIds],
+  );
 
   const mode: EditorMode = inserting ? 'INSERT' : selectedKeys.size > 0 ? 'VISUAL' : 'NORMAL';
 
@@ -91,9 +103,13 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
       setCurrentMonth,
       setActiveView,
       setCalendarMode,
-      hiddenCategoryIds,
-      toggleHiddenCategory,
-      setHiddenCategoryIds,
+      hiddenListIds,
+      toggleHiddenList,
+      setHiddenListIds,
+      hiddenTagIds,
+      toggleHiddenTag,
+      setHiddenTagIds,
+      isVisible,
       showCompleted,
       setShowCompleted,
       selectedKeys,
@@ -110,8 +126,11 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
       currentMonth,
       activeView,
       calendarMode,
-      hiddenCategoryIds,
-      toggleHiddenCategory,
+      hiddenListIds,
+      toggleHiddenList,
+      hiddenTagIds,
+      toggleHiddenTag,
+      isVisible,
       showCompleted,
       selectedKeys,
       inserting,

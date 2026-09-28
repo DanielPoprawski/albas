@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { addDays, fmt } from '../../dates';
 import { type ReminderChoice, reminderLabel } from '../../reminders';
-import { doneDate, GENERAL, isDone, isDoneOn } from '../../todoLogic';
+import { doneDate, GENERAL, isDone, isDoneOn, isRepeating, targetOf } from '../../seedLogic';
 import type { SearchItem } from '../search/types';
 
 const NOTICE_MS = 2400;
@@ -14,14 +14,14 @@ export function plural(n: number, word: string): string {
 /**
  * The edits a selection can take as a whole — the search palette's bulk
  * panel and the list views' selection bar run the very same callbacks, so
- * "move to category" cannot mean two things. Every action posts a one-line
+ * "move to list" cannot mean two things. Every action posts a one-line
  * notice that clears itself; the caller decides where to show it.
  *
  * `selectedItems` are live `SearchItem`s (resolved against current data by
  * the caller), never a snapshot.
  */
 export function useBulkActions(selectedItems: SearchItem[]) {
-  const { updateEvent, updateTodo, deleteEvent, deleteTodo, setTodoValue, categoryById } = useApp();
+  const { updateSeed, deleteSeed, setDone, listById } = useApp();
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,120 +30,98 @@ export function useBulkActions(selectedItems: SearchItem[]) {
     return () => clearTimeout(id);
   }, [notice]);
 
-  const applyCategory = useCallback(
-    (categoryId: string) => {
-      for (const item of selectedItems) {
-        if (item.kind === 'event') updateEvent(item.event.id, { category: categoryId });
-        else updateTodo(item.todo.id, { category: categoryId });
-      }
-      const name = categoryById(categoryId)?.name ?? GENERAL;
+  const applyList = useCallback(
+    (listId: string) => {
+      for (const item of selectedItems) updateSeed(item.seed.id, { list: listId });
+      const name = listById(listId)?.name ?? GENERAL;
       setNotice(`Moved ${plural(selectedItems.length, 'item')} to ${name}`);
     },
-    [selectedItems, updateEvent, updateTodo, categoryById],
+    [selectedItems, updateSeed, listById],
   );
 
-  /** ±n days. Events move whole (series bounds and exceptions too); dated tasks move; habits and undated stay. */
+  /** ±n days. Dated seeds move whole (series bounds and exceptions too); undated ones stay. */
   const applyShift = useCallback(
     (n: number) => {
       let moved = 0;
-      for (const item of selectedItems) {
-        if (item.kind === 'event') {
-          const e = item.event;
-          const rec = e.recurrence;
-          updateEvent(e.id, {
-            startDate: addDays(e.startDate, n),
-            endDate: addDays(e.endDate, n),
-            recurrence:
-              rec.type === 'none'
-                ? rec
-                : {
-                    ...rec,
-                    until: rec.until ? addDays(rec.until, n) : rec.until,
-                    exdates: rec.exdates?.map((d) => addDays(d, n)),
-                  },
-          });
-          moved++;
-        } else if (item.kind === 'task' && item.todo.dueDate) {
-          updateTodo(item.todo.id, { dueDate: addDays(item.todo.dueDate, n) });
-          moved++;
-        }
+      for (const { seed } of selectedItems) {
+        if (!seed.date) continue;
+        const r = seed.repeat;
+        updateSeed(seed.id, {
+          date: addDays(seed.date, n),
+          endDate: seed.endDate ? addDays(seed.endDate, n) : null,
+          repeat:
+            r.type === 'none'
+              ? r
+              : {
+                  ...r,
+                  until: r.until ? addDays(r.until, n) : r.until,
+                  ...(r.type === 'every' && r.exdates ? { exdates: r.exdates.map((d) => addDays(d, n)) } : {}),
+                },
+        });
+        moved++;
       }
       setNotice(`Shifted ${plural(moved, 'item')} ${n > 0 ? 'later' : 'earlier'} by ${plural(Math.abs(n), 'day')}`);
     },
-    [selectedItems, updateEvent, updateTodo],
+    [selectedItems, updateSeed],
   );
 
   const applyReminder = useCallback(
     (choice: ReminderChoice) => {
-      for (const item of selectedItems) {
-        if (item.kind === 'event') updateEvent(item.event.id, { reminders: choice === 'none' ? [] : [choice] });
-        else updateTodo(item.todo.id, { reminder: choice !== 'none' });
-      }
+      for (const item of selectedItems) updateSeed(item.seed.id, { reminders: choice === 'none' ? [] : [choice] });
       const label = choice === 'none' ? 'No reminder' : `Reminder "${reminderLabel(choice)}"`;
       setNotice(`${label} on ${plural(selectedItems.length, 'item')}`);
     },
-    [selectedItems, updateEvent, updateTodo],
+    [selectedItems, updateSeed],
   );
 
-  /** Star or unstar every selected to-do; events have no importance. */
   const setImportant = useCallback(
     (important: boolean) => {
-      let n = 0;
-      for (const item of selectedItems) {
-        if (item.kind === 'event') continue;
-        updateTodo(item.todo.id, { important });
-        n++;
-      }
-      setNotice(`${important ? 'Starred' : 'Unstarred'} ${plural(n, 'to-do')}`);
+      for (const item of selectedItems) updateSeed(item.seed.id, { important });
+      setNotice(`${important ? 'Starred' : 'Unstarred'} ${plural(selectedItems.length, 'item')}`);
     },
-    [selectedItems, updateTodo],
+    [selectedItems, updateSeed],
   );
 
   /**
-   * Mark every selected to-do done today — a task logs on the day it was
-   * ticked, never backdated to its due day (`completionDay`), a habit on
-   * today's cell. Already-done rows are left alone.
+   * Mark every selected doable seed done today — a to-do logs on the day it
+   * was ticked, never backdated to its due day (`completionDay`), a habit on
+   * today's cell. Events and already-done rows are left alone.
    */
   const complete = useCallback(() => {
     const today = fmt(new Date());
     let n = 0;
-    for (const item of selectedItems) {
-      if (item.kind === 'event') continue;
-      const t = item.todo;
-      if (item.kind === 'task' ? isDone(t) : isDoneOn(t, today)) continue;
-      setTodoValue(t.id, today, t.target);
+    for (const { seed } of selectedItems) {
+      if (!seed.track) continue;
+      if (isRepeating(seed) ? isDoneOn(seed, today) : isDone(seed)) continue;
+      setDone(seed.id, today, targetOf(seed));
       n++;
     }
     setNotice(`Completed ${plural(n, 'to-do')}`);
-  }, [selectedItems, setTodoValue]);
+  }, [selectedItems, setDone]);
 
-  /** Clear the completion that makes each selected to-do count as done (a task's logged day, a habit's today). */
+  /** Clear the completion that makes each selected seed count as done (a to-do's logged day, a habit's today). */
   const uncomplete = useCallback(() => {
     const today = fmt(new Date());
     let n = 0;
-    for (const item of selectedItems) {
-      if (item.kind === 'event') continue;
-      const t = item.todo;
-      const date = item.kind === 'task' ? doneDate(t) : isDoneOn(t, today) ? today : null;
+    for (const { seed } of selectedItems) {
+      if (!seed.track) continue;
+      const date = isRepeating(seed) ? (isDoneOn(seed, today) ? today : null) : doneDate(seed);
       if (!date) continue;
-      setTodoValue(t.id, date, 0);
+      setDone(seed.id, date, 0);
       n++;
     }
     setNotice(`Reopened ${plural(n, 'to-do')}`);
-  }, [selectedItems, setTodoValue]);
+  }, [selectedItems, setDone]);
 
   const applyDelete = useCallback(() => {
-    for (const item of selectedItems) {
-      if (item.kind === 'event') deleteEvent(item.event.id);
-      else deleteTodo(item.todo.id);
-    }
+    for (const item of selectedItems) deleteSeed(item.seed.id);
     setNotice(`Deleted ${plural(selectedItems.length, 'item')}`);
-  }, [selectedItems, deleteEvent, deleteTodo]);
+  }, [selectedItems, deleteSeed]);
 
   return {
     notice,
     setNotice,
-    applyCategory,
+    applyList,
     applyShift,
     applyReminder,
     setImportant,

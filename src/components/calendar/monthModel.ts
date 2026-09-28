@@ -1,11 +1,18 @@
 import { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { diffDays, fmt } from '../../dates';
-import { isDueOn, isRepeating } from '../../todoLogic';
-import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
-import { colorHex } from '../../colors';
-import type { Occurrence } from '../../eventLogic';
-import type { FirstDayOfWeek, Todo } from '../../types';
+import {
+  completionDay,
+  expandSeeds,
+  isBarOccurrence,
+  isDone,
+  isDoneOn,
+  isHabit,
+  isLongOccurrence,
+  isRepeating,
+  type Occurrence,
+} from '../../seedLogic';
+import type { ColorKey, FirstDayOfWeek, Seed } from '../../types';
 
 export function getCalendarDays(
   month: Date,
@@ -39,6 +46,32 @@ export function getCalendarDays(
 }
 
 const MAX_BAR_LANES = 3;
+
+/* ── Occurrence kinds ── */
+
+/**
+ * How an occurrence is drawn on every calendar surface: a week-plus wash, a
+ * spanning bar, a same-day chip, or a timed block in the hour grid. A doable
+ * seed with no time is a chip even though it is "all-day" — it is a thing to
+ * tick off, not a stretch of time — and one with a time is a block.
+ */
+export type OccKind = 'long' | 'bar' | 'chip' | 'timed';
+
+export function occKind(o: Occurrence): OccKind {
+  if (isLongOccurrence(o)) return 'long';
+  if (o.seed.track) return o.startDate !== o.endDate ? 'bar' : o.seed.time ? 'timed' : 'chip';
+  return isBarOccurrence(o) ? 'bar' : 'timed';
+}
+
+/** Whether a doable occurrence reads as done: a one-off on any day, a habit on that day. */
+export function occDone(o: Occurrence): boolean {
+  return isRepeating(o.seed) ? isDoneOn(o.seed, o.startDate) : isDone(o.seed);
+}
+
+/** The day a tick on this occurrence logs to (see `completionDay`). */
+export function occToggleDate(o: Occurrence, todayStr: string): string {
+  return isRepeating(o.seed) ? o.startDate : completionDay(o.seed, todayStr);
+}
 
 /* ── Week spans ── */
 
@@ -106,13 +139,12 @@ export interface DayCell {
   isPast: boolean;
   /** From getDay(), not the column index — a Sunday start moves the weekend columns. */
   isWeekend: boolean;
-  /** Cell wash from the week-plus spans covering this day, if any. */
-  background: string | undefined;
+  /** Cell wash from the first week-plus span covering this day, if any. */
+  wash: ColorKey | undefined;
   longStarts: Occurrence[];
   longEnds: Occurrence[];
   shownOccs: Occurrence[];
-  shownOnce: Todo[];
-  /** Events + to-dos dropped by the pill cap, counted together so "+N" is honest. */
+  /** Chips dropped by the pill cap. */
   hiddenCount: number;
 }
 
@@ -127,23 +159,12 @@ export interface WeekRow {
 /** What each layout variant receives; all state lives in the MonthView shell. */
 export interface MonthLayoutProps {
   weeks: WeekRow[];
-  onEditEvent: (o: Occurrence) => void;
-  onEditTodo: (t: Todo) => void;
+  onEdit: (o: Occurrence) => void;
+  /** Tick a doable occurrence. */
+  onToggle: (o: Occurrence) => void;
   onDayClick: (dateStr: string) => void;
   /** The "+N more" overflow: show the whole day. */
   onShowDay: (dateStr: string) => void;
-}
-
-/**
- * Day-cell wash for the week-plus spans ("periods") covering it: a flat tint
- * for one, diagonal zig-zag stripes of each color for overlaps.
- */
-function periodBackground(hexes: string[]): string | undefined {
-  if (hexes.length === 0) return undefined;
-  if (hexes.length === 1) return `${hexes[0]}26`;
-  const stripe = 0.5625; // rem per colour band
-  const stops = hexes.map((hex, i) => `${hex}2e ${i * stripe}rem, ${hex}2e ${(i + 1) * stripe}rem`).join(', ');
-  return `repeating-linear-gradient(135deg, ${stops})`;
 }
 
 /** The only things that differ between the two layouts; see each field. */
@@ -155,40 +176,40 @@ export interface MonthModelOptions {
 }
 
 /**
+ * The seeds a grid draws: dated, not hidden, and not a habit — repeating
+ * to-dos never mark the month or week grid; the day view and Habits list them.
+ */
+export function gridSeeds(allSeeds: Seed[], isVisible: (s: Seed) => boolean): Seed[] {
+  return allSeeds.filter((s) => s.date !== null && !isHabit(s) && isVisible(s));
+}
+
+/**
  * Everything the month grid draws, derived once and shared by both layouts.
  * All grid logic belongs here — a fix applied in one layout only is exactly
  * what this split exists to prevent.
  */
 export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): WeekRow[] {
-  const { currentMonth, selectedDate, todos, allEvents, firstDayOfWeek, hiddenCategoryIds } = useApp();
+  const { currentMonth, selectedDate, allSeeds, firstDayOfWeek, isVisible, colorOf } = useApp();
 
   const todayStr = fmt(new Date());
   const days = getCalendarDays(currentMonth, firstDayOfWeek, minWeeks);
 
   const rangeStart = fmt(days[0].date);
   const rangeEnd = fmt(days[days.length - 1].date);
-  // Filter out events belonging to hidden categories
-  const visibleEvents = useMemo(
-    () => allEvents.filter((e) => !hiddenCategoryIds.has(e.category ?? '')),
-    [allEvents, hiddenCategoryIds],
-  );
-  // Shared events ride the same pipeline (lanes, pills, washes, overflow);
+  // Shared seeds ride the same pipeline (lanes, pills, washes, overflow);
   // each carries `sharedBy`, which the render sites use to dim and de-click.
   const occurrences = useMemo(
-    () => expandEvents(visibleEvents, rangeStart, rangeEnd),
-    [visibleEvents, rangeStart, rangeEnd],
+    () => expandSeeds(gridSeeds(allSeeds, isVisible), rangeStart, rangeEnd, firstDayOfWeek),
+    [allSeeds, isVisible, rangeStart, rangeEnd, firstDayOfWeek],
   );
 
   return useMemo(() => {
     const weeks: { date: Date; isCurrentMonth: boolean }[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
-    const onceTodos = todos.filter((t) => !isRepeating(t) && !hiddenCategoryIds.has(t.category ?? ''));
-
-    // week-plus spans (trips, programs — the old periods) tint their day cells
-    // instead of taking a lane
-    const longOccs = occurrences.filter(isLongOccurrence);
-    const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
+    // week-plus spans (trips, programs) tint their day cells instead of taking a lane
+    const longOccs = occurrences.filter((o) => occKind(o) === 'long');
+    const barOccs = occurrences.filter((o) => occKind(o) === 'bar');
 
     return weeks.map((week) => {
       const weekDays = week.map((d) => fmt(d.date));
@@ -202,14 +223,13 @@ export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): Wee
       const cells = week.map(({ date, isCurrentMonth }): DayCell => {
         const dateStr = fmt(date);
 
-        // Repeating to-dos never mark the grid; the day view and Habits list them.
-        const dayOnce = onceTodos.filter((t) => isDueOn(t, dateStr, firstDayOfWeek));
-        // timed single-day events + bars that overflowed the lane cap
-        const dayPillOccs = occurrences.filter(
-          (o) => o.startDate === dateStr && (!isBarOccurrence(o) || overflowBars.some((b) => b.key === o.key)),
-        );
-        const shownOccs = dayPillOccs.slice(0, pillCap);
-        const shownOnce = dayOnce.slice(0, Math.max(0, pillCap - shownOccs.length));
+        // chips: timed and untimed same-day occurrences + bars that overflowed the lane cap
+        const dayPills = occurrences.filter((o) => {
+          if (o.startDate !== dateStr) return false;
+          const kind = occKind(o);
+          return kind === 'chip' || kind === 'timed' || overflowBars.some((b) => b.key === o.key);
+        });
+        const shownOccs = dayPills.slice(0, pillCap);
 
         const cellLongs = longOccs.filter((o) => o.startDate <= dateStr && o.endDate >= dateStr);
 
@@ -222,12 +242,11 @@ export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): Wee
           // YYYY-MM-DD sorts lexically, so a string compare is a date compare
           isPast: dateStr < todayStr,
           isWeekend: date.getDay() === 0 || date.getDay() === 6,
-          background: periodBackground(cellLongs.map((o) => colorHex(o.event.colorKey))),
+          wash: cellLongs.length ? colorOf(cellLongs[0].seed) : undefined,
           longStarts: cellLongs.filter((o) => o.startDate === dateStr),
           longEnds: cellLongs.filter((o) => o.endDate === dateStr),
           shownOccs,
-          shownOnce,
-          hiddenCount: dayPillOccs.length + dayOnce.length - shownOccs.length - shownOnce.length,
+          hiddenCount: dayPills.length - shownOccs.length,
         };
       });
 
@@ -239,5 +258,5 @@ export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): Wee
       };
     });
     // `days` is rebuilt each render from currentMonth, so key on that instead
-  }, [currentMonth, selectedDate, todos, occurrences, firstDayOfWeek, todayStr, pillCap, minWeeks, hiddenCategoryIds]);
+  }, [currentMonth, selectedDate, occurrences, todayStr, pillCap, minWeeks, colorOf]);
 }

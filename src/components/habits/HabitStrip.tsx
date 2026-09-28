@@ -1,14 +1,14 @@
 import { cn } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
-import type { Todo } from '../../types';
+import type { ColorKey, Seed } from '../../types';
 import HabitCell from './HabitCell';
 import { cycleCell, type HistoryCell, weekdayInitial } from './habitModel';
 
 /**
  * A run of day cells for one habit — the dashboards' current week, the
  * Habits page's last 28 days — with a weekday initial under each, today's in
- * the accent. Every click goes through `cycleCell`, so a yes/no habit toggles
- * and a measurable one counts up the same way wherever it is drawn.
+ * the accent. Every click goes through `cycleCell`, so a check habit toggles
+ * and a count one counts up the same way wherever it is drawn.
  *
  * `cellClass` sizes the cells (`size-[…]`); it is applied to the labels too,
  * which is what keeps each initial centred under its cell without a per-cell
@@ -16,7 +16,7 @@ import { cycleCell, type HistoryCell, weekdayInitial } from './habitModel';
  * width (the phone dashboard) instead of packing them from the left.
  */
 export default function HabitStrip({
-  todo,
+  seed,
   cells,
   color,
   today,
@@ -24,31 +24,31 @@ export default function HabitStrip({
   spread = false,
   className,
 }: {
-  todo: Todo;
+  seed: Seed;
   cells: HistoryCell[];
-  /** The habit's own colour, as `colorHex(todo.colorKey)`. */
-  color: string;
+  /** The habit's colour, as `colorOf(seed)`. */
+  color: ColorKey;
   today: string;
   cellClass: string;
   spread?: boolean;
   /** The wrapper — how the strip sits in its row. */
   className?: string;
 }) {
-  const { toggleTodo, setTodoValue } = useApp();
+  const { toggleDone, setDone } = useApp();
   const grid = cn('grid grid-flow-col auto-cols-max gap-[0.25rem]', spread && 'justify-between');
   return (
     // Individual cells stop propagation; clicking elsewhere in the strip area
     // expands or collapses the habit row as expected.
     <div className={cn('flex flex-col gap-1 max-w-full overflow-x-auto scrollbar-hide', className)}>
-      <div className={grid} role="group" aria-label={`${todo.name}, last ${cells.length} days`}>
+      <div className={grid} role="group" aria-label={`${seed.title}, last ${cells.length} days`}>
         {cells.map((cell) => (
           <HabitCell
             key={cell.dateStr}
             cell={cell}
-            todo={todo}
+            seed={seed}
             color={color}
             className={cn(cellClass, 'enabled:hover:scale-120')}
-            onClick={(d) => cycleCell(todo, d, toggleTodo, setTodoValue)}
+            onClick={(d) => cycleCell(seed, d, toggleDone, setDone)}
           />
         ))}
       </div>

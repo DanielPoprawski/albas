@@ -20,15 +20,15 @@
  * inside the app — the WebView cannot `fetch` the server itself (no CORS).
  */
 import type { ComponentType } from 'react';
-import type { CategoryAccentName } from '../colors';
+import type { ColorKey } from '../types';
 
 /** The pill text in the table's Type column. Only add a value that works. */
 export type AuthMethodType = 'Passkey' | 'Password' | '2FA';
 
-/** Type pill accent per method (a `<Tag accent>` name), so the pill follows the theme. */
-export const METHOD_PILL: Record<AuthMethodType, CategoryAccentName> = {
+/** Type pill accent per method (a `<Tag color>` key), so the pill follows the theme. */
+export const METHOD_PILL: Record<AuthMethodType, ColorKey> = {
   Passkey: 'green',
-  Password: 'amber',
+  Password: 'orange',
   '2FA': 'purple',
 };
 

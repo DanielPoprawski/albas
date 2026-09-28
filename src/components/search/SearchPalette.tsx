@@ -191,8 +191,7 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
           document.body,
         )}
 
-      {s.editing?.event && <AddModal editEvent={s.editing.event} onClose={() => s.setEditing(null)} />}
-      {s.editing?.todo && <AddModal editTodo={s.editing.todo} onClose={() => s.setEditing(null)} />}
+      {s.editing && <AddModal edit={s.editing} onClose={() => s.setEditing(null)} />}
     </>
   );
 }

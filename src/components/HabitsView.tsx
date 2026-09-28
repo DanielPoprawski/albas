@@ -13,8 +13,8 @@ import QuickAddField from './QuickAddField';
 import SearchPalette from './search/SearchPalette';
 import { useApp } from '../context/AppContext';
 import { fmt } from '../dates';
-import { todoKey } from '../itemKeys';
-import { byHabitOrder, isRepeating } from '../todoLogic';
+import { seedKey } from '../itemKeys';
+import { byHabitOrder, isHabit } from '../seedLogic';
 import SelectionBar from './bulk/SelectionBar';
 import { useListSelection } from './bulk/useListSelection';
 import HabitDrawer from './habits/HabitDrawer';
@@ -24,25 +24,25 @@ import { toSearchItems } from './search/searchItems';
 import { AccordionHeader } from './ui/accordion-header';
 
 export default function HabitsView() {
-  const { todos, updateTodo, firstDayOfWeek, categoryById, habitsLayout } = useApp();
+  const { seeds, updateSeed, firstDayOfWeek, listById, tagById, colorOf, habitsLayout, isVisible } = useApp();
   const today = fmt(new Date());
 
-  // Repeating to-dos (habits) in the user's order, grouped per the Settings
-  // layout — one headerless group when flat.
-  const ordered = todos.filter(isRepeating).sort(byHabitOrder);
+  // Habits in the user's order, grouped per the Settings layout — one
+  // headerless group when flat.
+  const ordered = seeds.filter((s) => isHabit(s) && isVisible(s)).sort(byHabitOrder);
   const groups = groupHabits(ordered, habitsLayout);
-  const habits = ordered.map((todo) => buildHabitData(todo, firstDayOfWeek, today));
+  const habits = ordered.map((seed) => buildHabitData(seed, firstDayOfWeek, today));
 
-  const orderedKeys = ordered.map(todoKey);
+  const orderedKeys = ordered.map(seedKey);
   const selection = useListSelection(orderedKeys, orderedKeys);
   const selectedItems =
     selection.selected.size === 0
       ? []
       : toSearchItems(
-          [],
-          [],
-          ordered.filter((t) => selection.selected.has(todoKey(t))),
-          categoryById,
+          ordered.filter((s) => selection.selected.has(seedKey(s))),
+          listById,
+          tagById,
+          colorOf,
           firstDayOfWeek,
           today,
         );
@@ -50,7 +50,7 @@ export default function HabitsView() {
   // One drawer open at a time; the first habit's, to begin with, so the page
   // shows what a drawer holds without a click. `undefined` = never touched.
   const [expanded, setExpanded] = useState<string | null | undefined>(undefined);
-  const expandedId = expanded === undefined ? (habits[0]?.todo.id ?? null) : expanded;
+  const expandedId = expanded === undefined ? (habits[0]?.seed.id ?? null) : expanded;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleCollapsed = (id: string) =>
     setCollapsed((prev) => {
@@ -67,10 +67,10 @@ export default function HabitsView() {
   );
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
-    const group = groups.find((g) => g.todos.some((t) => t.id === active.id));
-    if (!group?.todos.some((t) => t.id === over.id)) return;
+    const group = groups.find((g) => g.seeds.some((s) => s.id === active.id));
+    if (!group?.seeds.some((s) => s.id === over.id)) return;
     for (const patch of reorderHabits(ordered, String(active.id), String(over.id))) {
-      updateTodo(patch.id, { sort: patch.sort });
+      updateSeed(patch.id, { sort: patch.sort });
     }
   };
 
@@ -93,7 +93,7 @@ export default function HabitsView() {
         )}
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          {groups.map(({ key, label, todos: rows }) => {
+          {groups.map(({ key, label, seeds: rows }) => {
             const closed = label !== '' && collapsed.has(key);
             return (
               <div key={key} className="flex flex-col">
@@ -107,20 +107,20 @@ export default function HabitsView() {
                 )}
                 {!closed && (
                   <div className="flex flex-col border border-line divide-y divide-dotted divide-line">
-                    <SortableContext items={rows.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                    <SortableContext items={rows.map((s) => s.id)} strategy={verticalListSortingStrategy}>
                       {habits
-                        .filter((h) => rows.includes(h.todo))
+                        .filter((h) => rows.includes(h.seed))
                         .map((h) => {
-                          const open = h.todo.id === expandedId;
+                          const open = h.seed.id === expandedId;
                           return (
                             <HabitRow
-                              key={h.todo.id}
+                              key={h.seed.id}
                               habit={h}
                               today={today}
                               open={open}
-                              onToggleOpen={() => setExpanded(open ? null : h.todo.id)}
-                              selected={selection.isSelected(todoKey(h.todo))}
-                              onRowClick={(e) => selection.onRowClick(e, todoKey(h.todo))}
+                              onToggleOpen={() => setExpanded(open ? null : h.seed.id)}
+                              selected={selection.isSelected(seedKey(h.seed))}
+                              onRowClick={(e) => selection.onRowClick(e, seedKey(h.seed))}
                               onContextMenu={selection.onContextMenu}
                               draggable={ordered.length > 1}
                             >
@@ -129,7 +129,7 @@ export default function HabitsView() {
                           );
                         })}
                     </SortableContext>
-                    {label === '' && <QuickAddField type="habit" variant="row" />}
+                    {label === '' && <QuickAddField kind="habit" variant="row" />}
                   </div>
                 )}
               </div>
@@ -138,7 +138,7 @@ export default function HabitsView() {
         </DndContext>
         {habitsLayout !== 'flat' && (
           <div className="border border-line">
-            <QuickAddField type="habit" variant="row" />
+            <QuickAddField kind="habit" variant="row" />
           </div>
         )}
       </div>

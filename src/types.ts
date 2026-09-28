@@ -1,118 +1,107 @@
-export type RepeatUnit = 'day' | 'week' | 'month';
+/**
+ * The twelve colours anything can wear: four neutrals and eight hues. A key,
+ * never a hex — each maps to a `--t-c-<key>` token family in App.css that is
+ * restated for the dark theme (`ink` and `paper` swap sides there).
+ */
+export type ColorKey =
+  | 'ink'
+  | 'paper'
+  | 'grey'
+  | 'grey-dark'
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'teal'
+  | 'blue'
+  | 'purple'
+  | 'pink';
+
+export type RepeatUnit = 'day' | 'week' | 'month' | 'year';
 
 /**
- * How a to-do repeats. This is the only thing separating a task, a habit,
- * and a chore — they're all "things that need to be done":
- * - 'once'      → task: done a single time
- * - fixed rules → habit: due on a cadence regardless of past completions
- * - 'every' + fromDone → chore: next due N units after the last completion
+ * How a seed repeats. `every` is a fixed cadence from the seed's `date`
+ * (`days` picks weekdays when the unit is a week); `fromDone` re-anchors it
+ * on the last completion (a chore); `timesPer` is a quota per week or month.
+ * `until` ends the series, `exdates` are occurrences deleted individually.
  */
 export type Repeat =
-  | { type: 'once' }
-  | { type: 'daily' }
-  | { type: 'weekdays'; days: number[] } // JS getDay() values: 0=Sun … 6=Sat
-  | { type: 'every'; n: number; unit: RepeatUnit; fromDone: boolean }
-  | { type: 'timesPer'; times: number; per: 'week' | 'month' };
+  | { type: 'none' }
+  | {
+      type: 'every';
+      n: number;
+      unit: RepeatUnit;
+      days?: number[]; // JS getDay() values: 0=Sun … 6=Sat
+      fromDone?: boolean;
+      until?: string | null;
+      exdates?: string[];
+    }
+  | { type: 'timesPer'; times: number; per: 'week' | 'month'; until?: string | null };
 
-export type TodoKind = 'yesno' | 'measurable';
-
-/** Which surfaces a category can be assigned on. Habits have none: they carry their own colour. */
-export type CategoryScope = 'calendar' | 'tasks';
+/** What ticking a seed off means: nothing (an event), a check, or a count towards `target`. */
+export type Track = null | { kind: 'check' } | { kind: 'count'; unit: string; target: number };
 
 /** A habit's time-of-day tag; '' = untagged (the Routine layout infers one from `time`). */
 export type Routine = '' | 'morning' | 'afternoon' | 'evening';
 export const ROUTINES: Routine[] = ['', 'morning', 'afternoon', 'evening'];
 
 /**
- * A user-managed, synced grouping — replaces the old free-text
- * `Todo.category`. `colorKey` is a hex string, same convention as
- * `Todo.colorKey` / `CalendarEvent.colorKey` (resolve via `colorHex()`).
- * `scopes` says which Add-modal types / list views offer it; `sort` is the
- * user's manual ordering (Settings' up/down), ascending.
+ * One thing on the timeline. Every view is a filter over these: the calendar
+ * shows dated seeds, To-dos shows doable non-repeating ones, Habits shows
+ * doable repeating ones. See `seedLogic.ts` for the rules.
  */
-export interface Category {
-  id: string;
-  name: string;
-  colorKey: string;
-  scopes: CategoryScope[];
-  sort: number;
-}
-
-/** Unified to-do: tasks, habits, and chores are all this one shape. */
-export interface Todo {
-  id: string;
-  name: string;
-  /** Hex color. Legacy saves may hold 'primary'|'secondary'|'tertiary' — resolve via colorHex(). */
-  colorKey: string;
-  kind: TodoKind;
-  /** Unit label for measurable to-dos (e.g. "pushups", "L"). Empty for yes/no. */
-  unit: string;
-  /** Per-day target. Always 1 for yes/no. */
-  target: number;
-  schedule: Repeat;
-  /** Once: the due day (null = anytime). Repeating: start/anchor day (falls back to createdAt). */
-  dueDate: string | null;
-  /** Optional time of day, 'HH:MM'. */
-  time: string | null;
-  createdAt: string; // YYYY-MM-DD
-  /** Notify on days it's due and not yet done. */
-  reminder: boolean;
-  /**
-   * Category id, empty for uncategorised. Was free text; a synced
-   * `categories` table now owns the name/colour (`DataContext`'s `categoryById`).
-   * Repeating to-dos (habits) ignore it — they paint from their own `colorKey`.
-   */
-  category: string;
-  /** Starred. Sorts above everything else in its category. */
-  important: boolean;
-  /** Free-text notes; '' when none. */
-  notes: string;
-  /** Manual order in the Habits list (repeating to-dos only); 0 for rows that predate it. */
-  sort: number;
-  /** Habit routine tag; ignored on once to-dos. */
-  routine: Routine;
-  /** Progress per day. Yes/no to-dos store 1 when done. */
-  completions: Record<string, number>;
-}
-
-/** `exdates` lists occurrence start dates deleted individually ("just this event"). */
-export type Recurrence =
-  | { type: 'none' }
-  | { type: 'daily'; interval: number; until?: string | null; exdates?: string[] } // every N days
-  | { type: 'weekdays'; interval?: number; until?: string | null; exdates?: string[] } // every weekday (Mon-Fri)
-  | { type: 'weekly'; interval: number; until?: string | null; exdates?: string[]; days?: number[] } // every N weeks, on startDate's weekday or picked days
-  | { type: 'monthly'; interval: number; until?: string | null; exdates?: string[] } // every N months, on startDate's day-of-month
-  | { type: 'yearly'; interval: number; until?: string | null; exdates?: string[] }; // every N years, on startDate's day-and-month
-
-/**
- * Anything that's "just there" on the calendar — meetings, trips, and long
- * spans like a 12-week program (formerly Periods) are all events now.
- * Named CalendarEvent to avoid colliding with the DOM `Event` type.
- */
-export interface CalendarEvent {
+export interface Seed {
   id: string;
   title: string;
-  description: string;
-  /** Hex color; legacy saves may hold a named key — resolve via colorHex(). */
-  colorKey: string;
-  allDay: boolean;
-  startDate: string; // YYYY-MM-DD (local wall-clock, no timezone)
-  /** 'HH:MM' when not allDay, else null. */
-  startTime: string | null;
-  /** INCLUSIVE last day; >= startDate. */
-  endDate: string;
+  /** Free text; a `Location: …` first paragraph is the Where field. */
+  notes: string;
+  /** Own colour; null = the last tag's colour, else grey. */
+  color: ColorKey | null;
+  /** List id, '' = unfiled. */
+  list: string;
+  /** Tag ids in the user's order; the last one drives colour and icon. */
+  tags: string[];
+  important: boolean;
+  /** Manual order in the Habits list. */
+  sort: number;
+  routine: Routine;
+  createdAt: string; // YYYY-MM-DD
+  /** Day of the (first) occurrence; null = anytime, legal only when not repeating. */
+  date: string | null;
+  /** 'HH:MM'; null = all-day. */
+  time: string | null;
+  /** Inclusive last day; null = same day as `date`. */
+  endDate: string | null;
+  /** 'HH:MM'; null = no duration. */
   endTime: string | null;
-  recurrence: Recurrence;
-  /** Reminder lead times in minutes before start (e.g. 10, 60, 1440 = 1d, 10080 = 1w). */
+  repeat: Repeat;
+  track: Track;
+  /** Lead times in minutes before the start (0 = at the start, 1440 = a day). */
   reminders: number[];
-  /** Category id, empty for uncategorised. */
-  category: string;
+  /** Progress per occurrence day. Check seeds store 1 when done. */
+  done: Record<string, number>;
   /**
-   * Present only on events belonging to another account that shared them
-   * (their account name). Shared events are read-only: every edit path checks
-   * this before opening a form, and they are never persisted locally.
+   * Present only on seeds another account shared (their account name).
+   * Shared seeds are read-only: every edit path checks this before opening a
+   * form, and they are never persisted locally.
    */
   sharedBy?: string;
+}
+
+/** An exclusive folder: a seed is in one list or none. */
+export interface List {
+  id: string;
+  name: string;
+  sort: number;
+}
+
+/** A non-exclusive label with a colour and a Material Symbols icon name. */
+export interface Tag {
+  id: string;
+  name: string;
+  color: ColorKey;
+  icon: string;
+  sort: number;
 }
 
 /**
@@ -146,54 +135,28 @@ export interface RawSharedRow {
 /** Everything one account shares with us, mapped to app types (read-only). */
 export interface SharedGroup {
   owner: string;
-  events: CalendarEvent[];
-  todos: Todo[];
-  /** The owner's categories, ids namespaced `${owner}:${pk}` like everything else shared. */
-  categories: Category[];
+  seeds: Seed[];
+  /** The owner's lists and tags, ids namespaced `${owner}:${pk}` like everything else shared. */
+  lists: List[];
+  tags: Tag[];
 }
 
-/** One sharing grant as the server reports it. */
+/** One sharing grant as the server reports it: the row's existence is the grant. */
 export interface ShareGrant {
   name: string;
-  calendar: boolean;
-  todos: boolean;
 }
 
 /**
- * A selection key: kind + id, e.g. `todo:abc`. Held in a `Set` across
- * queries, tabs and views and resolved against the *live* items when acting,
- * so a bulk edit never works from a stale snapshot. Shared events' ids are
- * `${owner}:${pk}` — split on the first colon only.
+ * A selection key. Held in a `Set` across queries, tabs and views and
+ * resolved against the *live* seeds when acting, so a bulk edit never works
+ * from a stale snapshot. Shared seeds' ids are `${owner}:${pk}`.
  */
-export type ItemKey = `event:${string}` | `todo:${string}`;
+export type ItemKey = `seed:${string}`;
 
 /** What a create surface hands `DataContext`: the row minus what the store assigns. */
-export type NewTodo = Omit<Todo, 'id' | 'completions' | 'createdAt'>;
-export type NewEvent = Omit<CalendarEvent, 'id'>;
-export type NewCategory = Omit<Category, 'id'>;
-
-/**
- * Raw rows saved by older app versions, still readable so the loader can
- * convert them on load: tasks become once-todos, periods become events.
- */
-export interface LegacyTask {
-  id: string;
-  title: string;
-  category: string;
-  completed: boolean;
-  date: string | null;
-}
-
-export interface LegacyPeriod {
-  id: string;
-  name: string;
-  colorKey: string;
-  startDate: string;
-  endDate: string;
-  notes: string;
-  habitIds: string[];
-}
+export type NewSeed = Omit<Seed, 'id' | 'createdAt' | 'done'>;
+export type NewList = Omit<List, 'id'>;
+export type NewTag = Omit<Tag, 'id'>;
 
 export type ActiveView = 'calendar' | 'todos' | 'habits' | 'settings';
-export type AddType = 'event' | 'task' | 'habit';
 export type CalendarMode = 'month' | 'week' | 'day';

@@ -1,8 +1,19 @@
 import { RRule, rrulestr } from 'rrule';
 import { addDays, fmt, hhmm } from './dates';
-import { DEFAULT_COLOR } from './colors';
-import { floatingDate, fromFloating } from './eventLogic';
-import type { CalendarEvent, Recurrence } from './types';
+import type { Repeat, RepeatUnit, Seed } from './types';
+
+/*
+ * rrule computes in "floating" time: a date is fed in as UTC midnight and
+ * read back from the UTC fields, so the local timezone never shifts a day.
+ */
+function floatingDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function fromFloating(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
 
 /**
  * Minimal iCalendar (RFC 5545) VEVENT parser, targeting what Google Calendar
@@ -51,12 +62,19 @@ function parseDt(value: string): { date: string; time: string | null } | null {
   return { date: `${y}-${mo}-${d}`, time: `${h}:${mi}` };
 }
 
+const FREQ_UNIT: Partial<Record<number, RepeatUnit>> = {
+  [RRule.DAILY]: 'day',
+  [RRule.WEEKLY]: 'week',
+  [RRule.MONTHLY]: 'month',
+  [RRule.YEARLY]: 'year',
+};
+
 /**
- * RRULE → the app's `Recurrence`. Only FREQ/INTERVAL/UNTIL/COUNT survive:
- * BYDAY and friends are dropped (the model can't hold them), YEARLY becomes
- * every-12-months, and COUNT is resolved to the last occurrence's date.
+ * RRULE → the app's `Repeat`. FREQ/INTERVAL/UNTIL/COUNT and a weekly BYDAY
+ * survive; anything finer is dropped, and COUNT is resolved to the last
+ * occurrence's date.
  */
-function parseRrule(value: string, startDate: string): Recurrence {
+function parseRrule(value: string, startDate: string): Repeat {
   let rule: RRule;
   try {
     rule = rrulestr(`RRULE:${value}`, { dtstart: floatingDate(startDate) }) as RRule;
@@ -64,16 +82,15 @@ function parseRrule(value: string, startDate: string): Recurrence {
     return { type: 'none' };
   }
   const o = rule.origOptions;
-  const interval = Math.max(1, o.interval ?? 1);
-  let type: 'daily' | 'weekly' | 'monthly';
-  let effInterval = interval;
-  if (o.freq === RRule.DAILY) type = 'daily';
-  else if (o.freq === RRule.WEEKLY) type = 'weekly';
-  else if (o.freq === RRule.MONTHLY) type = 'monthly';
-  else if (o.freq === RRule.YEARLY) {
-    type = 'monthly';
-    effInterval = interval * 12;
-  } else return { type: 'none' };
+  const n = Math.max(1, o.interval ?? 1);
+  const unit = o.freq === undefined ? undefined : FREQ_UNIT[o.freq];
+  if (!unit) return { type: 'none' };
+  const byday = Array.isArray(o.byweekday) ? o.byweekday : o.byweekday ? [o.byweekday] : [];
+  // rrule weekdays are Monday-based (MO = 0); the app uses JS getDay() (Sun = 0).
+  const WEEKDAY_STR = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+  const mondayBased = (d: (typeof byday)[number]): number =>
+    typeof d === 'number' ? d : typeof d === 'string' ? WEEKDAY_STR.indexOf(d) : d.weekday;
+  const days = unit === 'week' ? byday.map((d) => (mondayBased(d) + 1) % 7).filter((d) => d >= 0) : [];
 
   let until: string | null = null;
   // UNTIL keeps its own calendar date (the UTC timestamp's), never shifted
@@ -84,11 +101,11 @@ function parseRrule(value: string, startDate: string): Recurrence {
     const last = all[all.length - 1];
     if (last) until = fromFloating(last);
   }
-  return { type, interval: effInterval, until };
+  return { type: 'every', n, unit, ...(days.length ? { days } : {}), until };
 }
 
 export interface IcsImportResult {
-  events: CalendarEvent[];
+  seeds: Seed[];
   skipped: number;
 }
 
@@ -96,7 +113,7 @@ export function parseIcs(text: string): IcsImportResult {
   // unfold continuation lines (RFC 5545 §3.1)
   const lines = text.replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
 
-  const events: CalendarEvent[] = [];
+  const seeds: Seed[] = [];
   let skipped = 0;
   let cur: Record<string, IcsProp> | null = null;
 
@@ -127,19 +144,26 @@ export function parseIcs(text: string): IcsImportResult {
     }
 
     const uid = props.UID?.value;
-    events.push({
+    // A stable id per UID so a re-import updates in place instead of duplicating.
+    seeds.push({
       id: uid ? `gcal:${uid}` : crypto.randomUUID(),
       title: props.SUMMARY ? unescapeText(props.SUMMARY.value) : '(untitled)',
-      description: props.DESCRIPTION ? unescapeText(props.DESCRIPTION.value) : '',
-      colorKey: DEFAULT_COLOR,
-      allDay,
-      startDate: start.date,
-      startTime: allDay ? null : start.time,
-      endDate,
+      notes: props.DESCRIPTION ? unescapeText(props.DESCRIPTION.value) : '',
+      color: null,
+      list: '',
+      tags: [],
+      important: false,
+      sort: 0,
+      routine: '',
+      createdAt: fmt(new Date()),
+      date: start.date,
+      time: allDay ? null : start.time,
+      endDate: endDate > start.date ? endDate : null,
       endTime: allDay ? null : endTime,
-      recurrence: props.RRULE ? parseRrule(props.RRULE.value, start.date) : { type: 'none' },
+      repeat: props.RRULE ? parseRrule(props.RRULE.value, start.date) : { type: 'none' },
+      track: null,
       reminders: [],
-      category: '',
+      done: {},
     });
   };
 
@@ -160,5 +184,5 @@ export function parseIcs(text: string): IcsImportResult {
     if (prop && !(prop.name in cur)) cur[prop.name] = prop;
   }
 
-  return { events, skipped };
+  return { seeds, skipped };
 }

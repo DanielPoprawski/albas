@@ -1,27 +1,27 @@
 import { useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
+import { COLOR_CLASSES } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { fmt, parse, rotateWeek, weekOf } from '../../dates';
-import { expandEvents, isBarOccurrence, isLongOccurrence } from '../../eventLogic';
-import { isDone, isDueOn, isRepeating } from '../../todoLogic';
-import { colorHex, PILL_BG_ALPHA } from '../../colors';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
+import { expandSeeds, type Occurrence } from '../../seedLogic';
+import { seedTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
+import type { Seed } from '../../types';
 import AddModal from '../AddModal';
+import { Icon } from '../ui/icon';
 import HourGrid from './HourGrid';
-import { assignLanes, laneCount, weekSegments } from './monthModel';
-import type { CalendarEvent, Todo } from '../../types';
+import { assignLanes, gridSeeds, laneCount, occDone, occKind, occToggleDate, weekSegments } from './monthModel';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 export default function WeekView() {
-  const { selectedDate, setSelectedDate, todos, allEvents, firstDayOfWeek, hiddenCategoryIds } = useApp();
-  const [editEvent, setEditEvent] = useState<{ event: CalendarEvent; date: string } | null>(null);
-  const [editTodo, setEditTodo] = useState<Todo | null>(null);
+  const { selectedDate, setSelectedDate, allSeeds, firstDayOfWeek, isVisible, colorOf, iconOf, toggleDone } = useApp();
+  const [editing, setEditing] = useState<{ seed: Seed; date: string } | null>(null);
   const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);
-  // Shared events are read-only — every edit path funnels through here.
-  const openEvent = (event: CalendarEvent, date: string) => {
-    if (event.sharedBy) return;
-    setEditEvent({ event, date });
+  // Shared seeds are read-only — every edit path funnels through here.
+  const open = (o: Occurrence) => {
+    if (o.seed.sharedBy) return;
+    setEditing({ seed: o.seed, date: o.startDate });
   };
 
   const todayStr = fmt(new Date());
@@ -31,31 +31,23 @@ export default function WeekView() {
   const weekEnd = weekDays[6];
   const dayLabels = rotateWeek(DAY_NAMES, firstDayOfWeek);
 
-  const visibleEvents = useMemo(
-    () => allEvents.filter((e) => !hiddenCategoryIds.has(e.category ?? '')),
-    [allEvents, hiddenCategoryIds],
-  );
   const occurrences = useMemo(
-    () => expandEvents(visibleEvents, weekStart, weekEnd),
-    [visibleEvents, weekStart, weekEnd],
+    () => expandSeeds(gridSeeds(allSeeds, isVisible), weekStart, weekEnd, firstDayOfWeek),
+    [allSeeds, isVisible, weekStart, weekEnd, firstDayOfWeek],
   );
-  const longOccs = occurrences.filter(isLongOccurrence);
-  const barOccs = occurrences.filter((o) => isBarOccurrence(o) && !isLongOccurrence(o));
-  const timedOccs = occurrences.filter((o) => !isBarOccurrence(o));
+  const longOccs = occurrences.filter((o) => occKind(o) === 'long');
+  const barOccs = occurrences.filter((o) => occKind(o) === 'bar');
+  const chipOccs = occurrences.filter((o) => occKind(o) === 'chip');
+  const timedOccs = occurrences.filter((o) => occKind(o) === 'timed');
 
   const longLanes = assignLanes(weekSegments(longOccs, weekDays));
   const nLongLanes = laneCount(longLanes);
-  const eventLanes = assignLanes(weekSegments(barOccs, weekDays));
-  const nEventLanes = laneCount(eventLanes);
+  const barLanes = assignLanes(weekSegments(barOccs, weekDays));
+  const nBarLanes = laneCount(barLanes);
   // to-do chips sit in the single grid row below every bar lane
-  const todoRow = nLongLanes + nEventLanes + 1;
+  const chipRow = nLongLanes + nBarLanes + 1;
 
-  const onceTodos = todos.filter((t) => !isRepeating(t) && !hiddenCategoryIds.has(t.category ?? ''));
-  const dayOnce = (dateStr: string) => onceTodos.filter((t) => isDueOn(t, dateStr, firstDayOfWeek));
-  const hasAllDayContent =
-    longLanes.length > 0 ||
-    eventLanes.length > 0 ||
-    onceTodos.some((t) => t.dueDate && t.dueDate >= weekStart && t.dueDate <= weekEnd);
+  const hasAllDayContent = longLanes.length > 0 || barLanes.length > 0 || chipOccs.length > 0;
 
   return (
     <div className="flex-1 min-h-0 border overflow-hidden shadow-modal flex flex-col border-line bg-surface">
@@ -97,81 +89,94 @@ export default function WeekView() {
         })}
       </div>
 
-      {/* All-day section: thin week-plus lanes, all-day/multi-day event bars, to-do chips */}
+      {/* All-day section: thin week-plus lanes, all-day/multi-day bars, to-do chips */}
       {hasAllDayContent && (
         <div className="flex border-b flex-shrink-0 border-line">
           <div className="flex-shrink-0 w-gutter-w flex items-start justify-end pr-2 pt-1">
             <span className="text-xs text-ink-muted uppercase">all day</span>
           </div>
           <div className="flex-1 grid grid-cols-7 auto-rows-min py-1">
-            {longLanes.map(({ seg, lane }) => {
-              const hex = colorHex(seg.item.event.colorKey);
-              return (
-                <div
-                  key={`l-${seg.item.key}`}
-                  title={sharedTitleAttr(seg.item.event) ?? seg.item.event.title}
-                  onClick={() => openEvent(seg.item.event, seg.item.startDate)}
-                  className={`cursor-pointer h-[0.3125rem] mb-0.5 opacity-65 ${seg.startsHere ? 'ml-1.5' : ''} ${seg.endsHere ? 'mr-1.5' : ''}`}
-                  // dynamic: grid placement and the event's own colour
-                  style={{
-                    gridColumn: `${seg.startCol} / span ${seg.span}`,
-                    gridRow: lane + 1,
-                    backgroundColor: hex,
-                  }}
-                />
-              );
-            })}
-            {eventLanes.map(({ seg, lane }) => {
-              const hex = colorHex(seg.item.event.colorKey);
-              return (
-                <div
-                  key={seg.item.key}
-                  onClick={() => openEvent(seg.item.event, seg.item.startDate)}
-                  title={sharedTitleAttr(seg.item.event)}
-                  className={`cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
-                  // dynamic: grid placement and the event's own colour
-                  style={{
-                    gridColumn: `${seg.startCol} / span ${seg.span}`,
-                    gridRow: nLongLanes + lane + 1,
-                    backgroundColor: `${hex}cc`,
-                    color: 'var(--t-on-accent)',
-                    opacity: sharedOpacity(seg.item.event),
-                  }}
-                >
-                  {seg.startsHere ? eventTitle(seg.item.event) : '…'}
-                </div>
-              );
-            })}
-            {/* one-time to-do chips, one sub-grid row under the bars */}
+            {longLanes.map(({ seg, lane }) => (
+              <div
+                key={`l-${seg.item.key}`}
+                title={sharedTitleAttr(seg.item.seed) ?? seg.item.seed.title}
+                onClick={() => open(seg.item)}
+                className={cn(
+                  'cursor-pointer h-[0.3125rem] mb-0.5 opacity-65',
+                  COLOR_CLASSES[colorOf(seg.item.seed)].bg,
+                  seg.startsHere && 'ml-1.5',
+                  seg.endsHere && 'mr-1.5',
+                )}
+                // dynamic: grid placement
+                style={{ gridColumn: `${seg.startCol} / span ${seg.span}`, gridRow: lane + 1 }}
+              />
+            ))}
+            {barLanes.map(({ seg, lane }) => (
+              <div
+                key={seg.item.key}
+                onClick={() => open(seg.item)}
+                title={sharedTitleAttr(seg.item.seed)}
+                className={cn(
+                  'cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
+                  COLOR_CLASSES[colorOf(seg.item.seed)].bg,
+                  seg.startsHere && 'ml-1',
+                  seg.endsHere && 'mr-1',
+                )}
+                // dynamic: grid placement, dimmed when shared
+                style={{
+                  gridColumn: `${seg.startCol} / span ${seg.span}`,
+                  gridRow: nLongLanes + lane + 1,
+                  opacity: sharedOpacity(seg.item.seed),
+                }}
+              >
+                {seg.startsHere ? seedTitle(seg.item.seed) : '…'}
+              </div>
+            ))}
+            {/* to-do chips, one sub-grid row under the bars */}
             {weekDays.map((dateStr, i) => {
-              const dts = dayOnce(dateStr);
-              if (dts.length === 0) return null;
+              const chips = chipOccs.filter((o) => o.startDate === dateStr);
+              if (chips.length === 0) return null;
               return (
                 <div
                   key={dateStr}
                   className="flex flex-col gap-0.5 px-0.5"
                   // dynamic: grid placement of the day column
-                  style={{ gridColumn: `${i + 1} / span 1`, gridRow: todoRow }}
+                  style={{ gridColumn: `${i + 1} / span 1`, gridRow: chipRow }}
                 >
-                  {dts.slice(0, 3).map((todo) => {
-                    const hex = colorHex(todo.colorKey);
+                  {chips.slice(0, 3).map((o) => {
+                    const c = COLOR_CLASSES[colorOf(o.seed)];
+                    const icon = iconOf(o.seed);
+                    const done = occDone(o);
                     return (
                       <div
-                        key={todo.id}
-                        onClick={() => setEditTodo(todo)}
-                        className={`cursor-pointer text-xs font-bold px-xs py-0.5 overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop ${isDone(todo) ? 'line-through opacity-50' : ''}`}
-                        // dynamic: the to-do's own colour
-                        style={{
-                          backgroundColor: `${hex}${PILL_BG_ALPHA}`,
-                          borderLeft: `0.1875rem solid ${hex}`,
-                          color: hex,
-                        }}
+                        key={o.key}
+                        onClick={() => open(o)}
+                        title={sharedTitleAttr(o.seed)}
+                        className={cn(
+                          'flex items-center gap-1 cursor-pointer text-xs font-bold px-xs py-0.5 overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop border-l-3 border-current',
+                          c.tint,
+                          c.text,
+                          done && 'line-through opacity-50',
+                        )}
+                        // dynamic: dimmed when shared
+                        style={{ opacity: sharedOpacity(o.seed) }}
                       >
-                        {todo.name}
+                        {!o.seed.sharedBy && (
+                          <Icon
+                            name={done ? 'check_box' : 'check_box_outline_blank'}
+                            size="0.75rem"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDone(o.seed.id, occToggleDate(o, todayStr));
+                            }}
+                          />
+                        )}
+                        {icon && <Icon name={icon} size="0.75rem" />}
+                        <span className="min-w-0 truncate">{seedTitle(o.seed)}</span>
                       </div>
                     );
                   })}
-                  {dts.length > 3 && <div className="text-xs text-ink-muted pl-xs">+{dts.length - 3} more</div>}
+                  {chips.length > 3 && <div className="text-xs text-ink-muted pl-xs">+{chips.length - 3} more</div>}
                 </div>
               );
             })}
@@ -182,23 +187,13 @@ export default function WeekView() {
       <HourGrid
         days={weekDays}
         occurrences={timedOccs}
-        onEditEvent={openEvent}
+        onEdit={open}
         onSelectDate={setSelectedDate}
         onAddAt={(date, time) => setAddAt({ date, time })}
       />
 
-      {editEvent && (
-        <AddModal editEvent={editEvent.event} editEventDate={editEvent.date} onClose={() => setEditEvent(null)} />
-      )}
-      {editTodo && <AddModal editTodo={editTodo} onClose={() => setEditTodo(null)} />}
-      {addAt && (
-        <AddModal
-          defaultType="event"
-          defaultDate={addAt.date}
-          defaultStartTime={addAt.time}
-          onClose={() => setAddAt(null)}
-        />
-      )}
+      {editing && <AddModal edit={editing.seed} editDate={editing.date} onClose={() => setEditing(null)} />}
+      {addAt && <AddModal defaultDate={addAt.date} defaultTime={addAt.time} onClose={() => setAddAt(null)} />}
     </div>
   );
 }

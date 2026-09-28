@@ -1,3 +1,6 @@
+import { COLOR_CLASSES } from '@/colors';
+import { cn } from '@/lib/utils';
+import type { ColorKey } from '@/types';
 import { Icon } from './icon';
 
 /**
@@ -15,19 +18,15 @@ export function AccordionHeader({
   onAdd,
 }: {
   name: string;
-  /** The category's own hex; omit for the accent. */
-  color?: string;
+  /** The group's colour; omit for the accent. */
+  color?: ColorKey;
   count: number;
   open: boolean;
   onToggle: () => void;
   onAdd?: () => void;
 }) {
   return (
-    <div
-      className="flex items-center bg-accent text-on-accent select-none"
-      // dynamic: the category's own colour
-      style={color ? { backgroundColor: color } : undefined}
-    >
+    <div className={cn('flex items-center text-on-accent select-none', color ? COLOR_CLASSES[color].bg : 'bg-accent')}>
       <button
         type="button"
         aria-expanded={open}

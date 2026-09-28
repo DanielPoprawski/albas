@@ -5,7 +5,7 @@
 /** The short list the chip surfaces (Add modal, bulk panel) show. */
 export const REMINDER_QUICK = [0, 5, 10, 15, 30, 60, 1440, 10080] as const;
 
-/** A bulk-edit choice: no reminder, or one lead time. To-dos only know on/off. */
+/** A bulk-edit choice: no reminder, or one lead time. */
 export type ReminderChoice = 'none' | number;
 
 type Unit = 'week' | 'day' | 'hour' | 'minute';

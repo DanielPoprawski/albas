@@ -57,7 +57,7 @@ function useMonthSlide(): { key: number; className: string } {
   };
 }
 
-export default function MonthViewMobile({ weeks, onEditEvent, onEditTodo, onDayClick, onShowDay }: MonthLayoutProps) {
+export default function MonthViewMobile({ weeks, onEdit, onToggle, onDayClick, onShowDay }: MonthLayoutProps) {
   const { firstDayOfWeek } = useApp();
   const swipe = useMonthSwipe();
   const slide = useMonthSlide();
@@ -97,16 +97,16 @@ export default function MonthViewMobile({ weeks, onEditEvent, onEditTodo, onDayC
                   variant="mobile"
                   className={cn(
                     'border-r border-b border-line',
-                    cell.isSelected && !cell.isToday && !cell.background && 'bg-accent/10',
+                    cell.isSelected && !cell.isToday && !cell.wash && 'bg-accent/10',
                   )}
                   onDayClick={onDayClick}
                   onShowDay={onShowDay}
-                  onEditEvent={onEditEvent}
-                  onEditTodo={onEditTodo}
+                  onEdit={onEdit}
+                  onToggle={onToggle}
                 />
               ))}
 
-              <BarsOverlay week={week} topClass="top-5" onEditEvent={onEditEvent} />
+              <BarsOverlay week={week} topClass="top-5" onEdit={onEdit} />
             </div>
           ))}
         </div>

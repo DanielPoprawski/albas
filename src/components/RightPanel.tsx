@@ -4,10 +4,12 @@ import QuickAddField from './QuickAddField';
 import ResizeHandle, { useResizableWidth } from './ResizeHandle';
 import { useInlineEdit } from './useInlineEdit';
 import { fmt, weekOf } from '../dates';
-import { byDashboardOrder, byHabitOrder, dashboardTasks, groupTasks, isRepeating } from '../todoLogic';
-import type { Todo } from '../types';
-import { accentOf, colorHex } from '../colors';
+import { byDashboardOrder, byHabitOrder, bySort, dashboardTasks, groupByList, isHabit } from '../seedLogic';
+import type { Seed } from '../types';
+import { COLOR_CLASSES } from '../colors';
+import { cn } from '@/lib/utils';
 import { Card } from './ui/card';
+import { Icon } from './ui/icon';
 import { SectionHeading } from './ui/section-heading';
 import HabitStrip from './habits/HabitStrip';
 import { cellsFor } from './habits/habitModel';
@@ -20,7 +22,7 @@ import TaskRow from './todo/TaskRow';
  * weekly checkboxes and today's tasks.
  */
 export default function RightPanel() {
-  const { todos, firstDayOfWeek, categoriesFor, categoryById, hiddenCategoryIds } = useApp();
+  const { seeds, lists, firstDayOfWeek, listById, colorOf, iconOf, isVisible } = useApp();
   const { expandedId, toggleExpanded, setEditing, editModal } = useInlineEdit();
   // The handle sits on the panel's *left* edge, so dragging left widens it.
   const resize = useResizableWidth('right', -1);
@@ -28,24 +30,24 @@ export default function RightPanel() {
   // Get today's date
   const today = fmt(new Date());
 
-  // Tasks minus the categories the sidebar has hidden; habits in the user's order.
-  const visible = todos.filter((t) => !hiddenCategoryIds.has(t.category));
-  const habits = todos.filter(isRepeating).sort(byHabitOrder);
+  // Minus what the sidebar has hidden; habits in the user's order.
+  const visible = seeds.filter(isVisible);
+  const habits = visible.filter(isHabit).sort(byHabitOrder);
 
   // Get this week's dates (7 days)
   const weekDateStrs = weekOf(new Date(), firstDayOfWeek);
 
   // The task panel: undated, due-today, overdue and starred to-dos (see
-  // `dashboardTasks`). Uncategorised ones form the top "Tasks" list — that's
-  // where a quick-add lands, so it must never be buried — and each category
-  // gets its own list below, all in dashboard order.
+  // `dashboardTasks`). Unfiled ones form the top "Tasks" list — that's where
+  // a quick-add lands, so it must never be buried — and each list gets its
+  // own group below, all in dashboard order.
   const shown = dashboardTasks(visible, today);
-  const taskOrder = categoriesFor('tasks').map((c) => c.id);
-  const groups = groupTasks(shown, taskOrder).map((g) => ({ ...g, todos: g.todos.sort(byDashboardOrder) }));
-  const topTasks = groups.find((g) => g.category === '')?.todos ?? [];
-  const categoryGroups = groups.filter((g) => g.category !== '');
+  const order = [...lists].sort(bySort).map((l) => l.id);
+  const groups = groupByList(shown, order).map((g) => ({ ...g, seeds: g.seeds.sort(byDashboardOrder) }));
+  const topTasks = groups.find((g) => g.list === '')?.seeds ?? [];
+  const listGroups = groups.filter((g) => g.list !== '');
 
-  const taskRowProps = (task: Todo) => ({
+  const taskRowProps = (task: Seed) => ({
     task,
     today,
     onEdit: setEditing,
@@ -67,28 +69,31 @@ export default function RightPanel() {
 
           <div className="space-y-xs">
             {habits.map((habit) => {
-              const hex = colorHex(habit.colorKey);
+              const color = colorOf(habit);
+              const icon = iconOf(habit);
               return (
                 <Card key={habit.id} className="p-2.5">
                   <button
                     type="button"
                     aria-expanded={expandedId === habit.id}
                     onClick={() => toggleExpanded(habit.id)}
-                    className="micro-label block w-full text-left truncate mb-[0.375rem] hover:underline"
-                    // dynamic: the habit's own colour
-                    style={{ color: hex }}
+                    className={cn(
+                      'micro-label flex items-center gap-1 w-full text-left truncate mb-[0.375rem] hover:underline',
+                      COLOR_CLASSES[color].text,
+                    )}
                   >
-                    {habit.name}
+                    {icon && <Icon name={icon} size="0.75rem" />}
+                    {habit.title}
                   </button>
 
                   {expandedId === habit.id && (
-                    <InlineEditor todo={habit} autoFocusTitle onAdvanced={() => setEditing(habit)} className="mb-2" />
+                    <InlineEditor seed={habit} autoFocusTitle onAdvanced={() => setEditing(habit)} className="mb-2" />
                   )}
 
                   <HabitStrip
-                    todo={habit}
+                    seed={habit}
                     cells={cellsFor(habit, weekDateStrs, firstDayOfWeek, today)}
-                    color={hex}
+                    color={color}
                     today={today}
                     cellClass="size-[1.125rem]"
                   />
@@ -96,11 +101,11 @@ export default function RightPanel() {
               );
             })}
 
-            <QuickAddField type="habit" className="mt-xs" />
+            <QuickAddField kind="habit" className="mt-xs" />
           </div>
         </div>
 
-        {/* Tasks: the uncategorised list first, then one list per category */}
+        {/* Tasks: the unfiled list first, then one group per list */}
         <div>
           <SectionHeading className="text-sm font-bold tracking-wider text-accent-deep mb-2">Tasks</SectionHeading>
 
@@ -110,28 +115,19 @@ export default function RightPanel() {
                 <TaskRow key={task.id} {...taskRowProps(task)} />
               ))}
             </div>
-            {categoryGroups.map(({ category, todos: rows }) => {
-              const cat = categoryById(category);
-              return (
-                <div key={category}>
-                  <SectionHeading
-                    className="text-xs mb-1"
-                    // dynamic: the category's own colour
-                    style={cat ? { color: accentOf(colorHex(cat.colorKey)).hex } : undefined}
-                  >
-                    {cat?.name ?? category}
-                  </SectionHeading>
-                  <div className="list-rows">
-                    {rows.map((task) => (
-                      <TaskRow key={task.id} {...taskRowProps(task)} />
-                    ))}
-                  </div>
+            {listGroups.map(({ list, seeds: rows }) => (
+              <div key={list}>
+                <SectionHeading className="text-xs mb-1">{listById(list)?.name ?? list}</SectionHeading>
+                <div className="list-rows">
+                  {rows.map((task) => (
+                    <TaskRow key={task.id} {...taskRowProps(task)} />
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+            ))}
 
             {/* Always shown, per the dashboard redesign — not just when empty. */}
-            <QuickAddField type="task" />
+            <QuickAddField kind="task" />
           </div>
         </div>
       </aside>

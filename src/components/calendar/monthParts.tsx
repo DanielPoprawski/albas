@@ -1,38 +1,13 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { accentNameOf, CATEGORY_CLASSES, colorHex, PILL_BG_ALPHA, tintOf } from '../../colors';
-import { shortTime, type Occurrence } from '../../eventLogic';
-import { eventTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
-import { isDone } from '../../todoLogic';
-import type { Todo } from '../../types';
-import type { DayCell, WeekRow } from './monthModel';
+import { COLOR_CLASSES } from '../../colors';
+import { useApp } from '../../context/AppContext';
+import { type Occurrence, shortTime } from '../../seedLogic';
+import { seedTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
+import { Icon } from '../ui/icon';
+import { type DayCell, occDone, type WeekRow } from './monthModel';
 
 /** Layout-independent pieces of the month grid, shared by both variants. */
-
-/** How one chip (an event occurrence or a one-time to-do) is painted. */
-interface ChipPaint {
-  className: string;
-  style?: CSSProperties;
-}
-
-/**
- * The desktop chip: a category accent draws from its `--t-cat-*` classes (so
- * it follows dark mode); any other stored colour — the picker offers dozens —
- * gets a translucent wash of itself rather than silently turning purple.
- */
-function desktopPaint(hex: string): ChipPaint {
-  const name = accentNameOf(hex);
-  if (name) {
-    const c = CATEGORY_CLASSES[name];
-    return { className: `${c.tint} ${c.line} ${c.ink}` };
-  }
-  return { className: '', style: { background: tintOf(hex), borderColor: tintOf(hex, 0.35), color: hex } };
-}
-
-/** The phone pill: the colour at `PILL_BG_ALPHA` behind itself, no border. */
-function mobilePaint(hex: string): ChipPaint {
-  return { className: '', style: { backgroundColor: `${hex}${PILL_BG_ALPHA}`, color: hex } };
-}
 
 /**
  * What separates the two month layouts inside a cell. Everything else — the
@@ -47,8 +22,7 @@ const CELL_VARIANTS = {
     dayNumber: 'text-xs font-semibold',
     chips: 'gap-[2px] mt-auto text-xs',
     chip: 'text-xs font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap border hover:shadow-pop',
-    paint: desktopPaint,
-    /* The time prefix only fits at desktop widths. */
+    /* The time prefix and the tag icon only fit at desktop widths. */
     time: true,
     more: (n: number) => `+${n} more`,
     morePad: 'pl-xs',
@@ -60,7 +34,6 @@ const CELL_VARIANTS = {
     dayNumber: 'text-xs px-0.5',
     chips: 'gap-px mt-px',
     chip: 'text-xs font-extralight px-px overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop',
-    paint: mobilePaint,
     time: false,
     more: (n: number) => `+${n}`,
     morePad: 'pl-0.5',
@@ -77,8 +50,8 @@ export function MonthCell({
   className,
   onDayClick,
   onShowDay,
-  onEditEvent,
-  onEditTodo,
+  onEdit,
+  onToggle,
 }: {
   cell: DayCell;
   week: WeekRow;
@@ -87,26 +60,51 @@ export function MonthCell({
   className?: string;
   onDayClick: (dateStr: string) => void;
   onShowDay: (dateStr: string) => void;
-  onEditEvent: (o: Occurrence) => void;
-  onEditTodo: (t: Todo) => void;
+  onEdit: (o: Occurrence) => void;
+  onToggle: (o: Occurrence) => void;
 }) {
+  const { colorOf, iconOf } = useApp();
   const v = CELL_VARIANTS[variant];
   const dim = dimCell(cell);
-  const chip = (key: string, hex: string, onClick: () => void, extra: string, title?: string, body?: ReactNode) => {
-    const paint = v.paint(hex);
+
+  const chip = (o: Occurrence): ReactNode => {
+    const c = COLOR_CLASSES[colorOf(o.seed)];
+    const done = !!o.seed.track && occDone(o);
+    const icon = v.time ? iconOf(o.seed) : null;
     return (
       <div
-        key={key}
+        key={o.key}
         onClick={(e) => {
           e.stopPropagation();
-          onClick();
+          onEdit(o);
         }}
-        title={title}
-        className={cn(v.chip, paint.className, extra)}
-        // dynamic: the chip's own colour
-        style={paint.style}
+        title={sharedTitleAttr(o.seed)}
+        className={cn(
+          v.chip,
+          c.tint,
+          c.line,
+          c.ink,
+          'flex items-center gap-1',
+          o.seed.sharedBy && 'opacity-45',
+          done && 'line-through opacity-50',
+        )}
       >
-        {body}
+        {o.seed.track && !o.seed.sharedBy && (
+          <Icon
+            name={done ? 'check_box' : 'check_box_outline_blank'}
+            size="0.75rem"
+            className="cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle(o);
+            }}
+          />
+        )}
+        {icon && <Icon name={icon} size="0.75rem" />}
+        <span className="min-w-0 truncate">
+          {v.time && o.seed.time && <span className="font-normal opacity-70">{shortTime(o.seed.time)} </span>}
+          {seedTitle(o.seed)}
+        </span>
       </div>
     );
   };
@@ -117,11 +115,11 @@ export function MonthCell({
         'relative flex flex-col cursor-pointer overflow-hidden',
         v.cell,
         !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : v.liveBg,
+        // a long span washes its cells in its own tint
+        cell.wash && COLOR_CLASSES[cell.wash].tint,
         cell.isToday && 'today-cell',
         className,
       )}
-      // dynamic: a long span washes its cells in its own colour
-      style={{ background: cell.background }}
       onClick={() => onDayClick(cell.dateStr)}
     >
       <PeriodCorners cell={cell} />
@@ -143,7 +141,7 @@ export function MonthCell({
         </span>
       </div>
 
-      <PeriodTitles cell={cell} onEditEvent={onEditEvent} />
+      <PeriodTitles cell={cell} onEdit={onEdit} />
 
       {/* space reserved for the spanning bars overlay */}
       {week.barLaneCount > 0 && (
@@ -151,36 +149,12 @@ export function MonthCell({
         <div style={{ height: `calc(var(--spacing-lane-row) * ${week.barLaneCount})` }} />
       )}
 
-      {/* Event + one-time to-do chips. Past/outside days dull their chips as
-          one group rather than each chip computing its own dim — the wrapper
-          isn't absolutely positioned, so opacity here doesn't disturb the
-          overlay layers (BarsOverlay/PeriodCorners) painted outside it. */}
+      {/* Chips. Past/outside days dull their chips as one group rather than
+          each chip computing its own dim — the wrapper isn't absolutely
+          positioned, so opacity here doesn't disturb the overlay layers
+          (BarsOverlay/PeriodCorners) painted outside it. */}
       <div className={cn('flex flex-col overflow-hidden', v.chips, dim && 'opacity-50')}>
-        {cell.shownOccs.map((o) =>
-          chip(
-            o.key,
-            colorHex(o.event.colorKey),
-            () => onEditEvent(o),
-            o.event.sharedBy ? 'opacity-45' : '',
-            sharedTitleAttr(o.event),
-            <>
-              {v.time && o.event.startTime && !o.event.allDay && (
-                <span className="font-normal opacity-70">{shortTime(o.event.startTime)} </span>
-              )}
-              {eventTitle(o.event)}
-            </>,
-          ),
-        )}
-        {cell.shownOnce.map((todo) =>
-          chip(
-            todo.id,
-            colorHex(todo.colorKey),
-            () => onEditTodo(todo),
-            isDone(todo) ? 'line-through opacity-50' : '',
-            undefined,
-            todo.name,
-          ),
-        )}
+        {cell.shownOccs.map(chip)}
         {cell.hiddenCount > 0 && (
           <button
             type="button"
@@ -208,52 +182,32 @@ export function dimCell(cell: DayCell): boolean {
   return cell.isPast || !cell.isCurrentMonth;
 }
 
-/** Half-border brackets marking the start/end days of a week-plus span. */
+/** Half-border brackets marking the start/end days of a week-plus span, drawn in its colour via `border-current`. */
 export function PeriodCorners({ cell }: { cell: DayCell }) {
+  const { colorOf } = useApp();
   return (
     <>
-      {cell.longStarts.map((o) => {
-        const hex = colorHex(o.event.colorKey);
-        return (
-          <span key={`s-${o.key}`} className="pointer-events-none">
-            <span
-              className="absolute top-0 left-0 w-2 h-2"
-              // dynamic: the span's own colour
-              style={{ borderTop: `2px solid ${hex}`, borderLeft: `2px solid ${hex}` }}
-            />
-            <span
-              className="absolute bottom-0 left-0 w-2 h-2"
-              // dynamic: the span's own colour
-              style={{ borderBottom: `2px solid ${hex}`, borderLeft: `2px solid ${hex}` }}
-            />
-          </span>
-        );
-      })}
-      {cell.longEnds.map((o) => {
-        const hex = colorHex(o.event.colorKey);
-        return (
-          <span key={`e-${o.key}`} className="pointer-events-none">
-            <span
-              className="absolute top-0 right-0 w-2 h-2"
-              // dynamic: the span's own colour
-              style={{ borderTop: `2px solid ${hex}`, borderRight: `2px solid ${hex}` }}
-            />
-            <span
-              className="absolute bottom-0 right-0 w-2 h-2"
-              // dynamic: the span's own colour
-              style={{ borderBottom: `2px solid ${hex}`, borderRight: `2px solid ${hex}` }}
-            />
-          </span>
-        );
-      })}
+      {cell.longStarts.map((o) => (
+        <span key={`s-${o.key}`} className={cn('pointer-events-none', COLOR_CLASSES[colorOf(o.seed)].text)}>
+          <span className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-current" />
+          <span className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-current" />
+        </span>
+      ))}
+      {cell.longEnds.map((o) => (
+        <span key={`e-${o.key}`} className={cn('pointer-events-none', COLOR_CLASSES[colorOf(o.seed)].text)}>
+          <span className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-current" />
+          <span className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-current" />
+        </span>
+      ))}
     </>
   );
 }
 
-/** The period name, shown once on its start day. */
-export function PeriodTitles({ cell, onEditEvent }: { cell: DayCell; onEditEvent: (o: Occurrence) => void }) {
+/** The span's name, shown once on its start day. */
+export function PeriodTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occurrence) => void }) {
+  const { colorOf } = useApp();
   // Multiplied rather than a separate `opacity-50` class: an inline `style`
-  // always wins over a class, so a shared-event's own opacity would silently
+  // always wins over a class, so a shared seed's own opacity would silently
   // swallow the dim.
   const dimFactor = dimCell(cell) ? 0.5 : 1;
   return (
@@ -263,14 +217,17 @@ export function PeriodTitles({ cell, onEditEvent }: { cell: DayCell; onEditEvent
           key={`t-${o.key}`}
           onClick={(e) => {
             e.stopPropagation();
-            onEditEvent(o);
+            onEdit(o);
           }}
-          title={sharedTitleAttr(o.event)}
-          className="text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap hover:opacity-70 hover:shadow-pop"
-          // dynamic: the event's own colour, dimmed when shared
-          style={{ color: colorHex(o.event.colorKey), opacity: (sharedOpacity(o.event) ?? 1) * dimFactor }}
+          title={sharedTitleAttr(o.seed)}
+          className={cn(
+            'text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap hover:opacity-70 hover:shadow-pop',
+            COLOR_CLASSES[colorOf(o.seed)].text,
+          )}
+          // dynamic: dimmed when shared or elapsed
+          style={{ opacity: (sharedOpacity(o.seed) ?? 1) * dimFactor }}
         >
-          {eventTitle(o.event)}
+          {seedTitle(o.seed)}
         </div>
       ))}
     </>
@@ -278,7 +235,7 @@ export function PeriodTitles({ cell, onEditEvent }: { cell: DayCell; onEditEvent
 }
 
 /**
- * All-day/multi-day event bars, absolutely positioned over the week's cells.
+ * All-day/multi-day bars, absolutely positioned over the week's cells.
  * `top` clears the day-number row, which is shorter under the phone's padding.
  *
  * Bars span multiple columns, so a single segment can straddle both dimmed
@@ -290,20 +247,20 @@ export function PeriodTitles({ cell, onEditEvent }: { cell: DayCell; onEditEvent
 export function BarsOverlay({
   week,
   topClass,
-  onEditEvent,
+  onEdit,
 }: {
   week: WeekRow;
   /** A `top-*` utility clearing the layout's day-number row. */
   topClass: string;
-  onEditEvent: (o: Occurrence) => void;
+  onEdit: (o: Occurrence) => void;
 }) {
+  const { colorOf } = useApp();
   if (week.barLanes.length === 0) return null;
   return (
     <div className={`absolute left-0 right-0 grid grid-cols-7 auto-rows-min pointer-events-none ${topClass}`}>
       {week.barLanes.map(({ seg, lane }) => {
-        const hex = colorHex(seg.item.event.colorKey);
         // Multiplied, not a separate `opacity-50` class — an inline `style`
-        // always wins over a class, so a shared-event's own opacity would
+        // always wins over a class, so a shared seed's own opacity would
         // silently swallow the dim.
         const dimFactor = week.days.slice(seg.startCol - 1, seg.startCol - 1 + seg.span).every(dimCell) ? 0.5 : 1;
         return (
@@ -311,20 +268,23 @@ export function BarsOverlay({
             key={seg.item.key}
             onClick={(e) => {
               e.stopPropagation();
-              onEditEvent(seg.item);
+              onEdit(seg.item);
             }}
-            title={sharedTitleAttr(seg.item.event)}
-            className={`pointer-events-auto cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 ${seg.startsHere ? 'ml-1' : ''} ${seg.endsHere ? 'mr-1' : ''}`}
-            // dynamic: grid placement and the event's own colour
+            title={sharedTitleAttr(seg.item.seed)}
+            className={cn(
+              'pointer-events-auto cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
+              COLOR_CLASSES[colorOf(seg.item.seed)].bg,
+              seg.startsHere && 'ml-1',
+              seg.endsHere && 'mr-1',
+            )}
+            // dynamic: grid placement, dimmed when shared or elapsed
             style={{
               gridColumn: `${seg.startCol} / span ${seg.span}`,
               gridRow: lane + 1,
-              backgroundColor: `${hex}cc`,
-              color: 'var(--t-on-accent)',
-              opacity: (sharedOpacity(seg.item.event) ?? 1) * dimFactor,
+              opacity: (sharedOpacity(seg.item.seed) ?? 1) * dimFactor,
             }}
           >
-            {seg.startsHere ? eventTitle(seg.item.event) : '…'}
+            {seg.startsHere ? seedTitle(seg.item.seed) : '…'}
           </div>
         );
       })}

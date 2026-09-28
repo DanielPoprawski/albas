@@ -65,70 +65,56 @@ struct Spec {
 /// for every table and must not be listed in `cols`.
 const TABLES: &[Spec] = &[
     Spec {
-        tbl: "tasks",
-        pk: &["id"],
-        cols: &["title", "category", "completed", "date"],
-    },
-    Spec {
-        tbl: "habits",
-        pk: &["id"],
-        cols: &[
-            "name",
-            "color_key",
-            "kind",
-            "unit",
-            "target",
-            "schedule",
-            "created_at",
-            "reminder",
-            "due_date",
-            "time",
-            "category",
-            "important",
-            "notes",
-            "sort",
-            "routine",
-        ],
-    },
-    Spec {
-        tbl: "habit_completions",
-        pk: &["habit_id", "date"],
-        cols: &["value"],
-    },
-    Spec {
-        tbl: "events",
+        tbl: "seeds",
         pk: &["id"],
         cols: &[
             "title",
-            "description",
-            "color_key",
-            "all_day",
-            "start_date",
-            "start_time",
+            "notes",
+            "color",
+            "list",
+            "tags",
+            "important",
+            "sort",
+            "routine",
+            "created_at",
+            "date",
+            "time",
             "end_date",
             "end_time",
-            "recurrence",
+            "repeat",
+            "track",
             "reminders",
-            "category",
         ],
     },
     Spec {
-        tbl: "periods",
-        pk: &["id"],
-        cols: &[
-            "name",
-            "color_key",
-            "start_date",
-            "end_date",
-            "notes",
-            "habit_ids",
-        ],
+        tbl: "done",
+        pk: &["seed_id", "date"],
+        cols: &["value"],
     },
     Spec {
-        tbl: "categories",
+        tbl: "lists",
         pk: &["id"],
-        cols: &["name", "color_key", "scopes", "sort", "created_at"],
+        cols: &["name", "sort"],
     },
+    Spec {
+        tbl: "tags",
+        pk: &["id"],
+        cols: &["name", "color", "icon", "sort"],
+    },
+];
+
+/// Tables this build stopped syncing at v10 (`db.rs` folded them into
+/// `seeds`/`done`/`lists`). The server keeps their rows forever, so they must
+/// count as handled rather than unknown — an unknown row parks the pull
+/// watermark (see `merge`), and these would pin it before the seed rows
+/// forever.
+const LEGACY_TABLES: &[&str] = &[
+    "tasks",
+    "habits",
+    "habit_completions",
+    "events",
+    "periods",
+    "categories",
 ];
 
 #[derive(Serialize, Deserialize)]
@@ -440,7 +426,7 @@ fn merge(tx: &Connection, res: &SyncRes, stored_grant_rev: i64) -> rusqlite::Res
     for c in &res.changes {
         let ok = match TABLES.iter().find(|s| s.tbl == c.tbl) {
             Some(spec) => apply_one(tx, spec, c)?,
-            None => false,
+            None => LEGACY_TABLES.contains(&c.tbl.as_str()),
         };
         if ok {
             applied += 1;
@@ -618,10 +604,11 @@ mod tests {
         {
             let conn = source.0.lock().unwrap();
             conn.execute(
-                "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule,
-                     created_at, reminder, due_date, time, updated_at, deleted)
-                 VALUES ('h1', 'Run', '#ff0000', 'check', '', 1.0, '{\"type\":\"daily\"}',
-                     '2026-07-01', 1, NULL, '07:30', 500, 0)",
+                "INSERT INTO seeds (id, title, notes, color, list, tags, important, sort, routine, created_at,
+                     date, time, end_date, end_time, repeat, track, reminders, updated_at, deleted)
+                 VALUES ('s1', 'Run', '', 'green', '', '[]', 0, 0, '', '2026-07-01',
+                     '2026-07-01', '07:30', NULL, NULL, '{\"type\":\"every\",\"n\":1,\"unit\":\"day\"}',
+                     '{\"kind\":\"check\"}', '[0]', 500, 0)",
                 [],
             )
             .unwrap();
@@ -631,24 +618,24 @@ mod tests {
             collect(&conn, 0).unwrap()
         };
         assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].tbl, "habits");
-        assert_eq!(changes[0].pk, "h1");
+        assert_eq!(changes[0].tbl, "seeds");
+        assert_eq!(changes[0].pk, "s1");
 
         let target = db();
-        let spec = TABLES.iter().find(|s| s.tbl == "habits").unwrap();
+        let spec = TABLES.iter().find(|s| s.tbl == "seeds").unwrap();
         {
             let conn = target.0.lock().unwrap();
             assert!(apply_one(&conn, spec, &changes[0]).unwrap());
-            let (name, time, target_val): (String, Option<String>, f64) = conn
+            let (title, time, track): (String, Option<String>, String) = conn
                 .query_row(
-                    "SELECT name, time, target FROM habits WHERE id = 'h1'",
+                    "SELECT title, time, track FROM seeds WHERE id = 's1'",
                     [],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .unwrap();
-            assert_eq!(name, "Run");
+            assert_eq!(title, "Run");
             assert_eq!(time.as_deref(), Some("07:30"));
-            assert_eq!(target_val, 1.0);
+            assert_eq!(track, r#"{"kind":"check"}"#);
         }
     }
 
@@ -660,8 +647,8 @@ mod tests {
         {
             let conn = source.0.lock().unwrap();
             conn.execute(
-                "INSERT INTO habit_completions (habit_id, date, value, updated_at, deleted)
-                 VALUES ('h1', '2026-07-20', 2.5, 400, 0)",
+                "INSERT INTO done (seed_id, date, value, updated_at, deleted)
+                 VALUES ('s1', '2026-07-20', 2.5, 400, 0)",
                 [],
             )
             .unwrap();
@@ -670,27 +657,30 @@ mod tests {
             let conn = source.0.lock().unwrap();
             collect(&conn, 0).unwrap()
         };
-        let c = changes
-            .iter()
-            .find(|c| c.tbl == "habit_completions")
-            .unwrap();
-        assert_eq!(c.pk, format!("h1{PK_SEP}2026-07-20"));
+        let c = changes.iter().find(|c| c.tbl == "done").unwrap();
+        assert_eq!(c.pk, format!("s1{PK_SEP}2026-07-20"));
 
         let target = db();
-        let spec = TABLES
-            .iter()
-            .find(|s| s.tbl == "habit_completions")
-            .unwrap();
+        let spec = TABLES.iter().find(|s| s.tbl == "done").unwrap();
         let conn = target.0.lock().unwrap();
         assert!(apply_one(&conn, spec, c).unwrap());
         let v: f64 = conn
             .query_row(
-                "SELECT value FROM habit_completions WHERE habit_id='h1' AND date='2026-07-20'",
+                "SELECT value FROM done WHERE seed_id='s1' AND date='2026-07-20'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
         assert_eq!(v, 2.5);
+    }
+
+    fn seed_payload(title: &str) -> serde_json::Value {
+        serde_json::json!({
+            "title": title, "notes": "", "color": "", "list": "", "tags": "[]",
+            "important": 0, "sort": 0, "routine": "", "created_at": "2026-07-01",
+            "date": "2026-07-01", "time": null, "end_date": null, "end_time": null,
+            "repeat": "{\"type\":\"none\"}", "track": "", "reminders": "[]"
+        })
     }
 
     /// The whole point of the merge rule: an older remote edit must not win.
@@ -699,31 +689,24 @@ mod tests {
         let d = db();
         let conn = d.0.lock().unwrap();
         conn.execute(
-            "INSERT INTO events (id, title, description, color_key, all_day, start_date,
-                 start_time, end_date, end_time, recurrence, reminders, category, updated_at, deleted)
-             VALUES ('e1', 'Local wins', '', '#fff', 1, '2026-07-01', NULL, '2026-07-01',
-                 NULL, '{}', '[]', '', 900, 0)",
+            "INSERT INTO seeds (id, title, created_at, date, updated_at, deleted)
+             VALUES ('e1', 'Local wins', '2026-07-01', '2026-07-01', 900, 0)",
             [],
         )
         .unwrap();
 
-        let spec = TABLES.iter().find(|s| s.tbl == "events").unwrap();
+        let spec = TABLES.iter().find(|s| s.tbl == "seeds").unwrap();
         let stale = Change {
-            tbl: "events".into(),
+            tbl: "seeds".into(),
             pk: "e1".into(),
-            payload: serde_json::json!({
-                "title": "Remote loses", "description": "", "color_key": "#000",
-                "all_day": 1, "start_date": "2026-07-01", "start_time": null,
-                "end_date": "2026-07-01", "end_time": null,
-                "recurrence": "{}", "reminders": "[]", "category": ""
-            }),
+            payload: seed_payload("Remote loses"),
             updated_at: 800,
             deleted: false,
             seq: 0,
         };
         assert!(apply_one(&conn, spec, &stale).unwrap());
         let title: String = conn
-            .query_row("SELECT title FROM events WHERE id='e1'", [], |r| r.get(0))
+            .query_row("SELECT title FROM seeds WHERE id='e1'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(title, "Local wins");
 
@@ -733,7 +716,7 @@ mod tests {
         };
         assert!(apply_one(&conn, spec, &fresh).unwrap());
         let title: String = conn
-            .query_row("SELECT title FROM events WHERE id='e1'", [], |r| r.get(0))
+            .query_row("SELECT title FROM seeds WHERE id='e1'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(title, "Remote loses");
     }
@@ -744,25 +727,23 @@ mod tests {
         let d = db();
         let conn = d.0.lock().unwrap();
         conn.execute(
-            "INSERT INTO tasks (id, title, category, completed, date, updated_at, deleted)
-             VALUES ('t1', 'Buy milk', 'General', 0, NULL, 100, 0)",
+            "INSERT INTO seeds (id, title, created_at, updated_at, deleted)
+             VALUES ('t1', 'Buy milk', '2026-07-01', 100, 0)",
             [],
         )
         .unwrap();
-        let spec = TABLES.iter().find(|s| s.tbl == "tasks").unwrap();
+        let spec = TABLES.iter().find(|s| s.tbl == "seeds").unwrap();
         let del = Change {
-            tbl: "tasks".into(),
+            tbl: "seeds".into(),
             pk: "t1".into(),
-            payload: serde_json::json!({
-                "title": "Buy milk", "category": "General", "completed": 0, "date": null
-            }),
+            payload: seed_payload("Buy milk"),
             updated_at: 200,
             deleted: true,
             seq: 0,
         };
         assert!(apply_one(&conn, spec, &del).unwrap());
         let deleted: i64 = conn
-            .query_row("SELECT deleted FROM tasks WHERE id='t1'", [], |r| r.get(0))
+            .query_row("SELECT deleted FROM seeds WHERE id='t1'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(deleted, 1);
     }
@@ -804,10 +785,9 @@ mod tests {
         {
             let conn = a.0.lock().unwrap();
             conn.execute(
-                "INSERT INTO habits (id, name, color_key, kind, unit, target, schedule,
-                     created_at, reminder, due_date, time, updated_at, deleted)
-                 VALUES (?1, 'Stretch', '#0f0', 'check', '', 1.0, '{\"type\":\"daily\"}',
-                     '2026-07-27', 0, NULL, NULL, ?2, 0)",
+                "INSERT INTO seeds (id, title, created_at, date, repeat, track, updated_at, deleted)
+                 VALUES (?1, 'Stretch', '2026-07-27', '2026-07-27',
+                     '{\"type\":\"every\",\"n\":1,\"unit\":\"day\"}', '{\"kind\":\"check\"}', ?2, 0)",
                 rusqlite::params![id, now_ms()],
             )
             .unwrap();
@@ -821,7 +801,7 @@ mod tests {
         {
             let conn = b.0.lock().unwrap();
             let name: String = conn
-                .query_row("SELECT name FROM habits WHERE id = ?1", [&id], |r| r.get(0))
+                .query_row("SELECT title FROM seeds WHERE id = ?1", [&id], |r| r.get(0))
                 .expect("row should have landed on B");
             assert_eq!(name, "Stretch");
         }
@@ -830,7 +810,7 @@ mod tests {
         {
             let conn = b.0.lock().unwrap();
             conn.execute(
-                "UPDATE habits SET name = 'Stretch 10m', updated_at = ?2 WHERE id = ?1",
+                "UPDATE seeds SET title = 'Stretch 10m', updated_at = ?2 WHERE id = ?1",
                 rusqlite::params![id, now_ms() + 1],
             )
             .unwrap();
@@ -840,7 +820,7 @@ mod tests {
         {
             let conn = a.0.lock().unwrap();
             let name: String = conn
-                .query_row("SELECT name FROM habits WHERE id = ?1", [&id], |r| r.get(0))
+                .query_row("SELECT title FROM seeds WHERE id = ?1", [&id], |r| r.get(0))
                 .unwrap();
             assert_eq!(name, "Stretch 10m", "A should have taken B's newer edit");
         }
@@ -849,7 +829,7 @@ mod tests {
         {
             let conn = a.0.lock().unwrap();
             conn.execute(
-                "UPDATE habits SET deleted = 1, updated_at = ?2 WHERE id = ?1",
+                "UPDATE seeds SET deleted = 1, updated_at = ?2 WHERE id = ?1",
                 rusqlite::params![id, now_ms() + 2],
             )
             .unwrap();
@@ -859,7 +839,7 @@ mod tests {
         {
             let conn = b.0.lock().unwrap();
             let deleted: i64 = conn
-                .query_row("SELECT deleted FROM habits WHERE id = ?1", [&id], |r| {
+                .query_row("SELECT deleted FROM seeds WHERE id = ?1", [&id], |r| {
                     r.get(0)
                 })
                 .unwrap();
@@ -954,17 +934,15 @@ mod tests {
         let mut guard = d.0.lock().unwrap();
         let tx = guard.transaction().unwrap();
         let ok = |pk: &str, seq: i64| Change {
-            tbl: "tasks".into(),
+            tbl: "seeds".into(),
             pk: pk.into(),
-            payload: serde_json::json!({
-                "title": "t", "category": "", "completed": 0, "date": serde_json::Value::Null
-            }),
+            payload: seed_payload("t"),
             updated_at: 100,
             deleted: false,
             seq,
         };
         let newer_schema = Change {
-            tbl: "tasks".into(),
+            tbl: "seeds".into(),
             pk: "t-new".into(),
             payload: serde_json::json!({ "title": "from a newer build" }),
             updated_at: 100,
@@ -995,22 +973,64 @@ mod tests {
         assert_eq!((m.skipped, m.pull_seq), (1, 60));
     }
 
+    /// The server still holds every pre-v10 row under its old table name.
+    /// Those are neither applied nor skipped-and-parked: the watermark walks
+    /// past them, or a v10 device would re-pull the old history forever.
+    #[test]
+    fn legacy_table_rows_advance_the_watermark() {
+        let d = db();
+        let mut guard = d.0.lock().unwrap();
+        let tx = guard.transaction().unwrap();
+        let legacy = |tbl: &str, seq: i64| Change {
+            tbl: tbl.into(),
+            pk: "x".into(),
+            payload: serde_json::json!({ "name": "old" }),
+            updated_at: 100,
+            deleted: false,
+            seq,
+        };
+        let res = SyncRes {
+            seq: 50,
+            changes: vec![
+                legacy("habits", 40),
+                legacy("categories", 41),
+                Change {
+                    tbl: "seeds".into(),
+                    pk: "s".into(),
+                    payload: seed_payload("new"),
+                    updated_at: 100,
+                    deleted: false,
+                    seq: 45,
+                },
+            ],
+            shared: vec![],
+            shared_seq: 50,
+            grant_rev: 0,
+        };
+        let m = merge(&tx, &res, 0).unwrap();
+        assert_eq!((m.applied, m.skipped, m.pull_seq), (3, 0, 50));
+        let n: i64 = tx
+            .query_row("SELECT COUNT(*) FROM seeds", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
     #[test]
     fn payload_missing_a_column_is_skipped() {
         let d = db();
         let conn = d.0.lock().unwrap();
-        let spec = TABLES.iter().find(|s| s.tbl == "tasks").unwrap();
+        let spec = TABLES.iter().find(|s| s.tbl == "seeds").unwrap();
         let partial = Change {
-            tbl: "tasks".into(),
+            tbl: "seeds".into(),
             pk: "t2".into(),
-            payload: serde_json::json!({ "title": "No category key" }),
+            payload: serde_json::json!({ "title": "No other columns" }),
             updated_at: 300,
             deleted: false,
             seq: 0,
         };
         assert!(!apply_one(&conn, spec, &partial).unwrap());
         let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tasks WHERE id='t2'", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM seeds WHERE id='t2'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 0);
     }

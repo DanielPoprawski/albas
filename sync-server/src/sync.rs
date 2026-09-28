@@ -65,18 +65,9 @@ pub(crate) struct SyncRes {
     pub(crate) grant_rev: i64,
 }
 
-/// The tables a grant exposes. Todos and habits live in the same tables, hence
-/// one combined group.
-fn granted_tables(calendar: bool, todos: bool) -> Vec<&'static str> {
-    let mut v = Vec::new();
-    if calendar {
-        v.extend(["events", "periods", "categories"]);
-    }
-    if todos {
-        v.extend(["habits", "habit_completions", "tasks", "categories"]);
-    }
-    v
-}
+/// The tables a grant exposes. A grant is all-or-nothing: the row's existence
+/// in `shares` is the grant, and every table the app syncs rides along.
+const SHARED_TABLES: &[&str] = &["seeds", "done", "lists", "tags"];
 
 pub(crate) async fn sync(
     State(state): State<Arc<AppState>>,
@@ -136,30 +127,21 @@ pub(crate) fn apply_sync(
     let mut shared = Vec::new();
     {
         let mut grants = tx.prepare(
-            "SELECT s.owner_id, a.name, s.calendar, s.todos
+            "SELECT s.owner_id, a.name
              FROM shares s JOIN accounts a ON a.id = s.owner_id
              WHERE s.grantee_id = ?1",
         )?;
         let grants = grants
             .query_map([account_id], |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)? != 0,
-                    r.get::<_, i64>(3)? != 0,
-                ))
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        for (owner_id, owner_name, calendar, todos) in grants {
-            let tbls = granted_tables(calendar, todos);
-            if tbls.is_empty() {
-                continue;
-            }
-            let tbl_list = tbls
-                .iter()
-                .map(|t| format!("'{t}'"))
-                .collect::<Vec<_>>()
-                .join(", ");
+        let tbl_list = SHARED_TABLES
+            .iter()
+            .map(|t| format!("'{t}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        for (owner_id, owner_name) in grants {
             let skip_tombstones = if effective_since == 0 {
                 " AND deleted = 0"
             } else {

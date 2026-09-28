@@ -10,17 +10,17 @@ import { AsyncMessage, Card, ROW_INSET, useAsyncState } from './shared';
 /* ── Calendar import ─────────────────────────────────────────────────────*/
 
 export function ImportCard() {
-  const { importEvents } = useApp();
+  const { importSeeds } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
   const { state, run, busy } = useAsyncState();
 
   /** Parses and imports; the success line, or a thrown error for the message. */
   function runImport(text: string): string {
-    const { events, skipped } = parseIcs(text);
-    if (events.length === 0) throw new Error('No events found — is that an iCalendar (.ics) file?');
-    importEvents(events);
-    return `Imported ${events.length} event${events.length === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} skipped)` : ''}.`;
+    const { seeds, skipped } = parseIcs(text);
+    if (seeds.length === 0) throw new Error('No events found — is that an iCalendar (.ics) file?');
+    importSeeds(seeds);
+    return `Imported ${seeds.length} event${seeds.length === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} skipped)` : ''}.`;
   }
 
   async function handleFile(file: File | undefined) {
@@ -89,10 +89,10 @@ export function ImportCard() {
 /* ── Sharing ─────────────────────────────────────────────────────────────*/
 
 /**
- * Who can see your calendar and to-dos, and whose you see. Sharing is
- * read-only in both directions and granted per category. Hiding an incoming
- * share is local to this device (it just stops
- * drawing it), which is why it isn't a server call.
+ * Who can see everything of yours, and whose you see. Sharing is read-only in
+ * both directions and all-or-nothing: a grant is one switch. Hiding an
+ * incoming share is local to this device (it just stops drawing it), which is
+ * why it isn't a server call.
  */
 export function SharingCard() {
   const { signedIn, hiddenOwners, toggleOwnerHidden, syncNow } = useApp();
@@ -111,9 +111,9 @@ export function SharingCard() {
     void run('', load);
   }, [available, run]);
 
-  async function setShare(name: string, calendar: boolean, todos: boolean) {
+  async function setShare(name: string, granted: boolean) {
     await run('Saving…', async () => {
-      await ipc.sharesSet(name, calendar, todos);
+      await ipc.sharesSet(name, granted);
       await load();
     });
   }
@@ -121,7 +121,7 @@ export function SharingCard() {
   async function addShare() {
     const name = newName.trim();
     if (!name) return;
-    await setShare(name, true, false);
+    await setShare(name, true);
     setNewName('');
   }
 
@@ -138,7 +138,7 @@ export function SharingCard() {
   return (
     <Card title="Sharing">
       <p className="setting-desc mb-4">
-        Let another account on this server see your calendar or your to-dos and habits. Sharing is{' '}
+        Let another account on this server see everything — your calendar, to-dos, habits, lists and tags. Sharing is{' '}
         <strong>read-only</strong> — they can't edit or check anything off.
       </p>
 
@@ -149,12 +149,8 @@ export function SharingCard() {
           <div key={g.name} className={ROW_INSET}>
             <span className="setting-label flex-1 min-w-0 truncate">{g.name}</span>
             <label className="setting-desc flex items-center gap-1.5 mt-0">
-              <Switch checked={g.calendar} onCheckedChange={(v) => setShare(g.name, v, g.todos)} />
-              Calendar
-            </label>
-            <label className="setting-desc flex items-center gap-1.5 mt-0">
-              <Switch checked={g.todos} onCheckedChange={(v) => setShare(g.name, g.calendar, v)} />
-              To-dos &amp; habits
+              <Switch checked onCheckedChange={() => setShare(g.name, false)} />
+              Shared
             </label>
           </div>
         ))}
@@ -181,10 +177,7 @@ export function SharingCard() {
           Share
         </button>
       </div>
-      <p className="setting-desc mt-2">
-        Starts with the calendar shared; switch either category off any time. Turning both off removes the share
-        entirely.
-      </p>
+      <p className="setting-desc mt-2">Switch a share off any time to take it back.</p>
 
       <div className="mt-4 pt-4 border-t border-line">
         <div className="setting-label">Shared with you</div>
@@ -194,13 +187,7 @@ export function SharingCard() {
           <div className="mt-2">
             {shares?.incoming.map((g) => (
               <div key={g.name} className={ROW_INSET}>
-                <span className="setting-label flex-1 min-w-0 truncate">
-                  {g.name}
-                  <span className="setting-desc mt-0">
-                    {' · '}
-                    {[g.calendar && 'calendar', g.todos && 'to-dos & habits'].filter(Boolean).join(', ')}
-                  </span>
-                </span>
+                <span className="setting-label flex-1 min-w-0 truncate">{g.name}</span>
                 <label className="setting-desc flex items-center gap-1.5 mt-0">
                   <Switch checked={!hiddenOwners.includes(g.name)} onCheckedChange={() => toggleOwnerHidden(g.name)} />
                   Show

@@ -11,7 +11,7 @@ export type RowClickResult = 'toggled' | 'ranged' | 'plain';
  * the shell's route-change clearing see the same set.
  *
  * `orderedKeys` is the list in the order the user sees it (ranges run over
- * it); `generalKeys` are the rows in the General category. Ctrl only — Cmd
+ * it); `generalKeys` are the unfiled rows (no list). Ctrl only — Cmd
  * is not a modifier here on any platform, so behaviour matches everywhere.
  */
 export function useListSelection(orderedKeys: ItemKey[], generalKeys: ItemKey[]) {

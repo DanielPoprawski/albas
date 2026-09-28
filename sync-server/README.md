@@ -11,8 +11,8 @@ set of rows, unlocked by per-device bearer tokens; the token a device sends to
 in from inside the app with a **username and password**; a **passkey** (security
 key, fingerprint, face unlock) and a **TOTP** second factor can be added
 afterwards from the web sign-in site. Every login mints a token per device.
-Accounts can also **share** their calendar and/or to-dos read-only with each
-other — see Sharing below.
+Accounts can also **share** their data read-only with each other — see
+Sharing below.
 
 Albas stays local-first — SQLite on the device remains the source of truth, every
 edit is made offline, and this server only reconciles devices when one is
@@ -109,8 +109,8 @@ scripts/admin.sh --help
 | `password clear <account>` | Idempotent; refused when the password is the only credential — a passkey or Google link must remain. |
 | `totp clear <account>` | Idempotent, never guarded: TOTP is only a second factor, so this is the recovery move for a lost authenticator. |
 | `share list [--json]` | Every grant on the server (the self-service `/shares` only sees the caller's). |
-| `share set <owner> <grantee> [--calendar] [--todos]` | Upsert a grant; no scope flag removes it. Bumps the grantee's `grant_rev` either way. |
-| `share remove <owner> <grantee>` | Same as `set` with no flags. |
+| `share set <owner> <grantee>` | Grant; idempotent. Bumps the grantee's `grant_rev` either way. |
+| `share remove <owner> <grantee>` | Revoke. Also bumps the grantee's `grant_rev`. |
 | `invite create [--name <account>]` | Single-use code, 7 days. With `--name`, attaches a passkey to that existing account; without, a plain signup pass for `ALBAS_SYNC_SIGNUPS=invite`. |
 | `health` | Exit 0 if the local server answers `/health` (also `albas-sync health`, for a container healthcheck — the image has no curl). |
 
@@ -249,16 +249,16 @@ tokens era gets its credentials moved into the `tokens` table, same guarantee.
 
 ## Sharing
 
-An account can expose parts of its data to another account, **read-only**.
-Grants are per table group — `calendar` (events, periods) and `todos` (to-dos
-*and* habits, with their completions: they live in the same table, so they share a toggle). Both groups
-carry `categories`, since rows in either refer to them by id. The app manages grants in Settings →
-Sharing; the endpoints (account bearer token):
+An account can expose its data to another account, **read-only**, all or
+nothing: a grant covers every synced table (`seeds`, `done`, `lists`, `tags`),
+because the server never parses payloads and so could not split one kind of
+row from another. The app manages grants in Settings → Sharing; the endpoints
+(account bearer token):
 
 ```
-GET    /shares                 -> { "outgoing": [{name, calendar, todos}], "incoming": [...] }
-PUT    /shares/<name>          body {"calendar": bool, "todos": bool}; both false removes
-DELETE /shares/<name>          same as PUT false/false
+GET    /shares                 -> { "outgoing": [{name}], "incoming": [{name}] }
+PUT    /shares/<name>          grant (no body); idempotent
+DELETE /shares/<name>          revoke
 ```
 
 `PUT`/`DELETE /shares/<name>` always answer `200 {"ok": true}` on success —
@@ -277,9 +277,9 @@ on the next sync.
 
 The `/shares` trio above is scoped to whichever account the bearer token
 identifies. To list every grant on the server or edit one between two named
-accounts, use the CLI — `share list`, `share set <owner> <grantee>
-[--calendar] [--todos]`, `share remove` (see "Admin CLI"). Same
-upsert-or-delete rule, same `grant_rev` bump on the grantee.
+accounts, use the CLI — `share list`, `share set <owner> <grantee>`,
+`share remove` (see "Admin CLI"). Same grant-or-delete rule, same `grant_rev`
+bump on the grantee.
 
 The container listens on `127.0.0.1:8787` only. A TLS-terminating reverse proxy
 in front is mandatory, not optional — the bearer token is the sole credential, so
@@ -437,7 +437,7 @@ everything below is scoped to it.
   "sharedSince": 41,                 // same idea, for rows shared *with* this account
   "grantRev": 3,                     // the grant revision this device last saw
   "changes": [
-    { "tbl": "habits", "pk": "abc", "payload": { "name": "Run" },
+    { "tbl": "seeds", "pk": "abc", "payload": { "title": "Run" },
       "updatedAt": 1753632000000, "deleted": false }
   ]
 }
@@ -447,7 +447,7 @@ everything below is scoped to it.
   "seq": 43,                         // new watermark to store and send as `since` next time
   "changes": [ /* own rows changed by other devices since `since` */ ],
   "shared": [                        // rows other accounts shared with this one
-    { "from": "sarah", "tbl": "events", "pk": "e1", "payload": { /* … */ },
+    { "from": "sarah", "tbl": "seeds", "pk": "e1", "payload": { /* … */ },
       "updatedAt": 1753632000000, "deleted": false }
   ],
   "sharedSeq": 43,                   // watermark for the shared stream

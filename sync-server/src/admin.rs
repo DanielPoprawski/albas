@@ -121,18 +121,9 @@ enum TotpCmd {
 enum ShareCmd {
     /// Every grant on the server
     List(JsonFlag),
-    /// Grant <GRANTEE> read access to <OWNER>'s data; no scope flag removes the grant
-    Set {
-        owner: String,
-        grantee: String,
-        /// events, periods, categories
-        #[arg(long)]
-        calendar: bool,
-        /// habits, completions, tasks, categories
-        #[arg(long)]
-        todos: bool,
-    },
-    /// Remove a grant (same as `set` with no scope flags)
+    /// Grant <GRANTEE> read access to all of <OWNER>'s data
+    Set { owner: String, grantee: String },
+    /// Remove a grant
     Remove { owner: String, grantee: String },
 }
 
@@ -267,24 +258,12 @@ fn execute(conn: &mut Connection, cmd: Cmd) -> Result<(), String> {
                 }
             }
         }
-        Cmd::Share(ShareCmd::Set {
-            owner,
-            grantee,
-            calendar,
-            todos,
-        }) => {
-            write(conn, |c| set_share_db(c, &owner, &grantee, calendar, todos))?;
-            if calendar || todos {
-                println!(
-                    "'{grantee}' now reads '{owner}': {}",
-                    scopes(calendar, todos)
-                );
-            } else {
-                println!("no scope flags given: removed the share from '{owner}' to '{grantee}'");
-            }
+        Cmd::Share(ShareCmd::Set { owner, grantee }) => {
+            write(conn, |c| set_share_db(c, &owner, &grantee, true))?;
+            println!("'{grantee}' now reads '{owner}'");
         }
         Cmd::Share(ShareCmd::Remove { owner, grantee }) => {
-            write(conn, |c| set_share_db(c, &owner, &grantee, false, false))?;
+            write(conn, |c| set_share_db(c, &owner, &grantee, false))?;
             println!("removed the share from '{owner}' to '{grantee}'");
         }
         Cmd::Invite(InviteCmd::Create { name }) => {
@@ -343,21 +322,7 @@ fn print_account(a: &AccountDetail) {
 }
 
 fn print_share(s: &AdminShare) {
-    println!(
-        "{} -> {}  {}",
-        s.owner_name,
-        s.grantee_name,
-        scopes(s.calendar, s.todos)
-    );
-}
-
-fn scopes(calendar: bool, todos: bool) -> String {
-    match (calendar, todos) {
-        (true, true) => "calendar, todos".into(),
-        (true, false) => "calendar".into(),
-        (false, true) => "todos".into(),
-        (false, false) => "(nothing)".into(),
-    }
+    println!("{} -> {}", s.owner_name, s.grantee_name);
 }
 
 fn yes_no(b: bool) -> &'static str {
@@ -421,22 +386,18 @@ mod tests {
     }
 
     #[test]
-    fn share_set_parses_scope_flags() {
-        let cli = Cli::try_parse_from(["x", "share", "set", "alice", "bob", "--calendar"]).unwrap();
+    fn share_set_parses_names() {
+        let cli = Cli::try_parse_from(["x", "share", "set", "alice", "bob"]).unwrap();
         match cli.cmd {
-            Cmd::Share(ShareCmd::Set {
-                owner,
-                grantee,
-                calendar,
-                todos,
-            }) => {
-                assert_eq!(
-                    (owner.as_str(), grantee.as_str(), calendar, todos),
-                    ("alice", "bob", true, false)
-                );
+            Cmd::Share(ShareCmd::Set { owner, grantee }) => {
+                assert_eq!((owner.as_str(), grantee.as_str()), ("alice", "bob"));
             }
             _ => panic!("wrong command"),
         }
+        assert!(
+            Cli::try_parse_from(["x", "share", "set", "alice", "bob", "--calendar"]).is_err(),
+            "the scope flags are gone: a grant is all-or-nothing"
+        );
         let cli = Cli::try_parse_from(["x", "passkey", "label", "alice", "7"]).unwrap();
         assert!(matches!(
             cli.cmd,

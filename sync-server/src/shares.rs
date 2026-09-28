@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -15,18 +15,11 @@ use crate::auth::Authed;
 use crate::error::{internal, Rejection};
 use crate::AppState;
 
-#[derive(Deserialize)]
-pub(crate) struct ShareBody {
-    pub(crate) calendar: bool,
-    pub(crate) todos: bool,
-}
-
+/// One grant, either direction. A grant is all-or-nothing, so the name is
+/// the whole record.
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct ShareInfo {
     name: String,
-    calendar: bool,
-    todos: bool,
 }
 
 #[derive(Serialize)]
@@ -44,22 +37,16 @@ pub(crate) async fn shares_get(
             let me = auth.account_id;
             let list = |sql: &str| -> Result<Vec<ShareInfo>, Rejection> {
                 let mut stmt = conn.prepare(sql).map_err(internal)?;
-                stmt.query_map([me], |r| {
-                    Ok(ShareInfo {
-                        name: r.get(0)?,
-                        calendar: r.get::<_, i64>(1)? != 0,
-                        todos: r.get::<_, i64>(2)? != 0,
-                    })
-                })
-                .and_then(|rows| rows.collect())
-                .map_err(internal)
+                stmt.query_map([me], |r| Ok(ShareInfo { name: r.get(0)? }))
+                    .and_then(|rows| rows.collect())
+                    .map_err(internal)
             };
             let outgoing = list(
-                "SELECT a.name, s.calendar, s.todos FROM shares s
+                "SELECT a.name FROM shares s
                  JOIN accounts a ON a.id = s.grantee_id WHERE s.owner_id = ?1 ORDER BY a.name",
             )?;
             let incoming = list(
-                "SELECT a.name, s.calendar, s.todos FROM shares s
+                "SELECT a.name FROM shares s
                  JOIN accounts a ON a.id = s.owner_id WHERE s.grantee_id = ?1 ORDER BY a.name",
             )?;
             Ok(Json(SharesRes { outgoing, incoming }))
@@ -71,10 +58,9 @@ pub(crate) async fn shares_put(
     State(state): State<Arc<AppState>>,
     auth: Authed,
     Path(name): Path<String>,
-    Json(body): Json<ShareBody>,
 ) -> Result<Json<Value>, Rejection> {
     state
-        .db(move |conn| set_share(conn, auth.account_id, &name, body.calendar, body.todos))
+        .db(move |conn| set_share(conn, auth.account_id, &name, true))
         .await
 }
 
@@ -84,7 +70,7 @@ pub(crate) async fn shares_delete(
     Path(name): Path<String>,
 ) -> Result<Json<Value>, Rejection> {
     state
-        .db(move |conn| set_share(conn, auth.account_id, &name, false, false))
+        .db(move |conn| set_share(conn, auth.account_id, &name, false))
         .await
 }
 
@@ -95,8 +81,7 @@ fn set_share(
     conn: &mut Connection,
     me: i64,
     grantee_name: &str,
-    calendar: bool,
-    todos: bool,
+    grant: bool,
 ) -> Result<Json<Value>, Rejection> {
     let tx = conn.transaction().map_err(internal)?;
     let grantee: Option<i64> = tx
@@ -116,18 +101,19 @@ fn set_share(
             "An account cannot share with itself.".into(),
         ));
     }
-    if !calendar && !todos {
+    // The row's existence is the grant; the legacy `calendar`/`todos`
+    // columns stay at their defaults and are never read.
+    if grant {
         tx.execute(
-            "DELETE FROM shares WHERE owner_id = ?1 AND grantee_id = ?2",
+            "INSERT INTO shares (owner_id, grantee_id) VALUES (?1, ?2)
+             ON CONFLICT(owner_id, grantee_id) DO NOTHING",
             params![me, grantee],
         )
         .map_err(internal)?;
     } else {
         tx.execute(
-            "INSERT INTO shares (owner_id, grantee_id, calendar, todos) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(owner_id, grantee_id) DO UPDATE SET
-               calendar = excluded.calendar, todos = excluded.todos",
-            params![me, grantee, calendar as i64, todos as i64],
+            "DELETE FROM shares WHERE owner_id = ?1 AND grantee_id = ?2",
+            params![me, grantee],
         )
         .map_err(internal)?;
     }

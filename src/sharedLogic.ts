@@ -1,24 +1,28 @@
 // Maps raw shared rows (the server's opaque column-map payloads, cached in
-// SQLite by sync.rs) into typed read-only events and todos, grouped by the
-// account that shared them.
+// SQLite by sync.rs) into typed read-only seeds, lists and tags, grouped by
+// the account that shared them.
 //
 // Two invariants worth knowing:
-// - Every id is namespaced `${owner}:${pk}`. Another person's UUIDs can never
-//   collide with local ones in occurrence keys, and a shared id can never
-//   match anything updateEvent/deleteTodo would look up.
-// - Reminders are stripped (events' lead times, todos' reminder flag): your
-//   phone should not buzz for someone else's dentist appointment.
+// - Every id is namespaced `${owner}:${pk}` — the seed's own id, its `list`,
+//   every entry of its `tags`. Another person's UUIDs can never collide with
+//   local ones in occurrence keys, and a shared id can never match anything
+//   `updateSeed`/`deleteSeed` would look up.
+// - Reminders are stripped: your phone should not buzz for someone else's
+//   dentist appointment.
 
-import type { CalendarEvent, Category, CategoryScope, RawSharedRow, SharedGroup, Todo } from './types';
-import { byCategoryOrder } from './categoryLogic';
-import { migrateLegacyTask, migrateTodo, periodToEvent, taskToTodo } from './migrations';
-import { DEFAULT_COLOR } from './colors';
+import { COLOR_KEYS, DEFAULT_COLOR } from './colors';
+import { bySort } from './seedLogic';
+import type { ColorKey, List, RawSharedRow, Repeat, Seed, SharedGroup, Tag, Track } from './types';
 
 /** Joins composite primary keys on the server and in sync.rs. */
 const PK_SEP = '\u0001';
 
 function str(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
+}
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' ? v : fallback;
 }
 
 function parseJson(v: unknown, fallback: unknown): unknown {
@@ -32,44 +36,47 @@ function parseJson(v: unknown, fallback: unknown): unknown {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Namespaces a bare category id the way every shared row's own id is namespaced. */
-function nsCategory(owner: string, rawId: unknown): string {
+function dateOrNull(v: unknown): string | null {
+  const s = str(v);
+  return DATE_RE.test(s) ? s : null;
+}
+
+function colorKey(v: unknown): ColorKey | null {
+  const s = str(v);
+  return COLOR_KEYS.includes(s as ColorKey) ? (s as ColorKey) : null;
+}
+
+/** Namespaces a bare id the way every shared row's own id is namespaced. */
+function ns(owner: string, rawId: unknown): string {
   const id = str(rawId);
   return id ? `${owner}:${id}` : '';
 }
 
-const SCOPE_VALUES: CategoryScope[] = ['calendar', 'tasks'];
-
-function sharedCategory(id: string, p: Record<string, unknown>): Category {
-  return {
-    id,
-    name: str(p.name, '(untitled)'),
-    colorKey: str(p.color_key) || DEFAULT_COLOR,
-    sort: typeof p.sort === 'number' ? p.sort : 0,
-    scopes: str(p.scopes)
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s): s is CategoryScope => SCOPE_VALUES.includes(s as CategoryScope)),
-  };
-}
-
-function sharedEvent(owner: string, id: string, p: Record<string, unknown>): CalendarEvent | null {
-  const startDate = str(p.start_date);
-  if (!DATE_RE.test(startDate)) return null;
-  const endDate = str(p.end_date, startDate);
+function sharedSeed(owner: string, id: string, p: Record<string, unknown>): Seed {
+  const date = dateOrNull(p.date);
+  const endDate = dateOrNull(p.end_date);
+  const rawTags = parseJson(p.tags, []);
+  const repeat = parseJson(p.repeat, { type: 'none' }) as Repeat;
+  const track = str(p.track) ? (parseJson(p.track, null) as Track) : null;
   return {
     id,
     title: str(p.title, '(untitled)'),
-    description: str(p.description),
-    colorKey: str(p.color_key) || DEFAULT_COLOR,
-    allDay: !!p.all_day,
-    startDate,
-    startTime: str(p.start_time) || null,
-    endDate: DATE_RE.test(endDate) && endDate >= startDate ? endDate : startDate,
+    notes: str(p.notes),
+    color: colorKey(p.color),
+    list: ns(owner, p.list),
+    tags: Array.isArray(rawTags) ? rawTags.map((t) => ns(owner, t)).filter(Boolean) : [],
+    important: !!p.important,
+    sort: num(p.sort),
+    routine: '',
+    createdAt: dateOrNull(p.created_at) ?? date ?? '1970-01-01',
+    date,
+    time: str(p.time) || null,
+    endDate: endDate && date && endDate > date ? endDate : null,
     endTime: str(p.end_time) || null,
-    recurrence: parseJson(p.recurrence, { type: 'none' }) as CalendarEvent['recurrence'],
+    repeat: repeat && typeof repeat === 'object' && 'type' in repeat ? repeat : { type: 'none' },
+    track: track && typeof track === 'object' && 'kind' in track ? track : null,
     reminders: [],
-    category: nsCategory(owner, p.category),
+    done: {},
     sharedBy: owner,
   };
 }
@@ -85,102 +92,50 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
 
   const groups: SharedGroup[] = [];
   for (const [owner, ownerRows] of owners) {
-    const events: CalendarEvent[] = [];
-    const todos = new Map<string, Todo>();
-    const categories = new Map<string, Category>();
-    const completions: Array<[string, string, number]> = [];
+    const seeds = new Map<string, Seed>();
+    const lists: List[] = [];
+    const tags: Tag[] = [];
+    const done: Array<[string, string, number]> = [];
 
     for (const { tbl, pk, payload } of ownerRows) {
       const p = payload as Record<string, unknown>;
       const id = `${owner}:${pk}`;
       switch (tbl) {
-        case 'events': {
-          const e = sharedEvent(owner, id, p);
-          if (e) events.push(e);
+        case 'seeds':
+          seeds.set(id, sharedSeed(owner, id, p));
+          break;
+        case 'done': {
+          const [seedId, date] = pk.split(PK_SEP);
+          if (seedId && DATE_RE.test(date ?? '')) done.push([`${owner}:${seedId}`, date, num(p.value)]);
           break;
         }
-        case 'periods': {
-          const startDate = str(p.start_date);
-          if (!DATE_RE.test(startDate)) break;
-          events.push({
-            ...periodToEvent({
-              id,
-              name: str(p.name, '(untitled)'),
-              colorKey: str(p.color_key) || DEFAULT_COLOR,
-              startDate,
-              endDate: str(p.end_date, startDate),
-              notes: str(p.notes),
-              habitIds: [],
-            }),
-            sharedBy: owner,
-          });
+        case 'lists':
+          lists.push({ id, name: str(p.name, '(untitled)'), sort: num(p.sort) });
           break;
-        }
-        case 'habits': {
-          const todo = migrateTodo({
+        case 'tags':
+          tags.push({
             id,
             name: str(p.name, '(untitled)'),
-            colorKey: str(p.color_key),
-            kind: str(p.kind),
-            unit: str(p.unit),
-            target: typeof p.target === 'number' ? p.target : 1,
-            schedule: parseJson(p.schedule, { type: 'daily' }),
-            createdAt: str(p.created_at) || undefined,
-            reminder: false,
-            dueDate: str(p.due_date) || null,
-            time: str(p.time) || null,
-            category: nsCategory(owner, p.category),
-            important: !!p.important,
-            notes: str(p.notes),
-            sort: typeof p.sort === 'number' ? p.sort : 0,
-            routine: str(p.routine),
-            completions: {},
+            color: colorKey(p.color) ?? DEFAULT_COLOR,
+            icon: str(p.icon),
+            sort: num(p.sort),
           });
-          todos.set(id, todo);
           break;
-        }
-        case 'tasks': {
-          todos.set(
-            id,
-            taskToTodo(
-              migrateLegacyTask({
-                id,
-                title: str(p.title),
-                category: str(p.category),
-                completed: !!p.completed,
-                date: str(p.date) || null,
-              }),
-            ),
-          );
-          break;
-        }
-        case 'habit_completions': {
-          const [habitId, date] = pk.split(PK_SEP);
-          if (habitId && DATE_RE.test(date ?? '')) {
-            const value = typeof p.value === 'number' ? p.value : 0;
-            completions.push([`${owner}:${habitId}`, date, value]);
-          }
-          break;
-        }
-        case 'categories': {
-          categories.set(id, sharedCategory(id, p));
-          break;
-        }
       }
     }
 
-    // Completions may arrive before, after, or without their habit in the
+    // Done rows may arrive before, after, or without their seed in the
     // stream order; fold them in at the end and drop orphans.
-    for (const [todoId, date, value] of completions) {
-      const todo = todos.get(todoId);
-      if (todo && value > 0) todo.completions[date] = value;
+    for (const [seedId, date, value] of done) {
+      const seed = seeds.get(seedId);
+      if (seed && value > 0) seed.done[date] = value;
     }
 
     groups.push({
       owner,
-      events: events.sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id)),
-      todos: [...todos.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
-      categories: [...categories.values()].sort(byCategoryOrder),
+      seeds: [...seeds.values()].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.id.localeCompare(b.id)),
+      lists: lists.sort(bySort),
+      tags: tags.sort(bySort),
     });
   }
 
@@ -188,20 +143,20 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
 }
 
 // --- Display -----------------------------------------------------------------
-// How a shared (read-only) event is marked wherever events render. Central so
+// How a shared (read-only) seed is marked wherever seeds render. Central so
 // the month pills, bars, week lanes, day strip and hour grid can't drift: the
 // owner's initial in the label, a dimmed body, and an explanatory tooltip.
 
 /** "s · Dinner" — the sharing account's initial prefixes the title. */
-export function eventTitle(e: CalendarEvent): string {
-  return e.sharedBy ? `${e.sharedBy[0].toUpperCase()} · ${e.title}` : e.title;
+export function seedTitle(s: Seed): string {
+  return s.sharedBy ? `${s.sharedBy[0].toUpperCase()} · ${s.title}` : s.title;
 }
 
 /** Shared items draw dimmed; `undefined` leaves own items untouched. */
-export function sharedOpacity(e: CalendarEvent): number | undefined {
-  return e.sharedBy ? 0.55 : undefined;
+export function sharedOpacity(s: Seed): number | undefined {
+  return s.sharedBy ? 0.55 : undefined;
 }
 
-export function sharedTitleAttr(e: CalendarEvent): string | undefined {
-  return e.sharedBy ? `Shared by ${e.sharedBy} (read-only)` : undefined;
+export function sharedTitleAttr(s: Seed): string | undefined {
+  return s.sharedBy ? `Shared by ${s.sharedBy} (read-only)` : undefined;
 }

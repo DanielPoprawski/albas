@@ -1,20 +1,20 @@
 import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { StarButton } from '../ui/star';
+import { COLOR_CLASSES } from '../../colors';
 import { useApp } from '../../context/AppContext';
-import { completionDay, dueLabel, isDone } from '../../todoLogic';
-import { colorHex } from '../../colors';
-import type { Todo } from '../../types';
+import { completionDay, dueLabel, isDone } from '../../seedLogic';
+import type { Seed } from '../../types';
 import InlineEditor from '../InlineEditor';
 import type { RowClickResult } from '../bulk/useListSelection';
 import { useIsCoarsePointer } from '../../useMedia';
 
 interface TaskRowProps {
-  task: Todo;
+  task: Seed;
   /** `fmt(new Date())`, computed once by the list rather than once per row. */
   today: string;
   /** The "Advanced…" path: the full modal. */
-  onEdit: (task: Todo) => void;
+  onEdit: (task: Seed) => void;
   /** Whether the inline editor is open under this row (one at a time, owned by the list). */
   expanded?: boolean;
   onToggleExpand?: () => void;
@@ -27,11 +27,11 @@ interface TaskRowProps {
 }
 
 /**
- * One-time to-do, the same row on every surface: star, checkbox, name, then a
- * meta line (due moment). The checkbox is the only thing that
- * toggles done — on the day `completionDay` says — and the row itself opens
- * the inline editor beneath it. On touch there is no inline editor: the row
- * opens the full modal, which is the only editor a phone gets.
+ * One-time to-do, the same row on every surface: star, checkbox, title, then
+ * a meta line (due moment). The checkbox is the only thing that toggles done
+ * — on the day `completionDay` says — and the row itself opens the inline
+ * editor beneath it. On touch there is no inline editor: the row opens the
+ * full modal, which is the only editor a phone gets.
  */
 export default function TaskRow({
   task,
@@ -44,10 +44,11 @@ export default function TaskRow({
   onContextMenu,
   className,
 }: TaskRowProps) {
-  const { toggleTodo, updateTodo } = useApp();
+  const { toggleDone, updateSeed, colorOf, iconOf } = useApp();
   const coarse = useIsCoarsePointer();
   const done = isDone(task);
-  const hex = colorHex(task.colorKey);
+  const c = COLOR_CLASSES[colorOf(task)];
+  const icon = iconOf(task);
   const due = dueLabel(task, today);
 
   // A plain click (no Ctrl/Shift) opens the inline editor, or the modal on
@@ -84,32 +85,32 @@ export default function TaskRow({
         className,
       )}
     >
-      <StarButton important={task.important} onToggle={() => updateTodo(task.id, { important: !task.important })} />
+      <StarButton important={task.important} onToggle={() => updateSeed(task.id, { important: !task.important })} />
 
       <button
         type="button"
         role="checkbox"
         aria-checked={done}
-        aria-label={done ? `Mark "${task.name}" not done` : `Mark "${task.name}" done`}
+        aria-label={done ? `Mark "${task.title}" not done` : `Mark "${task.title}" done`}
         onClick={(e) => {
           e.stopPropagation();
-          toggleTodo(task.id, completionDay(task, today));
+          toggleDone(task.id, completionDay(task, today));
         }}
-        className="w-[1.125rem] h-[1.125rem] flex-shrink-0 border border-line-strong flex items-center justify-center cursor-pointer transition-all"
-        // dynamic: the to-do's own colour
-        style={{
-          backgroundColor: done ? hex : 'transparent',
-          borderColor: done ? hex : 'var(--t-border-strong)',
-        }}
+        className={cn(
+          'w-[1.125rem] h-[1.125rem] flex-shrink-0 border flex items-center justify-center cursor-pointer transition-all',
+          done ? `${c.bg} border-transparent` : 'bg-transparent border-line-strong',
+        )}
       >
         {done && <Icon name="check" size="0.6875rem" className="text-on-accent" />}
       </button>
+
+      {icon && <Icon name={icon} size="0.875rem" className={cn('shrink-0', c.text)} />}
 
       <div className="flex-1 min-w-0">
         <p
           className={cn('text-ui font-body truncate transition-all', done ? 'text-ink-muted line-through' : 'text-ink')}
         >
-          {task.name}
+          {task.title}
         </p>
         {due && (
           <p
@@ -123,7 +124,7 @@ export default function TaskRow({
 
       {/* The light editor, under the row; the modal stays the "Advanced" path. */}
       {expanded && !coarse && (
-        <InlineEditor todo={task} autoFocusTitle onAdvanced={() => onEdit(task)} className="basis-full pt-1" />
+        <InlineEditor seed={task} autoFocusTitle onAdvanced={() => onEdit(task)} className="basis-full pt-1" />
       )}
     </div>
   );

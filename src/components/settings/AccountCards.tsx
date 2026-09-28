@@ -354,7 +354,7 @@ export function AccountSigninCard({
                     {row.detail && <span className="setting-desc mt-0 ml-2">{row.detail}</span>}
                   </td>
                   <td className={SW_TD}>
-                    <Tag accent={pill}>{row.type}</Tag>
+                    <Tag color={pill}>{row.type}</Tag>
                   </td>
                 </tr>
               );

@@ -187,23 +187,20 @@ pub async fn shares_list(app: tauri::AppHandle) -> Result<Value, String> {
     .map_err(err)?
 }
 
+/// Grants (`PUT`, no body) or revokes (`DELETE`) the whole of this account's
+/// data to `name` — a grant is all-or-nothing.
 #[tauri::command]
-pub async fn shares_set(
-    app: tauri::AppHandle,
-    name: String,
-    calendar: bool,
-    todos: bool,
-) -> Result<(), String> {
+pub async fn shares_set(app: tauri::AppHandle, name: String, granted: bool) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (base, token) = {
             let db = app.state::<Db>();
             stored_base_and_token(&db)?
         };
         let url = format!("{base}/shares/{name}");
-        let res = ureq::request("PUT", &url)
+        let res = ureq::request(if granted { "PUT" } else { "DELETE" }, &url)
             .set("Authorization", &format!("Bearer {token}"))
             .timeout(Duration::from_secs(30))
-            .send_json(json!({ "calendar": calendar, "todos": todos }));
+            .call();
         // The server always answers 200 now (never 404 for an unknown
         // grantee — see sync-server/README.md, "Sharing"): unrecognised
         // names come back as `{"ok": false}` instead, so account-name

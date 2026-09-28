@@ -1,36 +1,37 @@
 import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
-import { colorHex } from '../../colors';
-import InlineEditor, { InlineEventEditor } from '../InlineEditor';
+import InlineEditor from '../InlineEditor';
 import { shortDate } from '../../dates';
 import { REMINDER_CHOICES } from '../../reminders';
+import { kindLabel } from '../../seedLogic';
 import { BulkNotice, DeleteConfirm } from '../bulk/BulkControls';
 import { plural } from '../bulk/useBulkActions';
-import { KIND_LABEL } from './searchItems';
 import type { SearchState } from './useSearchState';
 
 const SECTION = 'micro-label';
 const STEP_BTN =
   'size-[1.625rem] flex items-center justify-center border border-line text-ink-secondary transition-colors hover:border-accent hover:text-accent';
+const LIST_BTN = 'flex items-center gap-2 px-2 py-1 text-xs font-medium hover:bg-subtle';
 
 /**
  * The right-hand column that appears once something is selected: what's
- * selected, and the edits that make sense in bulk — category, a date
- * shift, a reminder, deletion. One selected item also gets the door to the
- * full editor.
+ * selected, and the edits that make sense in bulk — list, a date shift, a
+ * reminder, deletion. One selected item also gets the door to the full
+ * editor.
  */
 export default function EditPanel({ s }: { s: SearchState }) {
   const items = s.selectedItems;
   const one = items.length === 1 ? items[0] : null;
 
   const byKind = items.reduce<Record<string, number>>((acc, i) => {
-    acc[i.kind] = (acc[i.kind] ?? 0) + 1;
+    const k = kindLabel(i.seed);
+    acc[k] = (acc[k] ?? 0) + 1;
     return acc;
   }, {});
   const subline = one
-    ? [KIND_LABEL[one.kind], one.categoryName, one.date ? shortDate(one.date) : null].filter(Boolean).join(' · ')
+    ? [kindLabel(one.seed), one.listName, one.date ? shortDate(one.date) : null].filter(Boolean).join(' · ')
     : Object.entries(byKind)
-        .map(([k, n]) => plural(n, KIND_LABEL[k as keyof typeof KIND_LABEL]))
+        .map(([k, n]) => plural(n, k))
         .join(' · ');
 
   return (
@@ -55,44 +56,22 @@ export default function EditPanel({ s }: { s: SearchState }) {
       </div>
 
       <div className="flex flex-1 flex-col gap-2.5 px-[0.875rem] pt-2.5 pb-3">
-        {one &&
-          (one.kind === 'event' ? (
-            <InlineEventEditor event={one.event} onAdvanced={s.openFullEditor} />
-          ) : (
-            <InlineEditor todo={one.todo} onAdvanced={s.openFullEditor} />
-          ))}
+        {one && <InlineEditor seed={one.seed} onAdvanced={s.openFullEditor} />}
 
-        {s.categorisable && (
-          <section className="flex flex-col gap-1">
-            <h4 className={SECTION}>Category</h4>
-            <button
-              type="button"
-              onClick={() => s.applyCategory('')}
-              className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-ink-secondary hover:bg-subtle"
-            >
-              <span className="size-2 border border-line-strong" aria-hidden />
-              <span className="flex-1 text-left">None</span>
-              {s.commonCategory === '' && <Icon name="check" size="0.75rem" className="text-accent" />}
+        <section className="flex flex-col gap-1">
+          <h4 className={SECTION}>List</h4>
+          <button type="button" onClick={() => s.applyList('')} className={cn(LIST_BTN, 'text-ink-secondary')}>
+            <span className="size-2 border border-line-strong" aria-hidden />
+            <span className="flex-1 text-left">None</span>
+            {s.commonList === '' && <Icon name="check" size="0.75rem" className="text-accent" />}
+          </button>
+          {s.listOptions.map((l) => (
+            <button key={l.id} type="button" onClick={() => s.applyList(l.id)} className={cn(LIST_BTN, 'text-ink')}>
+              <span className="flex-1 truncate text-left">{l.name}</span>
+              {s.commonList === l.id && <Icon name="check" size="0.75rem" className="text-accent" />}
             </button>
-            {s.categoryOptions.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => s.applyCategory(c.id)}
-                className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-ink hover:bg-subtle"
-              >
-                <span
-                  className="size-2"
-                  aria-hidden
-                  // dynamic: the category's own colour
-                  style={{ background: colorHex(c.colorKey) }}
-                />
-                <span className="flex-1 truncate text-left">{c.name}</span>
-                {s.commonCategory === c.id && <Icon name="check" size="0.75rem" className="text-accent" />}
-              </button>
-            ))}
-          </section>
-        )}
+          ))}
+        </section>
 
         <section className="flex flex-col gap-1.5">
           <h4 className={SECTION}>

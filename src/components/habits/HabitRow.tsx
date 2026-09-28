@@ -3,9 +3,9 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
-import { colorHex } from '../../colors';
+import { COLOR_CLASSES } from '../../colors';
 import { useApp } from '../../context/AppContext';
-import { repeatLabel } from '../../todoLogic';
+import { repeatLabel } from '../../seedLogic';
 import type { RowClickResult } from '../bulk/useListSelection';
 import { Dot, Tag } from '../ui/tag';
 import HabitStrip from './HabitStrip';
@@ -48,12 +48,13 @@ export default function HabitRow({
   /** The open drawer. */
   children?: ReactNode;
 }) {
-  const { toggleTodo, firstDayOfWeek } = useApp();
-  const { todo } = habit;
-  const color = colorHex(todo.colorKey);
-  const routine = ROUTINE_OPTIONS.find((o) => o.value === todo.routine);
+  const { toggleDone, firstDayOfWeek, colorOf, iconOf } = useApp();
+  const { seed } = habit;
+  const color = colorOf(seed);
+  const icon = iconOf(seed);
+  const routine = ROUTINE_OPTIONS.find((o) => o.value === seed.routine);
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id: todo.id,
+    id: seed.id,
   });
 
   const handleClick = (e: React.MouseEvent) => {
@@ -110,7 +111,7 @@ export default function HabitRow({
           title={habit.doneToday ? 'Completed today — click to undo' : 'Mark as done'}
           onClick={(e) => {
             e.stopPropagation();
-            toggleTodo(todo.id, today);
+            toggleDone(seed.id, today);
           }}
           className={cn(
             'group size-[1.375rem] shrink-0 flex items-center justify-center border border-accent transition-colors',
@@ -128,25 +129,29 @@ export default function HabitRow({
 
         <div className="flex flex-col gap-1 min-w-0 min-w-[12rem] max-w-[24rem]">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Dot accent={color} size={10} />
-            <span className="font-heading text-sm font-bold text-ink truncate">{todo.name}</span>
+            {icon ? (
+              <Icon name={icon} size="0.875rem" className={COLOR_CLASSES[color].text} />
+            ) : (
+              <Dot color={color} size={10} />
+            )}
+            <span className="font-heading text-sm font-bold text-ink truncate">{seed.title}</span>
           </div>
           <div className="flex items-center gap-1.5 min-w-0 overflow-hidden max-wide:hidden">
-            <Tag accent={color} className="shrink-0">
-              {routine?.label ?? fallbackLabel(todo)}
+            <Tag color={color} className="shrink-0">
+              {routine?.label ?? fallbackLabel(seed)}
             </Tag>
-            <Tag className="shrink-0">{repeatLabel(todo.schedule, firstDayOfWeek)}</Tag>
-            {todo.reminder && (
+            <Tag className="shrink-0">{repeatLabel(seed.repeat, firstDayOfWeek)}</Tag>
+            {seed.reminders.length > 0 && (
               <span className="flex items-center gap-1 text-meta text-ink-muted whitespace-nowrap">
                 <Icon name="notifications" size="0.75rem" aria-label="Reminder" />
-                {todo.time ?? 'due days'}
+                {seed.time ?? 'due days'}
               </span>
             )}
           </div>
         </div>
 
         <HabitStrip
-          todo={todo}
+          seed={seed}
           cells={habit.strip}
           color={color}
           today={today}

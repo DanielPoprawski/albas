@@ -1,10 +1,8 @@
-import { colorHex } from '../../colors';
 import { addDays, diffDays, shortDate } from '../../dates';
-import { nearestOccurrence, shortTime } from '../../eventLogic';
+import { seedKey } from '../../itemKeys';
 import { type Plan, matchItem } from '../../searchMatch';
-import { isRepeating, nearestDueDate, streakOf } from '../../todoLogic';
-import type { CalendarEvent, Category, FirstDayOfWeek, Todo } from '../../types';
-import { eventKey, todoKey } from '../../itemKeys';
+import { isHabit, kindLabel, nearestDate, shortTime, streakOf } from '../../seedLogic';
+import type { ColorKey, FirstDayOfWeek, List, Seed, Tag } from '../../types';
 import type { Hit, ScopeTab, SearchItem } from './types';
 
 /** Hits shown at once; counts are still over every match. */
@@ -12,56 +10,40 @@ export const MAX_HITS = 50;
 
 /** Everything the palette can find, decorated once per data change. */
 export function toSearchItems(
-  events: CalendarEvent[],
-  sharedEvents: CalendarEvent[],
-  todos: Todo[],
-  categoryById: (id: string) => Category | undefined,
+  seeds: Seed[],
+  listById: (id: string) => List | undefined,
+  tagById: (id: string) => Tag | undefined,
+  colorOf: (seed: Seed) => ColorKey,
   firstDayOfWeek: FirstDayOfWeek,
   todayStr: string,
 ): SearchItem[] {
-  const out: SearchItem[] = [];
-  for (const e of [...events, ...sharedEvents]) {
-    const categoryName = categoryById(e.category)?.name ?? '';
-    out.push({
-      key: eventKey(e),
-      kind: 'event',
-      event: e,
-      title: e.title,
-      fields: [e.title, e.description, categoryName],
-      date: nearestOccurrence(e, todayStr),
-      color: colorHex(e.colorKey),
-      categoryName,
-      hasReminder: e.reminders.length > 0,
-      selectable: !e.sharedBy,
-    });
-  }
-  for (const t of todos) {
-    const categoryName = categoryById(t.category)?.name ?? '';
-    out.push({
-      key: todoKey(t),
-      kind: isRepeating(t) ? 'habit' : 'task',
-      todo: t,
-      title: t.name,
-      fields: [t.name, categoryName],
-      date: nearestDueDate(t, todayStr, firstDayOfWeek),
-      color: colorHex(t.colorKey),
-      categoryName,
-      hasReminder: t.reminder,
-      selectable: true,
-    });
-  }
-  return out;
+  return seeds.map((s) => {
+    const listName = listById(s.list)?.name ?? '';
+    const tagNames = s.tags.map((t) => tagById(t)?.name ?? '').filter(Boolean);
+    return {
+      key: seedKey(s),
+      seed: s,
+      title: s.title,
+      fields: [s.title, s.notes, listName, ...tagNames],
+      date: nearestDate(s, todayStr, firstDayOfWeek),
+      color: colorOf(s),
+      listName,
+      hasReminder: s.reminders.length > 0,
+      selectable: !s.sharedBy,
+    };
+  });
 }
 
 export function tabOf(item: SearchItem): Exclude<ScopeTab, 'all'> {
-  return item.kind === 'event' ? 'events' : item.kind === 'task' ? 'tasks' : 'habits';
+  const kind = kindLabel(item.seed);
+  return kind === 'event' ? 'events' : kind === 'to-do' ? 'tasks' : 'habits';
 }
 
-/** `cat:` filter: a category name, or `general` (or blank) for the uncategorised. */
-function inCategory(item: SearchItem, name: string): boolean {
+/** `cat:` filter: a list name, or `general` (or blank) for the unfiled. */
+function inList(item: SearchItem, name: string): boolean {
   const want = name.toLowerCase();
-  if (want === '' || want === 'general') return item.categoryName === '';
-  return item.categoryName.toLowerCase() === want;
+  if (want === '' || want === 'general') return item.listName === '';
+  return item.listName.toLowerCase() === want;
 }
 
 /**
@@ -69,7 +51,7 @@ function inCategory(item: SearchItem, name: string): boolean {
  * a regex that doesn't compile yet lists nothing.
  */
 export function matchAll(plan: Plan, items: SearchItem[]): Hit[] {
-  const scoped = plan.category === undefined ? items : items.filter((item) => inCategory(item, plan.category ?? ''));
+  const scoped = plan.category === undefined ? items : items.filter((item) => inList(item, plan.category ?? ''));
   if (plan.mode === 'empty') return scoped.map((item) => ({ item, score: 0, positions: item.fields.map(() => []) }));
   if (!plan.ok) return [];
   const hits: Hit[] = [];
@@ -90,18 +72,10 @@ export function rankHits(hits: Hit[], todayStr: string): Hit[] {
 
 /** The right-hand date column: `10 Aug · 2:00 PM`, `13 Aug – 15 Aug`, `2 Sep`, `12-day streak`, `no date`. */
 export function dateLabel(item: SearchItem, firstDayOfWeek: FirstDayOfWeek): string {
-  if (item.kind === 'habit') {
-    const n = streakOf(item.todo, firstDayOfWeek);
-    return `${n}-day streak`;
-  }
+  const { seed } = item;
+  if (isHabit(seed)) return `${streakOf(seed, firstDayOfWeek)}-day streak`;
   if (!item.date) return 'no date';
-  if (item.kind === 'event') {
-    const { event } = item;
-    const span = Math.max(0, diffDays(event.startDate, event.endDate));
-    if (span > 0) return `${shortDate(item.date)} – ${shortDate(addDays(item.date, span))}`;
-    return event.startTime ? `${shortDate(item.date)} · ${shortTime(event.startTime)}` : shortDate(item.date);
-  }
-  return item.todo.time ? `${shortDate(item.date)} · ${shortTime(item.todo.time)}` : shortDate(item.date);
+  const span = seed.endDate ? Math.max(0, diffDays(seed.date ?? seed.endDate, seed.endDate)) : 0;
+  if (span > 0) return `${shortDate(item.date)} – ${shortDate(addDays(item.date, span))}`;
+  return seed.time ? `${shortDate(item.date)} · ${shortTime(seed.time)}` : shortDate(item.date);
 }
-
-export const KIND_LABEL: Record<SearchItem['kind'], string> = { event: 'event', task: 'to-do', habit: 'habit' };

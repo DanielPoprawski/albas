@@ -93,8 +93,6 @@ pub(crate) struct AdminShare {
     pub(crate) grantee_id: i64,
     pub(crate) owner_name: String,
     pub(crate) grantee_name: String,
-    pub(crate) calendar: bool,
-    pub(crate) todos: bool,
 }
 
 /// Resolves an account name, `NotFound` when there is no such account.
@@ -407,7 +405,7 @@ pub(crate) fn clear_totp_db(conn: &Connection, name: &str) -> Result<(), AdminEr
 /// identity to scope by, which is why this is not a mode of `shares_get`.
 pub(crate) fn list_shares_db(conn: &Connection) -> Result<Vec<AdminShare>, AdminError> {
     let mut stmt = conn.prepare(
-        "SELECT s.owner_id, s.grantee_id, o.name, g.name, s.calendar, s.todos
+        "SELECT s.owner_id, s.grantee_id, o.name, g.name
          FROM shares s
          JOIN accounts o ON o.id = s.owner_id
          JOIN accounts g ON g.id = s.grantee_id
@@ -420,8 +418,6 @@ pub(crate) fn list_shares_db(conn: &Connection) -> Result<Vec<AdminShare>, Admin
                 grantee_id: r.get(1)?,
                 owner_name: r.get(2)?,
                 grantee_name: r.get(3)?,
-                calendar: r.get::<_, i64>(4)? != 0,
-                todos: r.get::<_, i64>(5)? != 0,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -430,30 +426,28 @@ pub(crate) fn list_shares_db(conn: &Connection) -> Result<Vec<AdminShare>, Admin
 
 /// Admin counterpart of `shares::set_share`: the pair is named explicitly
 /// (there is no bearer identity to derive an owner from), otherwise the same
-/// upsert-or-delete-plus-`grant_rev`-bump rule — both scopes false removes.
+/// insert-or-delete-plus-`grant_rev`-bump rule — `grant` false removes.
 pub(crate) fn set_share_db(
     conn: &Connection,
     owner_name: &str,
     grantee_name: &str,
-    calendar: bool,
-    todos: bool,
+    grant: bool,
 ) -> Result<(), AdminError> {
     let owner = account_id(conn, owner_name)?;
     let grantee = account_id(conn, grantee_name)?;
     if owner == grantee {
         return Err(AdminError::Invalid("an account cannot share with itself"));
     }
-    if !calendar && !todos {
+    if grant {
         conn.execute(
-            "DELETE FROM shares WHERE owner_id = ?1 AND grantee_id = ?2",
+            "INSERT INTO shares (owner_id, grantee_id) VALUES (?1, ?2)
+             ON CONFLICT(owner_id, grantee_id) DO NOTHING",
             params![owner, grantee],
         )?;
     } else {
         conn.execute(
-            "INSERT INTO shares (owner_id, grantee_id, calendar, todos) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(owner_id, grantee_id) DO UPDATE SET
-               calendar = excluded.calendar, todos = excluded.todos",
-            params![owner, grantee, calendar as i64, todos as i64],
+            "DELETE FROM shares WHERE owner_id = ?1 AND grantee_id = ?2",
+            params![owner, grantee],
         )?;
     }
     conn.execute(

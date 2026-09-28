@@ -1,7 +1,7 @@
 import { arrayMove } from '@dnd-kit/sortable';
 import { addDays, parse } from '../../dates';
-import { bestStreakOf, isDoneOn, isDueOn, streakOf, valueOn } from '../../todoLogic';
-import type { FirstDayOfWeek, HabitsLayout, Routine, Todo } from '../../types';
+import { bestStreakOf, isDoneOn, isDueOn, kindLabel, streakOf, targetOf, valueOn } from '../../seedLogic';
+import type { FirstDayOfWeek, HabitsLayout, Repeat, Routine, Seed } from '../../types';
 
 /** The drawer's heatmap: this many week columns, the last one being this week. */
 export const HISTORY_WEEKS = 16;
@@ -19,7 +19,7 @@ export interface HistoryCell {
 }
 
 export interface HabitData {
-  todo: Todo;
+  seed: Seed;
   currentStreak: number;
   bestStreak: number;
   weeklyRate: number;
@@ -40,11 +40,11 @@ export interface HabitData {
  * greyed-out future days). Every cell keeps its date, because the grid is
  * clickable — any past day can be marked done from here.
  */
-export function getHabitCells(todo: Todo, firstDayOfWeek: FirstDayOfWeek, todayStr: string): HistoryCell[] {
+export function getHabitCells(seed: Seed, firstDayOfWeek: FirstDayOfWeek, todayStr: string): HistoryCell[] {
   const offset = (parse(todayStr).getDay() - firstDayOfWeek + 7) % 7;
   const start = addDays(todayStr, -offset - (HISTORY_WEEKS - 1) * 7);
   return cellsFor(
-    todo,
+    seed,
     Array.from({ length: HISTORY_WEEKS * 7 }, (_, i) => addDays(start, i)),
     firstDayOfWeek,
     todayStr,
@@ -52,11 +52,11 @@ export function getHabitCells(todo: Todo, firstDayOfWeek: FirstDayOfWeek, todayS
 }
 
 /** One cell per day of `dates`, in the given order — what every `HabitStrip` draws from. */
-export function cellsFor(todo: Todo, dates: string[], firstDayOfWeek: FirstDayOfWeek, todayStr: string): HistoryCell[] {
+export function cellsFor(seed: Seed, dates: string[], firstDayOfWeek: FirstDayOfWeek, todayStr: string): HistoryCell[] {
   return dates.map((dateStr) => ({
     dateStr,
-    done: isDoneOn(todo, dateStr),
-    due: isDueOn(todo, dateStr, firstDayOfWeek),
+    done: isDoneOn(seed, dateStr),
+    due: isDueOn(seed, dateStr, firstDayOfWeek),
     future: dateStr > todayStr,
   }));
 }
@@ -69,24 +69,24 @@ function rateOf(cells: HistoryCell[]): number {
 }
 
 /**
- * Streaks and rates come from `todoLogic` (`streakOf`/`bestStreakOf`/`isDueOn`)
+ * Streaks and rates come from `seedLogic` (`streakOf`/`bestStreakOf`/`isDueOn`)
  * so the Habits view, the drawer and the dashboard can never disagree about
  * what "done" or "streak" means for a schedule.
  */
-export function buildHabitData(todo: Todo, firstDayOfWeek: FirstDayOfWeek, todayStr: string): HabitData {
-  const cells = getHabitCells(todo, firstDayOfWeek, todayStr);
+export function buildHabitData(seed: Seed, firstDayOfWeek: FirstDayOfWeek, todayStr: string): HabitData {
+  const cells = getHabitCells(seed, firstDayOfWeek, todayStr);
   const past = cells.filter((c) => !c.future);
   const history: number[] = past.map((c) => (c.done ? 1 : 0));
   return {
-    todo,
-    currentStreak: streakOf(todo, firstDayOfWeek),
-    bestStreak: bestStreakOf(todo, firstDayOfWeek),
+    seed,
+    currentStreak: streakOf(seed, firstDayOfWeek),
+    bestStreak: bestStreakOf(seed, firstDayOfWeek),
     weeklyRate: rateOf(past.slice(-7)),
     history,
     cells,
     strip: past.slice(-STRIP_DAYS),
     completion: rateOf(past),
-    doneToday: isDoneOn(todo, todayStr),
+    doneToday: isDoneOn(seed, todayStr),
   };
 }
 
@@ -97,38 +97,28 @@ export const ROUTINE_OPTIONS: { value: Exclude<Routine, ''>; label: string }[] =
 ];
 
 /** The habit's routine: its tag, else its time of day (a reminder time), else none. */
-export function routineOf(todo: Todo): Routine {
-  if (todo.routine) return todo.routine;
-  if (!todo.time) return '';
-  return todo.time < '12:00' ? 'morning' : todo.time < '17:00' ? 'afternoon' : 'evening';
+export function routineOf(seed: Seed): Routine {
+  if (seed.routine) return seed.routine;
+  if (!seed.time) return '';
+  return seed.time < '12:00' ? 'morning' : seed.time < '17:00' ? 'afternoon' : 'evening';
 }
 
 type Cadence = 'daily' | 'weekly' | 'monthly' | 'chores';
 
 /** Which cadence bucket a repeat rule falls in — the Cadence layout needs no metadata. */
-function cadenceOf(todo: Todo): Cadence {
-  const s = todo.schedule;
-  switch (s.type) {
-    case 'daily':
-      return 'daily';
-    case 'weekdays':
-      return s.days.length === 7 ? 'daily' : 'weekly';
-    case 'timesPer':
-      return s.per === 'week' ? 'weekly' : 'monthly';
-    case 'every':
-      if (s.fromDone) return 'chores';
-      if (s.unit === 'month') return 'monthly';
-      return s.unit === 'day' && s.n <= 1 ? 'daily' : 'weekly';
-    default:
-      return 'daily';
-  }
+function cadenceOf(repeat: Repeat): Cadence {
+  if (repeat.type === 'timesPer') return repeat.per === 'week' ? 'weekly' : 'monthly';
+  if (repeat.type !== 'every' || (repeat.unit === 'day' && repeat.n <= 1 && !repeat.fromDone)) return 'daily';
+  if (repeat.fromDone) return 'chores';
+  if (repeat.unit === 'week' && repeat.days?.length === 7) return 'daily';
+  return repeat.unit === 'day' || repeat.unit === 'week' ? 'weekly' : 'monthly';
 }
 
 export interface HabitGroup {
   key: string;
   /** Empty in the flat layout, where the list has no headers. */
   label: string;
-  todos: Todo[];
+  seeds: Seed[];
 }
 
 const CADENCE_LABELS: Record<Cadence, string> = {
@@ -149,14 +139,14 @@ const ROUTINE_LABELS: Record<Routine, string> = {
  * bucketed by cadence or routine in a fixed order, empty buckets dropped.
  * `habits` arrive in the user's order and keep it inside each group.
  */
-export function groupHabits(habits: Todo[], layout: HabitsLayout): HabitGroup[] {
-  if (layout === 'flat') return [{ key: 'all', label: '', todos: habits }];
+export function groupHabits(habits: Seed[], layout: HabitsLayout): HabitGroup[] {
+  if (layout === 'flat') return [{ key: 'all', label: '', seeds: habits }];
   const keys: string[] = layout === 'cadence' ? Object.keys(CADENCE_LABELS) : Object.keys(ROUTINE_LABELS);
   const labels: Record<string, string> = layout === 'cadence' ? CADENCE_LABELS : ROUTINE_LABELS;
-  const of = layout === 'cadence' ? cadenceOf : routineOf;
+  const of = layout === 'cadence' ? (s: Seed) => cadenceOf(s.repeat) : routineOf;
   return keys
-    .map((key) => ({ key, label: labels[key], todos: habits.filter((t) => of(t) === key) }))
-    .filter((g) => g.todos.length > 0);
+    .map((key) => ({ key, label: labels[key], seeds: habits.filter((s) => of(s) === key) }))
+    .filter((g) => g.seeds.length > 0);
 }
 
 /**
@@ -164,38 +154,38 @@ export function groupHabits(habits: Todo[], layout: HabitsLayout): HabitGroup[] 
  * ordered habit list: every row whose index moved gets `sort = index`, which
  * also renumbers rows still on the pre-order default the first time.
  */
-export function reorderHabits(ordered: Todo[], activeId: string, overId: string): { id: string; sort: number }[] {
-  const from = ordered.findIndex((t) => t.id === activeId);
-  const to = ordered.findIndex((t) => t.id === overId);
+export function reorderHabits(ordered: Seed[], activeId: string, overId: string): { id: string; sort: number }[] {
+  const from = ordered.findIndex((s) => s.id === activeId);
+  const to = ordered.findIndex((s) => s.id === overId);
   if (from === -1 || to === -1) return [];
   const moved = arrayMove(ordered, from, to);
-  return moved.flatMap((t, i) => (t.sort === i ? [] : [{ id: t.id, sort: i }]));
+  return moved.flatMap((s, i) => (s.sort === i ? [] : [{ id: s.id, sort: i }]));
 }
 
-/** A schedule-shaped label for the habit's identity tag. */
-export function fallbackLabel(todo: Todo): string {
-  if (todo.schedule.type === 'once') return 'Task';
-  if (todo.schedule.type === 'every' && todo.schedule.fromDone) return 'Chore';
-  return 'Habit';
+/** A schedule-shaped label for the habit's identity tag: "Chore" for a from-done rule, else its kind. */
+export function fallbackLabel(seed: Seed): string {
+  if (seed.repeat.type === 'every' && seed.repeat.fromDone) return 'Chore';
+  const kind = kindLabel(seed);
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
 /**
  * What a click on a day cell means, on every surface (`HabitStrip` is the
- * only caller): yes/no toggles, measurable counts up and wraps to 0 past the
+ * only caller): a check toggles, a count counts up and wraps to 0 past the
  * target.
  */
 export function cycleCell(
-  todo: Todo,
+  seed: Seed,
   dateStr: string,
-  toggleTodo: (id: string, date: string) => void,
-  setTodoValue: (id: string, date: string, value: number) => void,
+  toggleDone: (id: string, date: string) => void,
+  setDone: (id: string, date: string, value: number) => void,
 ): void {
-  if (todo.kind === 'yesno') {
-    toggleTodo(todo.id, dateStr);
+  if (seed.track?.kind !== 'count') {
+    toggleDone(seed.id, dateStr);
     return;
   }
-  const v = valueOn(todo, dateStr);
-  setTodoValue(todo.id, dateStr, v >= todo.target ? 0 : v + 1);
+  const v = valueOn(seed, dateStr);
+  setDone(seed.id, dateStr, v >= targetOf(seed) ? 0 : v + 1);
 }
 
 /**

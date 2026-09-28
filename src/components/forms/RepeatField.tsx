@@ -1,32 +1,43 @@
 import { cn } from '@/lib/utils';
 import { rotateWeek } from '../../dates';
-import type { FirstDayOfWeek } from '../../types';
-import type { Repeat, RepeatUnit } from '../../types';
+import type { FirstDayOfWeek, Repeat, RepeatUnit } from '../../types';
+import DateField from './DateField';
 import { CheckboxRow, inputClass, Select } from './shared';
 
 /**
  * The repeat rule as the form holds it: every branch's inputs live side by
  * side (numbers as raw text so a half-typed field doesn't snap back), and
- * `buildRepeat` folds the active one into a `Repeat` on commit.
+ * `buildRepeat` folds the active one into a `Repeat` on commit. `custom` is
+ * whether the "Every N unit" inputs show; the presets set N to 1.
  */
-export type RepeatChoice = 'once' | 'weekdays' | 'every' | 'timesPer';
-
 export interface RepeatDraft {
-  choice: RepeatChoice;
-  weekdays: number[];
-  everyN: string;
-  everyUnit: RepeatUnit;
+  choice: 'none' | 'every' | 'timesPer';
+  n: string;
+  unit: RepeatUnit;
+  /** Weekdays for a weekly rule; empty = the start date's weekday. */
+  days: number[];
   fromDone: boolean;
+  custom: boolean;
   times: string;
   per: 'week' | 'month';
+  until: string;
 }
 
-export const REPEAT_OPTIONS: { value: RepeatChoice; label: string }[] = [
-  { value: 'once', label: "Doesn't repeat" },
-  { value: 'weekdays', label: 'Days of the week' },
-  { value: 'every', label: 'Every day / N days / weeks / months' },
-  { value: 'timesPer', label: 'N times per week / month' },
+type Preset = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'timesPer';
+
+const PRESETS: { value: Preset; label: string }[] = [
+  { value: 'none', label: "Doesn't repeat" },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekdays', label: 'Every weekday (Mon–Fri)' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
+  { value: 'custom', label: 'Custom…' },
+  { value: 'timesPer', label: 'Times per week / month…' },
 ];
+
+const WEEKDAYS = [1, 2, 3, 4, 5];
+const isWeekdays = (days: number[]) => days.length === 5 && WEEKDAYS.every((d) => days.includes(d));
 
 // Sunday-first (matching getDay()); rotated into the user's display order
 const WEEKDAY_OPTIONS = [
@@ -39,61 +50,112 @@ const WEEKDAY_OPTIONS = [
   { day: 6, label: 'S' },
 ];
 
-const DEFAULTS: Omit<RepeatDraft, 'choice'> = {
-  weekdays: [1, 2, 3, 4, 5],
-  everyN: '1',
-  everyUnit: 'day',
+const DEFAULTS: RepeatDraft = {
+  choice: 'none',
+  n: '1',
+  unit: 'day',
+  days: [],
   fromDone: false,
+  custom: false,
   times: '3',
   per: 'week',
+  until: '',
 };
 
-/**
- * A draft that mirrors an existing rule; the other branches hold their
- * defaults. `daily` is "every 1 day" here — one choice, not two.
- */
+/** A draft that mirrors a stored rule; the other branches hold their defaults. */
 export function draftFromRepeat(repeat: Repeat | undefined): RepeatDraft {
-  const base: RepeatDraft = { choice: repeat?.type === 'daily' ? 'every' : (repeat?.type ?? 'once'), ...DEFAULTS };
   switch (repeat?.type) {
-    case 'weekdays':
-      return { ...base, weekdays: repeat.days };
     case 'every':
-      return { ...base, everyN: String(repeat.n), everyUnit: repeat.unit, fromDone: repeat.fromDone };
+      return {
+        ...DEFAULTS,
+        choice: 'every',
+        n: String(repeat.n),
+        unit: repeat.unit,
+        days: repeat.days ?? [],
+        fromDone: !!repeat.fromDone,
+        custom: repeat.n > 1,
+        until: repeat.until ?? '',
+      };
     case 'timesPer':
-      return { ...base, times: String(repeat.times), per: repeat.per };
+      return {
+        ...DEFAULTS,
+        choice: 'timesPer',
+        times: String(repeat.times),
+        per: repeat.per,
+        until: repeat.until ?? '',
+      };
     default:
-      return base;
+      return DEFAULTS;
   }
 }
 
-/** `null` when the active branch is invalid (no weekday picked, N below 1). */
-export function buildRepeat(d: RepeatDraft): Repeat | null {
-  switch (d.choice) {
-    case 'once':
-      return { type: 'once' };
+/** The Select's reading of a draft. */
+function presetOf(d: RepeatDraft): Preset {
+  if (d.choice !== 'every') return d.choice;
+  if (d.custom) return 'custom';
+  if (d.unit === 'week') return isWeekdays(d.days) ? 'weekdays' : 'weekly';
+  return d.unit === 'day' ? 'daily' : d.unit === 'month' ? 'monthly' : 'yearly';
+}
+
+/** What picking a preset sets, leaving `until` and `fromDone` alone. */
+function applyPreset(d: RepeatDraft, p: Preset): RepeatDraft {
+  switch (p) {
+    case 'none':
+    case 'timesPer':
+      return { ...d, choice: p };
+    case 'custom':
+      return { ...d, choice: 'every', custom: true };
+    case 'daily':
+      return { ...d, choice: 'every', custom: false, n: '1', unit: 'day', days: [] };
     case 'weekdays':
-      return d.weekdays.length === 0 ? null : { type: 'weekdays', days: d.weekdays };
+      return { ...d, choice: 'every', custom: false, n: '1', unit: 'week', days: WEEKDAYS };
+    case 'weekly':
+      return { ...d, choice: 'every', custom: false, n: '1', unit: 'week', days: [] };
+    case 'monthly':
+      return { ...d, choice: 'every', custom: false, n: '1', unit: 'month', days: [] };
+    case 'yearly':
+      return { ...d, choice: 'every', custom: false, n: '1', unit: 'year', days: [] };
+  }
+}
+
+function count(text: string): number | null {
+  const n = Number.parseInt(text, 10);
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
+/** `null` when the active branch is invalid (N below 1). `exdates` survive an edit to the rest of the series. */
+export function buildRepeat(d: RepeatDraft, exdates?: string[]): Repeat | null {
+  const until = d.until || null;
+  switch (d.choice) {
+    case 'none':
+      return { type: 'none' };
     case 'every': {
-      const n = parseInt(d.everyN, 10);
-      if (!Number.isFinite(n) || n < 1) return null;
-      // Every single day on a fixed schedule is the stored `daily` rule.
-      if (n === 1 && d.everyUnit === 'day' && !d.fromDone) return { type: 'daily' };
-      return { type: 'every', n, unit: d.everyUnit, fromDone: d.fromDone };
+      const n = count(d.n);
+      if (n === null) return null;
+      return {
+        type: 'every',
+        n,
+        unit: d.unit,
+        ...(d.unit === 'week' && d.days.length ? { days: [...d.days].sort() } : {}),
+        ...(d.fromDone ? { fromDone: true } : {}),
+        until,
+        ...(exdates?.length ? { exdates } : {}),
+      };
     }
     case 'timesPer': {
-      const n = parseInt(d.times, 10);
-      if (!Number.isFinite(n) || n < 1) return null;
-      return { type: 'timesPer', times: n, per: d.per };
+      const times = count(d.times);
+      if (times === null) return null;
+      return { type: 'timesPer', times, per: d.per, until };
     }
   }
 }
 
-/** What `buildRepeat` returning null means for this draft, in the user's words. */
-export function repeatError(d: RepeatDraft): string {
-  return d.choice === 'weekdays' ? 'Pick at least one day of the week.' : 'Enter a number of 1 or more.';
+/** What `buildRepeat` returning null means for this draft, in the user's words; null when it is valid. */
+export function repeatError(d: RepeatDraft): string | null {
+  return buildRepeat(d) ? null : 'Enter a number of 1 or more.';
 }
 
-/** The seven weekday toggles, in the user's week order — a to-do's rule and an event's share them. */
+/** The seven weekday toggles, in the user's week order. */
 export function WeekdayPicker({
   value,
   onChange,
@@ -129,75 +191,70 @@ export function WeekdayPicker({
 }
 
 /**
- * The repeat rule builder: a Select for the kind of rule, then the inputs
- * that rule needs. Controlled — the owning form keeps the draft and turns it
- * into a `Repeat` with `buildRepeat` when it commits.
+ * The repeat rule builder: a Select of presets, then the inputs the chosen
+ * rule needs. Controlled — the owning form keeps the draft and turns it into
+ * a `Repeat` with `buildRepeat` when it commits.
  */
 export default function RepeatField({
   value,
   onChange,
   firstDayOfWeek,
-  /** Leave out "Doesn't repeat" (a habit always repeats). */
-  repeatingOnly = false,
 }: {
   value: RepeatDraft;
   onChange: (draft: RepeatDraft) => void;
   firstDayOfWeek: FirstDayOfWeek;
-  repeatingOnly?: boolean;
 }) {
   const patch = (p: Partial<RepeatDraft>) => onChange({ ...value, ...p });
-  const options = repeatingOnly ? REPEAT_OPTIONS.filter((o) => o.value !== 'once') : REPEAT_OPTIONS;
-  const everyN = parseInt(value.everyN, 10);
+  const n = count(value.n) ?? 1;
 
   return (
-    <div>
-      <Select options={options} value={value.choice} onChange={(choice) => patch({ choice })} />
+    <div className="flex flex-col gap-sm">
+      <Select options={PRESETS} value={presetOf(value)} onChange={(p) => onChange(applyPreset(value, p))} />
 
-      {value.choice === 'weekdays' && (
-        <WeekdayPicker
-          value={value.weekdays}
-          onChange={(weekdays) => patch({ weekdays })}
-          firstDayOfWeek={firstDayOfWeek}
-          className="mt-sm"
-        />
-      )}
-
-      {value.choice === 'every' && (
-        <div className="mt-sm space-y-sm">
-          <div className="flex items-center gap-sm">
-            <span className="text-sm text-ink-muted">Every</span>
-            <input
-              type="number"
-              min="1"
-              className={`${inputClass} text-center w-[4.5rem]`}
-              value={value.everyN}
-              onChange={(e) => patch({ everyN: e.target.value })}
-            />
-            <Select
-              className="flex-1"
-              options={[
-                { value: 'day', label: everyN === 1 ? 'day' : 'days' },
-                { value: 'week', label: everyN === 1 ? 'week' : 'weeks' },
-                { value: 'month', label: everyN === 1 ? 'month' : 'months' },
-              ]}
-              value={value.everyUnit}
-              onChange={(everyUnit) => patch({ everyUnit })}
-            />
-          </div>
-          <CheckboxRow
-            checked={value.fromDone}
-            onChange={(fromDone) => patch({ fromDone })}
-            label="Count from the last time it was done"
-            hint="Chore-style: skipping a day pushes the next one back. Off = fixed schedule, due again whether or not the last one happened."
+      {value.choice === 'every' && value.custom && (
+        <div className="flex items-center gap-sm">
+          <span className="text-sm text-ink-muted">Every</span>
+          <input
+            type="number"
+            min="1"
+            aria-label="Repeat interval"
+            className={`${inputClass} text-center w-[4.5rem]`}
+            value={value.n}
+            onChange={(e) => patch({ n: e.target.value })}
+          />
+          <Select
+            className="flex-1"
+            options={[
+              { value: 'day', label: n === 1 ? 'day' : 'days' },
+              { value: 'week', label: n === 1 ? 'week' : 'weeks' },
+              { value: 'month', label: n === 1 ? 'month' : 'months' },
+              { value: 'year', label: n === 1 ? 'year' : 'years' },
+            ]}
+            value={value.unit}
+            onChange={(unit) => patch({ unit })}
           />
         </div>
       )}
 
+      {value.choice === 'every' && value.unit === 'week' && (
+        <WeekdayPicker value={value.days} onChange={(days) => patch({ days })} firstDayOfWeek={firstDayOfWeek} />
+      )}
+
+      {value.choice === 'every' && (
+        <CheckboxRow
+          checked={value.fromDone}
+          onChange={(fromDone) => patch({ fromDone })}
+          label="Count from the last time it was done"
+          hint="Chore-style: skipping a day pushes the next one back. Off = fixed schedule, due again whether or not the last one happened."
+        />
+      )}
+
       {value.choice === 'timesPer' && (
-        <div className="flex items-center gap-sm mt-sm">
+        <div className="flex items-center gap-sm">
           <input
             type="number"
             min="1"
+            aria-label="Times per period"
             className={`${inputClass} text-center w-[4.5rem]`}
             value={value.times}
             onChange={(e) => patch({ times: e.target.value })}
@@ -211,6 +268,20 @@ export default function RepeatField({
             ]}
             value={value.per}
             onChange={(per) => patch({ per })}
+          />
+        </div>
+      )}
+
+      {value.choice !== 'none' && (
+        <div className="flex items-center gap-2 text-sm text-ink-muted">
+          <span>until</span>
+          <DateField
+            value={value.until}
+            onChange={(until) => patch({ until })}
+            allowEmpty
+            placeholder="forever"
+            className="w-40"
+            aria-label="Repeat until"
           />
         </div>
       )}

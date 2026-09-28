@@ -1,5 +1,4 @@
 import { Icon } from '../ui/icon';
-import { colorHex } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import InlineEditor from '../InlineEditor';
 import { useInlineEdit } from '../useInlineEdit';
@@ -13,17 +12,17 @@ import { cycleCell, type HabitData, HISTORY_WEEKS, monthLabels } from './habitMo
  * under the row's name.
  */
 export default function HabitDrawer({ habit }: { habit: HabitData }) {
-  const { toggleTodo, setTodoValue } = useApp();
+  const { toggleDone, setDone, colorOf } = useApp();
   const { setEditing, editModal } = useInlineEdit();
-  const { todo } = habit;
-  const color = colorHex(todo.colorKey);
+  const { seed } = habit;
+  const color = colorOf(seed);
   const labels = monthLabels(habit.cells, HISTORY_WEEKS);
 
-  const reminder = todo.reminder ? (todo.time ? `At ${todo.time}` : 'On due days') : 'Off';
+  const reminder = seed.reminders.length > 0 ? (seed.time ? `At ${seed.time}` : 'On due days') : 'Off';
 
   return (
     <div className="flex flex-col gap-4 pl-[3.375rem] pr-3 pt-4 pb-5 bg-surface-hover max-md:pl-3">
-      <InlineEditor todo={todo} onAdvanced={() => setEditing(todo)} />
+      <InlineEditor seed={seed} onAdvanced={() => setEditing(seed)} />
       <div className="flex items-start gap-8 max-md:flex-col">
         <div className="flex flex-col gap-1.5 overflow-x-auto scrollbar-hide max-w-full">
           <div className="flex w-max" aria-hidden>
@@ -39,7 +38,7 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
           <div
             className="grid grid-flow-col grid-rows-[repeat(7,0.6875rem)] gap-[0.1875rem] justify-start"
             role="group"
-            aria-label={`${todo.name}, last ${HISTORY_WEEKS} weeks`}
+            aria-label={`${seed.title}, last ${HISTORY_WEEKS} weeks`}
             // dynamic: one column per week of history
             style={{ gridTemplateColumns: `repeat(${HISTORY_WEEKS}, 0.6875rem)` }}
           >
@@ -47,10 +46,10 @@ export default function HabitDrawer({ habit }: { habit: HabitData }) {
               <HabitCell
                 key={cell.dateStr}
                 cell={cell}
-                todo={todo}
+                seed={seed}
                 color={color}
                 className="size-[0.6875rem] enabled:hover:scale-125"
-                onClick={(d) => cycleCell(todo, d, toggleTodo, setTodoValue)}
+                onClick={(d) => cycleCell(seed, d, toggleDone, setDone)}
               />
             ))}
           </div>

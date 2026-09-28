@@ -14,10 +14,10 @@
 //! `ALBAS_SYNC_TOKEN` env var (which owns the `owner` account's `env`-labelled
 //! token, rotating with the var as it always did).
 //!
-//! Sharing: `shares` grants another account read-only access to table groups
-//! (`calendar` = events+periods+categories, `todos` = habits+completions+tasks+
-//! categories — the server can't split todos from habits because it never
-//! parses payloads). `/sync` returns shared rows alongside the account's own;
+//! Sharing: a `shares` row grants another account read-only access to every
+//! synced table (`seeds`, `done`, `lists`, `tags` — `sync::SHARED_TABLES`);
+//! the grant is all-or-nothing since the server never parses payloads and so
+//! could not split one kind of row from another. `/sync` returns shared rows alongside the account's own;
 //! `accounts.grant_rev` is bumped on every grant change so a client can detect
 //! that its shared snapshot is stale and rebuild from zero.
 //!

@@ -1,33 +1,33 @@
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
-import { groupTasks, isDone, byImportanceThenDue, GENERAL } from '../../todoLogic';
+import { byImportanceThenDue, bySort, GENERAL, groupByList, isDone, isTask } from '../../seedLogic';
 import TaskRow from './TaskRow';
 import { SectionHeading } from '../ui/section-heading';
 import { useInlineEdit } from '../useInlineEdit';
-import type { Todo } from '../../types';
+import type { Seed } from '../../types';
 
 /**
- * One-time to-dos, grouped by category with uncategorised first and completed
- * ones collected at the bottom. "Completed" is a section, not a category:
- * finishing a to-do shouldn't move it out of the group it belongs to, so it
- * keeps its category and star and simply stops competing for attention.
+ * One-time to-dos, grouped by list with unfiled first and completed ones
+ * collected at the bottom. "Completed" is a section, not a list: finishing a
+ * to-do shouldn't move it out of the group it belongs to, so it keeps its
+ * list and star and simply stops competing for attention.
  */
-export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) {
-  const { todos, categoriesFor, categoryById, hiddenCategoryIds } = useApp();
+export default function TasksSection({ onEdit }: { onEdit: (s: Seed) => void }) {
+  const { seeds, lists, listById, isVisible } = useApp();
   const { expandedId, toggleExpanded } = useInlineEdit();
   const today = fmt(new Date());
 
-  const tasks = todos.filter((t) => !hiddenCategoryIds.has(t.category) && t.schedule.type === 'once');
-  const rowProps = (todo: Todo) => ({
-    task: todo,
+  const tasks = seeds.filter((s) => isTask(s) && isVisible(s));
+  const rowProps = (task: Seed) => ({
+    task,
     today,
     onEdit,
-    expanded: expandedId === todo.id,
-    onToggleExpand: () => toggleExpanded(todo.id),
+    expanded: expandedId === task.id,
+    onToggleExpand: () => toggleExpanded(task.id),
     className: 'px-2 py-1.5',
   });
-  const order = categoriesFor('tasks').map((c) => c.id);
-  const groups = groupTasks(
+  const order = [...lists].sort(bySort).map((l) => l.id);
+  const groups = groupByList(
     tasks.filter((t) => !isDone(t)),
     order,
   );
@@ -37,12 +37,12 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
 
   return (
     <div>
-      {groups.map(({ category, todos: rows }) => (
-        <div key={category || GENERAL} className="mb-md">
-          <SectionHeading className="mb-xs">{categoryById(category)?.name ?? GENERAL}</SectionHeading>
+      {groups.map(({ list, seeds: rows }) => (
+        <div key={list || GENERAL} className="mb-md">
+          <SectionHeading className="mb-xs">{listById(list)?.name ?? GENERAL}</SectionHeading>
           <div className="list-rows">
-            {rows.map((todo) => (
-              <TaskRow key={todo.id} {...rowProps(todo)} />
+            {rows.map((task) => (
+              <TaskRow key={task.id} {...rowProps(task)} />
             ))}
           </div>
         </div>
@@ -54,8 +54,8 @@ export default function TasksSection({ onEdit }: { onEdit: (t: Todo) => void }) 
             Completed
           </SectionHeading>
           <div className="list-rows">
-            {completed.map((todo) => (
-              <TaskRow key={todo.id} {...rowProps(todo)} />
+            {completed.map((task) => (
+              <TaskRow key={task.id} {...rowProps(task)} />
             ))}
           </div>
         </div>

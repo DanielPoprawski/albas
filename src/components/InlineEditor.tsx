@@ -1,18 +1,13 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
-import { movedEnd } from '../eventLogic';
-import { GENERAL, isRepeating } from '../todoLogic';
-import type { CalendarEvent, Category, Routine, Todo } from '../types';
+import { bySort, GENERAL, isHabit, isRepeating, movedEnd } from '../seedLogic';
+import type { ColorKey, Routine, Seed } from '../types';
 import DateField from './forms/DateField';
 import { ColorPopover, Select } from './forms/shared';
 import { ROUTINE_OPTIONS } from './habits/habitModel';
 import { Dot } from './ui/tag';
 import { StarButton } from './ui/star';
-
-function categoryOptions(categories: Category[]) {
-  return [{ value: '', label: GENERAL }, ...categories.map((c) => ({ value: c.id, label: c.name }))];
-}
 
 /**
  * The title input every inline editor shares: a draft that commits on blur
@@ -25,7 +20,7 @@ function TitleInput({
   label,
 }: {
   value: string;
-  onCommit: (name: string) => void;
+  onCommit: (title: string) => void;
   autoFocus?: boolean;
   label: string;
 }) {
@@ -33,12 +28,12 @@ function TitleInput({
   useEffect(() => setDraft(value), [value]);
 
   function commit() {
-    const name = draft.trim();
-    if (!name) {
+    const title = draft.trim();
+    if (!title) {
       setDraft(value);
       return;
     }
-    if (name !== value) onCommit(name);
+    if (title !== value) onCommit(title);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -68,15 +63,6 @@ function TitleInput({
   );
 }
 
-function AdvancedButton({ onClick }: { onClick?: () => void }) {
-  if (!onClick) return null;
-  return (
-    <button type="button" onClick={onClick} className="text-xs text-accent hover:underline shrink-0">
-      Advanced…
-    </button>
-  );
-}
-
 /** Stops a wrapping row's click/keyboard handlers from firing on edits made here. */
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
@@ -87,21 +73,31 @@ const ROUTINE_CHOICES: { value: Routine | typeof AUTO; label: string }[] = [
   ...ROUTINE_OPTIONS,
 ];
 
-/** A habit's colour swatch: click to pick from the palette. */
-function ColorSwatch({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
+/** The seed's colour swatch: click to pick a key, or Auto to follow its last tag. */
+function ColorSwatch({
+  value,
+  resolved,
+  onChange,
+}: {
+  value: ColorKey | null;
+  resolved: ColorKey;
+  onChange: (key: ColorKey | null) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <ColorPopover
       open={open}
       onOpenChange={setOpen}
       value={value}
-      onChange={(hex) => {
-        onChange(hex);
+      auto={resolved}
+      allowAuto
+      onChange={(key) => {
+        onChange(key);
         setOpen(false);
       }}
     >
       <button type="button" aria-label="Colour" title="Colour" onClick={() => setOpen((v) => !v)} className="icon-btn">
-        <Dot accent={value} size={12} />
+        <Dot color={resolved} size={12} />
       </button>
     </ColorPopover>
   );
@@ -109,59 +105,63 @@ function ColorSwatch({ value, onChange }: { value: string; onChange: (hex: strin
 
 /**
  * The light editor a list row, the search palette and quick-add show for a
- * single to-do: title, then a task's category or a habit's colour and
- * routine, star, due date. Every change is written straight through
- * `updateTodo`; "Advanced…" hands off to the full modal.
+ * single seed: title, colour, list, a habit's routine, star, and the day for
+ * anything that doesn't repeat. Every change is written straight through
+ * `updateSeed`; "Advanced…" hands off to the full modal.
  */
 export default function InlineEditor({
-  todo,
+  seed,
   autoFocusTitle,
   onAdvanced,
   className,
 }: {
-  todo: Todo;
+  seed: Seed;
   autoFocusTitle?: boolean;
   onAdvanced?: () => void;
   className?: string;
 }) {
-  const { updateTodo, categoriesFor } = useApp();
-  const repeating = isRepeating(todo);
-  const options = categoryOptions(categoriesFor('tasks'));
+  const { updateSeed, lists, colorOf } = useApp();
+  const listOptions = [
+    { value: '', label: GENERAL },
+    ...[...lists].sort(bySort).map((l) => ({ value: l.id, label: l.name })),
+  ];
 
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)} onClick={stop} onKeyDown={stop}>
       <TitleInput
-        value={todo.name}
-        onCommit={(name) => updateTodo(todo.id, { name })}
+        value={seed.title}
+        onCommit={(title) => updateSeed(seed.id, { title })}
         autoFocus={autoFocusTitle}
         label="Title"
       />
-      {repeating ? (
-        <>
-          <ColorSwatch value={todo.colorKey} onChange={(colorKey) => updateTodo(todo.id, { colorKey })} />
-          <Select
-            options={ROUTINE_CHOICES}
-            value={todo.routine || AUTO}
-            onChange={(routine) => updateTodo(todo.id, { routine: routine === AUTO ? '' : routine })}
-            className="w-auto"
-          />
-        </>
-      ) : (
+      <ColorSwatch value={seed.color} resolved={colorOf(seed)} onChange={(color) => updateSeed(seed.id, { color })} />
+      <Select
+        options={listOptions}
+        value={listOptions.some((o) => o.value === seed.list) ? seed.list : ''}
+        onChange={(list) => updateSeed(seed.id, { list })}
+        className="w-auto"
+      />
+      {isHabit(seed) && (
         <Select
-          options={options}
-          value={options.some((o) => o.value === todo.category) ? todo.category : ''}
-          onChange={(category) => updateTodo(todo.id, { category })}
+          options={ROUTINE_CHOICES}
+          value={seed.routine || AUTO}
+          onChange={(routine) => updateSeed(seed.id, { routine: routine === AUTO ? '' : routine })}
           className="w-auto"
         />
       )}
-      <StarButton important={todo.important} onToggle={() => updateTodo(todo.id, { important: !todo.important })} />
-      {!repeating && (
+      <StarButton important={seed.important} onToggle={() => updateSeed(seed.id, { important: !seed.important })} />
+      {!isRepeating(seed) && (
         <DateField
-          value={todo.dueDate ?? ''}
-          onChange={(dueDate) => updateTodo(todo.id, { dueDate: dueDate || null })}
-          allowEmpty
-          placeholder="No due date"
-          aria-label="Due date"
+          value={seed.date ?? ''}
+          onChange={(date) => {
+            // Keep a span's length when its start moves; a to-do may lose its date altogether.
+            const next = date || null;
+            const endDate = next && seed.date && seed.endDate ? movedEnd(seed.date, next, seed.endDate) : null;
+            updateSeed(seed.id, { date: next, endDate });
+          }}
+          allowEmpty={!!seed.track}
+          placeholder="No date"
+          aria-label="Date"
           className="w-[9rem]"
         />
       )}
@@ -170,45 +170,11 @@ export default function InlineEditor({
   );
 }
 
-/** The event counterpart: title, category, start day. */
-export function InlineEventEditor({
-  event,
-  autoFocusTitle,
-  onAdvanced,
-  className,
-}: {
-  event: CalendarEvent;
-  autoFocusTitle?: boolean;
-  onAdvanced?: () => void;
-  className?: string;
-}) {
-  const { updateEvent, categoriesFor } = useApp();
-  const options = categoryOptions(categoriesFor('calendar'));
-
+function AdvancedButton({ onClick }: { onClick?: () => void }) {
+  if (!onClick) return null;
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)} onClick={stop} onKeyDown={stop}>
-      <TitleInput
-        value={event.title}
-        onCommit={(title) => updateEvent(event.id, { title })}
-        autoFocus={autoFocusTitle}
-        label="Title"
-      />
-      <Select
-        options={options}
-        value={options.some((o) => o.value === event.category) ? event.category : ''}
-        onChange={(category) => updateEvent(event.id, { category })}
-        className="w-auto"
-      />
-      <DateField
-        value={event.startDate}
-        onChange={(startDate) => {
-          // Keep the span's length when the start moves.
-          updateEvent(event.id, { startDate, endDate: movedEnd(event.startDate, startDate, event.endDate) });
-        }}
-        aria-label="Start date"
-        className="w-[9rem]"
-      />
-      <AdvancedButton onClick={onAdvanced} />
-    </div>
+    <button type="button" onClick={onClick} className="text-xs text-accent hover:underline shrink-0">
+      Advanced…
+    </button>
   );
 }

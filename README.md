@@ -17,11 +17,13 @@ it, and no data leaves the machine unless you set sync up yourself.
 ## What's in it
 
 - **Calendar** — month, week and day views, built as a custom grid rather than a calendar
-  library. Multi-day events render as lanes across the month; the phone grid is swipeable.
-- **To-dos, habits and chores** — one unified model, distinguished only by their schedule.
-  A one-off is a task, a fixed cadence is a habit, and "every N days from when I last did it"
-  is a chore. Free-text categories, an importance flag, streaks and quotas.
-- **Read-only sharing** — expose your calendar and/or to-dos to another account, one-way.
+  library. Multi-day seeds render as lanes across the month; the phone grid is swipeable.
+- **One entity, "seeds"** — events, to-dos and habits are one row with two switches: *doable*
+  (can be ticked off) and *repeating*. A dated to-do sits on the calendar with a checkbox; a
+  repeating doable one is a habit (fixed cadence, "every N days from when I last did it", or a
+  weekly/monthly quota) with streaks. Lists are folders, tags carry a colour and an icon, and a
+  seed paints from its own colour, else its last tag's.
+- **Read-only sharing** — expose everything to another account, one-way.
 - **Two themes** — light and dark, with everything driven by design tokens.
 - **Reminders**, first-day-of-week, ICS import, and an offline-capable Android build.
 
@@ -134,10 +136,11 @@ albas-sync: opaque row store               sync-server/
 
 - `src/context/` — `SettingsContext`, `UiContext`, `DataContext` composed behind `useApp()` (or the
   narrow `useSettings`/`useUi`/`useData`); `appearance.ts` stamps theme/font/layout on `<html>`,
-  `seedData.ts` is the first-launch demo data. `persistence.ts` chooses SQLite (Tauri) or a
+  `seedLogic.ts` is the one recurrence/streak/label engine. `persistence.ts` chooses SQLite (Tauri) or a
   `localStorage` blob (`bun run dev`); `ipc.ts` is the only Tauri `invoke` surface.
-- `src/components/` — `calendar/` (month/week/day views, hour grid), `todo/`, `forms/` (todo/event
-  forms, `shared.tsx` primitives), `addModal/` (create/edit modals over a field `catalog.ts`),
+- `src/components/` — `calendar/` (month/week/day views, hour grid), `todo/`, `habits/`, `forms/`
+  (`shared.tsx` primitives, repeat/date fields), `addModal/` (the one create/edit modal over `catalog.ts`),
+  `sidebar/` (lists and tags with visibility toggles),
   `settings/` (one file per card), `auth/` (password form, browser handoff, QR), `ui/` (small
   primitives, no barrel).
 - `src/authMethods/` — password, passkey, TOTP cards; `registry.ts` lists them. `shared/authRules.ts`
@@ -231,12 +234,12 @@ source of truth that silently drifts from what is actually deployed.
 - To-do reminders fire at the to-do's `time` (09:00 when unset) on a due day, on the app's five-minute
   poll — so up to five minutes late. The habits route is unpersisted (`ActiveView` has no name for it).
 - Settings' display name is read-only.
-- `CalendarEvent` has no `location`; the modal stores it as a `Location: …` first paragraph of the
-  description and `splitLocation()` reads it back on edit. Categories seed only on a fresh,
-  signed-out install.
+- `Seed` has no `location`; the modal stores it as a `Location: …` first paragraph of the notes
+  and `splitLocation()` reads it back on edit. Starter lists seed only on a fresh, signed-out install.
 - Push 2FA is wanted but unbuilt (device registration, a push channel, pending state).
-- Linking an existing account to Google needs an authenticated Settings action. Habits stats were
-  removed pending a rework.
+- Linking an existing account to Google needs an authenticated Settings action.
+- The v10 migration copies the old tables into `seeds`/`done`/`lists`/`tags` and leaves them in place;
+  every device must move to v10 together (an older build parks its pull watermark on the new tables).
 - Server limits: unbounded tombstones, in-memory ceremony maps (`passkey::Pending`,
   `google::Pending`; `app_sessions` is capped at 1000), a single `Mutex<Connection>`.
 - Direction: local-only stays free and complete offline; sync is the paid part. Payloads are

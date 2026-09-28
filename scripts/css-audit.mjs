@@ -22,9 +22,10 @@
  *     (`text-amber-400`), `white`/`black`, stock shadows (`shadow-2xl`) and
  *     raw tokens (`text-[var(--t-ink)]`, which bypass `@theme` and
  *     tailwind-merge) are flagged too: the design is tokens only.
- * (c) `src/colors.ts` CATEGORY_ACCENTS must equal the `--t-cat-*` values on
- *     `:root`, and no `#hex` / `rgb()` / `hsl()` literal may appear in `src/**`
- *     TSX/TS outside the allowlist below.
+ * (c) Every `ColorKey` in `src/colors.ts` COLOR_KEYS has its `--t-c-<key>`,
+ *     `-tint`, `-line` and `-ink` tokens on `:root` and on `[data-theme="dark"]`
+ *     plus a `--color-c-*` bridge in `@theme inline`, and no `#hex` / `rgb()` /
+ *     `hsl()` literal may appear in `src/**` TSX/TS outside the allowlist below.
  * (d) Phone layout is `max-md:` only: `src/App.css` must contain no
  *     `@media (max-width …)` block, `useMedia.ts`'s MOBILE_QUERY must be the
  *     768px that Tailwind's `md` (48rem) breakpoint means, and no TSX may use
@@ -48,7 +49,7 @@ const args = new Set(process.argv.slice(2));
 const only = (flag) => args.size === 0 || args.has(flag);
 
 const HEX_ALLOWLIST = [
-  'src/colors.ts', // the TS mirror of :root (asserted by (c))
+  'src/colors.ts', // the theme-accent swatches (PALETTE_COMPACT)
   'src/components/forms/shared.tsx', // the colour wheel's conic-gradient
   'src/appearance.ts', // pre-CSS surface fallback in applyAppearance
   'src/components/Logo.tsx', // brand art: the gradient stops and the white glyph are the logo, not UI
@@ -298,31 +299,36 @@ if (only('--utilities')) {
 
 /* ── (c) colour source of truth ─────────────────────────────────────────── */
 if (only('--tokens')) {
-  const rootBlock = css.match(/^:root\s*\{([\s\S]*?)^\}/m)?.[1] ?? '';
-  const rootVars = Object.fromEntries(
-    [...rootBlock.matchAll(/^\s*--([a-z0-9-]+)\s*:\s*([^;]+);/gm)].map((m) => [m[1], m[2].trim()]),
-  );
   const colors = readFileSync(join(ROOT, 'src/colors.ts'), 'utf8');
-  const accents = colors.match(/CATEGORY_ACCENTS = \{([\s\S]*?)\n\}/)?.[1] ?? '';
-  let mismatches = 0;
-  for (const m of accents.matchAll(
-    /^\s*(\w+):\s*\{\s*hex:\s*'(#[0-9a-f]{6})',\s*tint:\s*'(#[0-9a-f]{6})',\s*line:\s*'(#[0-9a-f]{6})',\s*ink:\s*'(#[0-9a-f]{6})'/gm,
-  )) {
-    const [, name, hex, tint, line, ink] = m;
-    const want = {
-      [`t-cat-${name}`]: hex,
-      [`t-cat-${name}-tint`]: tint,
-      [`t-cat-${name}-line`]: line,
-      [`t-cat-${name}-ink`]: ink,
-    };
-    for (const [k, v] of Object.entries(want)) {
-      if ((rootVars[k] ?? '').toLowerCase() !== v.toLowerCase()) {
-        mismatches++;
-        fail(`colors.ts ${name} vs :root --${k}: ${v} ≠ ${rootVars[k] ?? '(missing)'}`);
+  const keys = [...(colors.match(/COLOR_KEYS: ColorKey\[\] = \[([^\]]*)\]/)?.[1] ?? '').matchAll(/'([a-z-]+)'/g)].map(
+    (m) => m[1],
+  );
+  const body = (selector) => css.match(new RegExp(`^${selector}\\s*\\{([\\s\\S]*?)^\\}`, 'm'))?.[1] ?? '';
+  const themes = [
+    [':root', body(':root')],
+    ["[data-theme='dark']", body(`\\[data-theme="dark"\\]`)],
+  ];
+  const bridge = css.match(/@theme inline \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  let missing = 0;
+  if (keys.length === 0) {
+    missing++;
+    fail('COLOR_KEYS not found in colors.ts');
+  }
+  for (const key of keys) {
+    for (const suffix of ['', '-tint', '-line', '-ink']) {
+      for (const [label, vars] of themes) {
+        if (!vars.includes(`--t-c-${key}${suffix}:`)) {
+          missing++;
+          fail(`${label} lacks --t-c-${key}${suffix}`);
+        }
+      }
+      if (!bridge.includes(`--color-c-${key}${suffix}:`)) {
+        missing++;
+        fail(`@theme inline lacks --color-c-${key}${suffix}`);
       }
     }
   }
-  if (!mismatches) console.log('✓ colors.ts CATEGORY_ACCENTS matches :root --t-cat-*');
+  if (!missing) console.log(`✓ every colour key has its tokens in both themes (${keys.length} keys)`);
 
   const hexHits = [];
   for (const s of sources) {

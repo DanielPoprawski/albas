@@ -2,42 +2,42 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from './ui/icon';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
-import { nextColor } from '../categoryLogic';
 import { buildCreate } from '../createItem';
-import InlineEditor, { InlineEventEditor } from './InlineEditor';
+import InlineEditor from './InlineEditor';
 import { fmt } from '../dates';
-import { isRepeating } from '../todoLogic';
 import { parseWhen, stripMatch } from '../nlDate';
-import type { AddType } from '../types';
 import AddModal from './AddModal';
 
-const PLACEHOLDER: Record<AddType, string> = {
+/** The surface the field sits on — a preset of defaults, not a type of its own. */
+type Kind = 'event' | 'task' | 'habit';
+
+const PLACEHOLDER: Record<Kind, string> = {
   event: 'New event… ("dentist tue 3pm", "trip sun to thu")',
   task: 'New task… ("call mom tomorrow")',
   habit: 'New habit…',
 };
 
 /**
- * The one-line way to add something: type a name (with a date phrase, if
+ * The one-line way to add something: type a title (with a date phrase, if
  * any) and press Enter. This is the create control on every list surface,
  * phone and desktop alike — there is no floating "+". The trailing icon
  * opens the full modal with whatever was typed already in the title, for
  * the fields a line can't carry (reminders, repeat rules). What was just
- * added stays open in an inline editor under the field — category, star,
+ * added stays open in an inline editor under the field — list, colour, star,
  * date — until Escape, a click elsewhere, or the next add.
  *
  * An event with a parsed time is an hour long unless a range was given; one
  * without a time is all-day, so "trip sun to thu" lands as a four-day bar.
  */
 export default function QuickAddField({
-  type,
-  defaultCategory,
+  kind,
+  defaultList,
   className,
   variant = 'field',
 }: {
-  type: AddType;
-  /** Pre-assign a category id (e.g. a category's own header). */
-  defaultCategory?: string;
+  kind: Kind;
+  /** Pre-assign a list id (e.g. a list's own header). */
+  defaultList?: string;
   className?: string;
   /**
    * `field` is the bordered input box. `row` restyles the same control as the
@@ -46,32 +46,14 @@ export default function QuickAddField({
    */
   variant?: 'field' | 'row';
 }) {
-  const { addEvent, addTodo, selectedDate, todos, events } = useApp();
+  const { addSeed, selectedDate, seeds } = useApp();
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
   const [lastId, setLastId] = useState<string | null>(null);
-  // `addTodo`/`addEvent` mint the id themselves, so the row just created is
-  // found by name once it lands in state (appended last, so the final match).
-  const [pendingName, setPendingName] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (pendingName === null) return;
-    const list: { id: string; name: string }[] =
-      type === 'event' ? events.map((e) => ({ id: e.id, name: e.title })) : todos;
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i].name === pendingName) {
-        setLastId(list[i].id);
-        setPendingName(null);
-        return;
-      }
-    }
-  }, [pendingName, type, events, todos]);
-
-  // The item just created, looked up live so the editor reflects its edits.
-  const lastTodo = lastId ? todos.find((t) => t.id === lastId) : undefined;
-  const lastEvent = lastId && !lastTodo ? events.find((e) => e.id === lastId) : undefined;
-  const editing = lastTodo ?? lastEvent;
+  // The seed just created, looked up live so the editor reflects its edits.
+  const editing = lastId ? seeds.find((s) => s.id === lastId) : undefined;
 
   useEffect(() => {
     if (!editing) return;
@@ -82,6 +64,9 @@ export default function QuickAddField({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [editing]);
 
+  const doable = kind !== 'event';
+  const repeating = kind === 'habit';
+
   function submit() {
     const raw = text.trim();
     if (!raw) return;
@@ -89,22 +74,21 @@ export default function QuickAddField({
     const stripped = when ? stripMatch(raw, when.matched) : raw;
     const title = stripped || raw;
     const today = fmt(new Date());
-    const startDate = when?.start.date ?? (type === 'event' ? (selectedDate ?? today) : today);
-    const payload = buildCreate(type, title, {
-      startDate,
-      startTime: when?.start.time ?? null,
-      endDate: when?.end?.date,
-      endTime: when?.end?.time ?? null,
-      allDay: type === 'event' && !when?.start.time,
-      dueDate: type === 'task' ? (when?.start.date ?? null) : startDate,
-      category: defaultCategory,
-      // A new habit takes the first palette hue no habit uses yet.
-      colorKey: type === 'habit' ? nextColor(todos.filter(isRepeating)) : undefined,
-    });
-    if (payload.kind === 'event') addEvent(payload.event);
-    else addTodo(payload.todo);
-    setLastId(null);
-    setPendingName(payload.kind === 'event' ? payload.event.title : payload.todo.name);
+    // An event lands on the selected day; a to-do stays undated unless a
+    // phrase dated it; a habit anchors on today.
+    const date = when?.start.date ?? (kind === 'event' ? (selectedDate ?? today) : kind === 'habit' ? today : null);
+    const created = addSeed(
+      buildCreate(title, {
+        doable,
+        date,
+        time: when?.start.time ?? null,
+        endDate: when?.end?.date,
+        endTime: when?.end?.time ?? null,
+        repeat: repeating ? { type: 'every', n: 1, unit: 'day' } : undefined,
+        list: defaultList,
+      }),
+    );
+    setLastId(created.id);
     setText('');
   }
 
@@ -146,8 +130,8 @@ export default function QuickAddField({
               submit();
             }
           }}
-          placeholder={PLACEHOLDER[type]}
-          aria-label={PLACEHOLDER[type].split('…')[0]}
+          placeholder={PLACEHOLDER[kind]}
+          aria-label={PLACEHOLDER[kind].split('…')[0]}
           enterKeyHint="done"
           autoComplete="off"
           className="flex-1 min-w-0 bg-transparent border-0 text-ui text-ink placeholder:text-ink-muted"
@@ -167,16 +151,16 @@ export default function QuickAddField({
         </button>
         {open && (
           <AddModal
-            defaultType={type}
+            defaultDoable={doable}
+            defaultRepeating={repeating}
             defaultTitle={text}
-            defaultCategory={defaultCategory}
+            defaultList={defaultList}
             onSubmit={() => setText('')}
             onClose={() => setOpen(false)}
           />
         )}
       </div>
-      {lastTodo && <InlineEditor todo={lastTodo} onAdvanced={() => setOpen(true)} className="px-3 py-2" />}
-      {lastEvent && <InlineEventEditor event={lastEvent} onAdvanced={() => setOpen(true)} className="px-3 py-2" />}
+      {editing && <InlineEditor seed={editing} onAdvanced={() => setOpen(true)} className="px-3 py-2" />}
     </div>
   );
 }

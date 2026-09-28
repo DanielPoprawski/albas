@@ -1,35 +1,38 @@
 import { useApp } from '../../context/AppContext';
 import { fmt, weekOf } from '../../dates';
-import { byHabitOrder, isRepeating, repeatLabel, statusLabel } from '../../todoLogic';
-import { colorHex } from '../../colors';
+import { byHabitOrder, isHabit, repeatLabel, statusLabel } from '../../seedLogic';
+import { COLOR_CLASSES } from '../../colors';
+import { cn } from '@/lib/utils';
 import InlineEditor from '../InlineEditor';
 import HabitStrip from '../habits/HabitStrip';
 import { cellsFor, groupHabits } from '../habits/habitModel';
+import { Icon } from '../ui/icon';
 import { SectionHeading } from '../ui/section-heading';
 import { useInlineEdit } from '../useInlineEdit';
-import type { Todo } from '../../types';
+import type { Seed } from '../../types';
 import { useIsCoarsePointer } from '../../useMedia';
 
 /**
- * Repeating to-do: name + status, then the week strip. The name opens the inline editor (desktop) or the
+ * Repeating to-do: title + status, then the week strip. The title opens the inline editor (desktop) or the
  * modal (touch).
  */
 function RepeatingRow({
-  todo,
+  seed,
   onEdit,
   expanded,
   onToggleExpand,
 }: {
-  todo: Todo;
-  onEdit: (t: Todo) => void;
+  seed: Seed;
+  onEdit: (s: Seed) => void;
   expanded: boolean;
   onToggleExpand: () => void;
 }) {
-  const { firstDayOfWeek } = useApp();
+  const { firstDayOfWeek, colorOf, iconOf } = useApp();
   const coarse = useIsCoarsePointer();
-  const hex = colorHex(todo.colorKey);
+  const color = colorOf(seed);
+  const icon = iconOf(seed);
   const today = fmt(new Date());
-  const cells = cellsFor(todo, weekOf(new Date(), firstDayOfWeek), firstDayOfWeek, today);
+  const cells = cellsFor(seed, weekOf(new Date(), firstDayOfWeek), firstDayOfWeek, today);
 
   return (
     <div className="group">
@@ -37,46 +40,48 @@ function RepeatingRow({
         <button
           type="button"
           aria-expanded={expanded}
-          onClick={() => (coarse ? onEdit(todo) : onToggleExpand())}
-          className="micro-label truncate text-left min-w-0 hover:underline"
-          // dynamic: the habit's own colour
-          style={{ color: hex }}
-          title={repeatLabel(todo.schedule, firstDayOfWeek)}
+          onClick={() => (coarse ? onEdit(seed) : onToggleExpand())}
+          className={cn(
+            'micro-label flex items-center gap-1 truncate text-left min-w-0 hover:underline',
+            COLOR_CLASSES[color].text,
+          )}
+          title={repeatLabel(seed.repeat, firstDayOfWeek)}
         >
-          {todo.name}
+          {icon && <Icon name={icon} size="0.75rem" />}
+          {seed.title}
         </button>
-        <span className="text-xs text-ink-muted ml-auto flex-shrink-0">{statusLabel(todo, today, firstDayOfWeek)}</span>
+        <span className="text-xs text-ink-muted ml-auto flex-shrink-0">{statusLabel(seed, today, firstDayOfWeek)}</span>
       </div>
       {expanded && !coarse && (
-        <InlineEditor todo={todo} autoFocusTitle onAdvanced={() => onEdit(todo)} className="mb-xs" />
+        <InlineEditor seed={seed} autoFocusTitle onAdvanced={() => onEdit(seed)} className="mb-xs" />
       )}
-      <HabitStrip todo={todo} cells={cells} color={hex} today={today} cellClass="size-6" spread />
+      <HabitStrip seed={seed} cells={cells} color={color} today={today} cellClass="size-6" spread />
     </div>
   );
 }
 
 /** Repeating to-dos (habits and chores) with their week strips. */
-export default function HabitsSection({ onEdit }: { onEdit: (t: Todo) => void }) {
-  const { todos, habitsLayout } = useApp();
+export default function HabitsSection({ onEdit }: { onEdit: (s: Seed) => void }) {
+  const { seeds, habitsLayout, isVisible } = useApp();
   const { expandedId, toggleExpanded } = useInlineEdit();
 
-  const habits = todos.filter(isRepeating).sort(byHabitOrder);
+  const habits = seeds.filter((s) => isHabit(s) && isVisible(s)).sort(byHabitOrder);
   if (habits.length === 0) return null;
 
   // The Settings layout applies here too; the phone just can't drag.
   return (
     <div className="mb-md">
       <SectionHeading className="mb-md font-bold">Habits</SectionHeading>
-      {groupHabits(habits, habitsLayout).map(({ key, label, todos: rows }) => (
+      {groupHabits(habits, habitsLayout).map(({ key, label, seeds: rows }) => (
         <div key={key} className="space-y-md mb-md">
           {label !== '' && <SectionHeading className="text-xs">{label}</SectionHeading>}
-          {rows.map((todo) => (
+          {rows.map((seed) => (
             <RepeatingRow
-              key={todo.id}
-              todo={todo}
+              key={seed.id}
+              seed={seed}
               onEdit={onEdit}
-              expanded={expandedId === todo.id}
-              onToggleExpand={() => toggleExpanded(todo.id)}
+              expanded={expandedId === seed.id}
+              onToggleExpand={() => toggleExpanded(seed.id)}
             />
           ))}
         </div>
