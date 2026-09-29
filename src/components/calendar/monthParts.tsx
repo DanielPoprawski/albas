@@ -25,18 +25,29 @@ const CELL_VARIANTS = {
     /* The time prefix and the tag icon only fit at desktop widths. */
     time: true,
     more: (n: number) => `+${n} more`,
-    morePad: 'pl-xs',
+    moreClass: 'pl-xs',
+    /* The spanning bars: `top` clears the day-number row; the ends inset from the cell borders. */
+    barTop: 'top-[2.125rem]',
+    bar: 'font-bold px-xs',
+    barStart: 'ml-1',
+    barEnd: 'mr-1',
   },
   mobile: {
-    cell: 'px-px py-0.5 transition-colors hover:bg-accent-tint',
+    /* No side padding: the chips run border to border for every letter of title. */
+    cell: 'pt-0.5 transition-colors hover:bg-accent-tint',
     liveBg: '',
     dayRow: '',
     dayNumber: 'text-xs px-0.5',
     chips: 'gap-px mt-px',
-    chip: 'text-xs font-extralight px-px overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop',
+    chip: 'text-xs font-light px-px overflow-hidden whitespace-nowrap hover:opacity-80 hover:shadow-pop',
     time: false,
     more: (n: number) => `+${n}`,
-    morePad: 'pl-0.5',
+    /* Beside the day number, so the overflow count doesn't cost a chip's line. */
+    moreClass: 'absolute top-0.5 right-0.5',
+    barTop: 'top-5',
+    bar: 'font-normal px-0.5',
+    barStart: 'ml-px',
+    barEnd: 'mr-px',
   },
 } as const;
 
@@ -162,7 +173,10 @@ export function MonthCell({
               e.stopPropagation();
               onShowDay(cell.dateStr);
             }}
-            className={cn('cursor-pointer text-left text-xs text-ink-muted hover:text-ink hover:underline', v.morePad)}
+            className={cn(
+              'cursor-pointer text-left text-xs text-ink-muted hover:text-ink hover:underline',
+              v.moreClass,
+            )}
           >
             {v.more(cell.hiddenCount)}
           </button>
@@ -236,7 +250,8 @@ export function PeriodTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occu
 
 /**
  * All-day/multi-day bars, absolutely positioned over the week's cells.
- * `top` clears the day-number row, which is shorter under the phone's padding.
+ * `variant` places them below the day-number row, which is shorter on the
+ * phone, and sets their weight.
  *
  * Bars span multiple columns, so a single segment can straddle both dimmed
  * and live days — splitting one visually would look broken, so a segment
@@ -246,18 +261,18 @@ export function PeriodTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occu
  */
 export function BarsOverlay({
   week,
-  topClass,
+  variant,
   onEdit,
 }: {
   week: WeekRow;
-  /** A `top-*` utility clearing the layout's day-number row. */
-  topClass: string;
+  variant: MonthCellVariant;
   onEdit: (o: Occurrence) => void;
 }) {
   const { colorOf } = useApp();
+  const v = CELL_VARIANTS[variant];
   if (week.barLanes.length === 0) return null;
   return (
-    <div className={`absolute left-0 right-0 grid grid-cols-7 auto-rows-min pointer-events-none ${topClass}`}>
+    <div className={cn('absolute left-0 right-0 grid grid-cols-7 auto-rows-min pointer-events-none', v.barTop)}>
       {week.barLanes.map(({ seg, lane }) => {
         // Multiplied, not a separate `opacity-50` class — an inline `style`
         // always wins over a class, so a shared seed's own opacity would
@@ -272,10 +287,11 @@ export function BarsOverlay({
             }}
             title={sharedTitleAttr(seg.item.seed)}
             className={cn(
-              'pointer-events-auto cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
+              'pointer-events-auto cursor-pointer text-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
+              v.bar,
               COLOR_CLASSES[colorOf(seg.item.seed)].bg,
-              seg.startsHere && 'ml-1',
-              seg.endsHere && 'mr-1',
+              seg.startsHere && v.barStart,
+              seg.endsHere && v.barEnd,
             )}
             // dynamic: grid placement, dimmed when shared or elapsed
             style={{

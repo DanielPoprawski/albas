@@ -2,7 +2,6 @@ import { type ReactNode, useId } from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { COLOR_CLASSES, COLOR_KEYS, COLOR_LABELS, DEFAULT_COLOR } from '../../colors';
 import type { ColorKey } from '../../types';
-import { useIsMobile } from '../../useMedia';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '../ui/checkbox';
 import { PopoverContent } from '../ui/popover';
@@ -46,8 +45,9 @@ export function Select<T extends string>({
 
 /**
  * Colour picker: the twelve `ColorKey`s, plus an "Auto" cell when the caller
- * allows null (a seed inheriting its last tag's colour). On a phone the cells
- * wrap onto two rows; on desktop they sit in one.
+ * allows null (a seed inheriting its last tag's colour). Two rows of seven
+ * fixed-size cells — a finger's width on a phone — since a popover sized to
+ * its content gives unsized grid tracks nothing to stretch into.
  */
 export function ColorPicker({
   value,
@@ -62,7 +62,6 @@ export function ColorPicker({
   /** What Auto currently resolves to, drawn in the Auto cell. */
   auto?: ColorKey;
 }) {
-  const isMobile = useIsMobile();
   const cell = (key: ColorKey | null, label: string, paint: ColorKey) => (
     <button
       key={key ?? 'auto'}
@@ -71,7 +70,7 @@ export function ColorPicker({
       aria-pressed={value === key}
       onClick={() => onChange(key)}
       className={cn(
-        'aspect-square border transition-all',
+        'size-8 max-md:size-10 border transition-all',
         COLOR_CLASSES[paint].bg,
         key === null ? 'border-dashed border-line-strong' : COLOR_CLASSES[paint].line,
         value === key
@@ -82,7 +81,7 @@ export function ColorPicker({
   );
 
   return (
-    <div className={cn('grid items-center', isMobile ? 'grid-cols-7 gap-xs' : 'grid-cols-13 gap-1 max-w-[22rem]')}>
+    <div className="grid w-max grid-cols-7 items-center gap-1.5">
       {allowAuto && cell(null, 'Auto', auto ?? DEFAULT_COLOR)}
       {COLOR_KEYS.map((key) => cell(key, COLOR_LABELS[key], key))}
     </div>

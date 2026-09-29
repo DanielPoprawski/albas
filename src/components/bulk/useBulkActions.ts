@@ -21,7 +21,7 @@ export function plural(n: number, word: string): string {
  * the caller), never a snapshot.
  */
 export function useBulkActions(selectedItems: SearchItem[]) {
-  const { updateSeed, deleteSeed, setDone, listById } = useApp();
+  const { updateSeed, deleteSeed, setDone, listById, tagById } = useApp();
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,6 +37,24 @@ export function useBulkActions(selectedItems: SearchItem[]) {
       setNotice(`Moved ${plural(selectedItems.length, 'item')} to ${name}`);
     },
     [selectedItems, updateSeed, listById],
+  );
+
+  /**
+   * Adds the tag to every selected item that lacks it (last, so it takes over
+   * colour and icon) — or, when all of them already carry it, removes it.
+   */
+  const applyTag = useCallback(
+    (tagId: string) => {
+      const remove = selectedItems.every((i) => i.seed.tags.includes(tagId));
+      for (const { seed } of selectedItems) {
+        if (remove) updateSeed(seed.id, { tags: seed.tags.filter((t) => t !== tagId) });
+        else if (!seed.tags.includes(tagId)) updateSeed(seed.id, { tags: [...seed.tags, tagId] });
+      }
+      const name = tagById(tagId)?.name ?? 'tag';
+      const n = plural(selectedItems.length, 'item');
+      setNotice(remove ? `Removed ${name} from ${n}` : `Added ${name} to ${n}`);
+    },
+    [selectedItems, updateSeed, tagById],
   );
 
   /** ±n days. Dated seeds move whole (series bounds and exceptions too); undated ones stay. */
@@ -122,6 +140,7 @@ export function useBulkActions(selectedItems: SearchItem[]) {
     notice,
     setNotice,
     applyList,
+    applyTag,
     applyShift,
     applyReminder,
     setImportant,

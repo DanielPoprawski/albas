@@ -4,11 +4,13 @@ import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
 import CalendarNav from './calendar/CalendarNav';
-import QuickAddField from './QuickAddField';
+import AddModal from './AddModal';
+import SearchPalette from './search/SearchPalette';
 import HabitsSection from './todo/HabitsSection';
 import TasksSection from './todo/TasksSection';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
+import { fmt } from '../dates';
 import { useInlineEdit } from './useInlineEdit';
 import type { Seed } from '../types';
 
@@ -17,6 +19,9 @@ const MOBILE_HEADER_BUTTON =
   'flex size-8 shrink-0 cursor-pointer items-center justify-center border-0 bg-subtle p-0 text-ink transition-all active:bg-line';
 
 type MobileTab = 'dashboard' | 'habits' | 'tasks';
+
+/** The search scope each tab opens on. */
+const SEARCH_SCOPE = { dashboard: 'calendar', habits: 'habits', tasks: 'todos' } as const;
 
 const TABS: { tab: MobileTab; label: string; icon: string }[] = [
   { tab: 'habits', label: 'Habits', icon: 'repeat' },
@@ -27,8 +32,8 @@ const TABS: { tab: MobileTab; label: string; icon: string }[] = [
 const TAB =
   'flex min-h-11 flex-1 cursor-pointer flex-col items-center justify-center gap-1 border-0 bg-transparent p-2 text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted transition-all active:bg-subtle';
 const SCREEN = 'flex w-full flex-col';
-/** A hairline of side padding, and room at the bottom for the tab bar. */
-const CONTENT = 'px-1 pt-1 pb-20';
+/** A hairline of side padding, and room at the bottom for the tab bar and the add button. */
+const CONTENT = 'px-1 pt-1 pb-32';
 
 /**
  * The phone's dashboard: a header, three tabbed screens (habits, the
@@ -45,26 +50,22 @@ export default function HomeView() {
   const { setActiveView } = useApp();
   const { setEditing, editModal } = useInlineEdit();
   const [currentTab, setCurrentTab] = useState<MobileTab>('dashboard');
+  const [adding, setAdding] = useState(false);
   const today = new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
 
   return (
     <div className="flex h-full w-full flex-col bg-page">
-      {/* Mobile Header: [calendar view] [date / tab name] [settings] */}
+      {/* Mobile Header: [calendar view] [date / tab name] [search, settings].
+          Both sides are two buttons wide so the title stays centred. */}
       <div className="z-10 flex h-10 shrink-0 items-center justify-between border-b border-line bg-surface px-2">
-        <div className="flex gap-2">
-          {currentTab === 'dashboard' ? (
-            <CalendarNav compact />
-          ) : (
-            // Keeps the title centred on the other tabs.
-            <div className={cn(MOBILE_HEADER_BUTTON, 'invisible')} aria-hidden="true" />
-          )}
-        </div>
+        <div className="flex w-18 gap-2">{currentTab === 'dashboard' && <CalendarNav compact />}</div>
         <div className="flex-1 text-center font-heading text-sm font-bold text-ink">
           {currentTab === 'dashboard' && today}
           {currentTab === 'habits' && 'Habits'}
           {currentTab === 'tasks' && 'Tasks'}
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-18 justify-end gap-2">
+          <SearchPalette scope={SEARCH_SCOPE[currentTab]} compact className={MOBILE_HEADER_BUTTON} />
           {/* The only route to Settings on a phone: the sidebar and bottom bar
               are `max-md:hidden`, and the tab row has no slot. */}
           <button
@@ -85,6 +86,18 @@ export default function HomeView() {
         {currentTab === 'tasks' && <TasksScreen setEditing={setEditing} />}
       </div>
 
+      {/* Adding on the list tabs; the dashboard adds by tapping a day. */}
+      {currentTab !== 'dashboard' && (
+        <button
+          type="button"
+          title={currentTab === 'habits' ? 'New habit' : 'New to-do'}
+          onClick={() => setAdding(true)}
+          className="fixed right-4 bottom-19 z-20 flex size-12 cursor-pointer items-center justify-center border-0 bg-accent text-on-accent shadow-pop active:bg-accent-hover"
+        >
+          <Icon name="add" size="1.25rem" />
+        </button>
+      )}
+
       {/* Bottom Tabs */}
       <div className="fixed bottom-0 left-0 z-20 flex h-15 w-full items-center justify-around gap-2 border-t border-line bg-surface">
         {TABS.map(({ tab, label, icon }) => (
@@ -102,6 +115,15 @@ export default function HomeView() {
       </div>
 
       {editModal}
+      {adding && (
+        // A habit starts today; a to-do starts undated, as the old quick-add did.
+        <AddModal
+          defaultDoable
+          defaultRepeating={currentTab === 'habits'}
+          defaultDate={currentTab === 'habits' ? fmt(new Date()) : ''}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </div>
   );
 }
@@ -125,7 +147,6 @@ function MobileCalendar() {
 function DashboardScreen({ setEditing }: { setEditing: (s: Seed | null) => void }) {
   return (
     <div className={SCREEN}>
-      <QuickAddField kind="event" className="mx-2 mt-2" />
       {/* Edge to edge: every pixel of side padding is a letter of an event
           title that doesn't fit in a cell. */}
       <div className="shrink-0 border-b border-line">
@@ -144,7 +165,6 @@ function HabitsScreen({ setEditing }: { setEditing: (s: Seed | null) => void }) 
   return (
     <div className={SCREEN}>
       <div className={CONTENT}>
-        <QuickAddField kind="habit" className="mb-3" />
         <HabitsSection onEdit={setEditing} />
       </div>
     </div>
@@ -156,7 +176,6 @@ function TasksScreen({ setEditing }: { setEditing: (s: Seed | null) => void }) {
   return (
     <div className={SCREEN}>
       <div className={CONTENT}>
-        <QuickAddField kind="task" className="mb-3" />
         <TasksSection onEdit={setEditing} />
       </div>
     </div>

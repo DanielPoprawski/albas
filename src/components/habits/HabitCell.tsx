@@ -5,10 +5,15 @@ import { cn } from '@/lib/utils';
 import type { HistoryCell } from './habitModel';
 
 /**
- * One day of a habit's history — a square painted in the habit's colour
- * when done, hollow otherwise, faded and inert for days still to come. Shared
- * by the row's 28-day strip and the drawer's 16-week heatmap, which differ
- * only in size (`className`).
+ * One day of a habit's history. Shared by the strips and the drawer's 16-week
+ * heatmap, which differ only in size (`className`). Six states:
+ * - done: filled in the habit's colour; partly counted: its tint and line
+ * - due today, still open: hollow in the habit's line
+ * - due on a past day and missed (late): the danger tint — except for a
+ *   quota, whose open days aren't misses until the period is over
+ * - due later: hollow, faded and inert
+ * - a day the schedule never asks for: a small grey square, still clickable
+ *   on past days so an off-schedule completion can be recorded
  */
 export default function HabitCell({
   cell,
@@ -25,9 +30,9 @@ export default function HabitCell({
 }) {
   const value = seed.track?.kind === 'count' ? valueOn(seed, cell.dateStr) : 0;
   const partial = !cell.done && value > 0;
-  // A past day the schedule never asked for: dimmed, no "missed" fill, still
-  // clickable so an off-schedule completion can be recorded.
-  const offDay = !cell.due && !cell.future && !cell.done && !partial;
+  const open = !cell.done && !partial;
+  const offDay = open && !cell.due;
+  const missed = open && cell.due && !cell.future && !cell.today && seed.repeat.type !== 'timesPer';
   const c = COLOR_CLASSES[color];
   return (
     <button
@@ -40,16 +45,18 @@ export default function HabitCell({
       title={
         cell.future
           ? cell.dateStr
-          : `${cell.dateStr}${cell.done ? ' — done' : partial ? ` — ${value}/${targetOf(seed)}` : ''}`
+          : `${cell.dateStr}${cell.done ? ' — done' : partial ? ` — ${value}/${targetOf(seed)}` : missed ? ' — missed' : ''}`
       }
-      aria-label={`${cell.dateStr}${cell.done ? ', done' : ''}`}
+      aria-label={`${cell.dateStr}${cell.done ? ', done' : missed ? ', missed' : ''}`}
       aria-pressed={cell.done}
       className={cn(
         'p-0 box-border border transition-transform duration-150 cursor-pointer disabled:cursor-default disabled:opacity-40',
         cell.done && `${c.bg} border-transparent`,
         partial && `${c.tint} ${c.line}`,
-        !cell.done && !partial && (cell.future || offDay ? 'bg-transparent border-line' : 'bg-subtle border-line'),
-        offDay && 'opacity-40',
+        offDay && 'scale-50 bg-line border-transparent',
+        missed && 'bg-danger-tint border-danger/50',
+        open && cell.due && cell.today && `bg-subtle ${c.line}`,
+        open && cell.due && !cell.today && !missed && 'bg-transparent border-line',
         className,
       )}
     />

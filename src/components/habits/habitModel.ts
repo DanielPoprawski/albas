@@ -16,6 +16,7 @@ export interface HistoryCell {
   due: boolean;
   /** Days after today are shown but not clickable. */
   future: boolean;
+  today: boolean;
 }
 
 export interface HabitData {
@@ -58,6 +59,7 @@ export function cellsFor(seed: Seed, dates: string[], firstDayOfWeek: FirstDayOf
     done: isDoneOn(seed, dateStr),
     due: isDueOn(seed, dateStr, firstDayOfWeek),
     future: dateStr > todayStr,
+    today: dateStr === todayStr,
   }));
 }
 

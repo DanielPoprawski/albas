@@ -516,18 +516,39 @@ export function byImportanceThenDue(a: Seed, b: Seed): number {
   return key !== 0 ? key : a.title.localeCompare(b.title);
 }
 
+/** How far ahead the dashboard looks: anything a week or more out is hidden. */
+const DASHBOARD_DAYS = 7;
+
 /**
  * What the dashboard's task panel shows: every one-off to-do that needs
  * attention today — undated (nothing to wait for), due today or overdue, or
- * starred — plus anything finished *today* so a tick doesn't vanish under the
- * pointer. A to-do completed on an earlier day is history and drops off.
+ * starred and due within the week — plus anything finished *today* so a tick
+ * doesn't vanish under the pointer. A to-do completed on an earlier day is
+ * history and drops off.
  */
 export function dashboardTasks(seeds: Seed[], todayStr: string): Seed[] {
+  const horizon = addDays(todayStr, DASHBOARD_DAYS);
   return seeds.filter((s) => {
     if (!isTask(s)) return false;
     const done = doneDate(s);
     if (done) return done === todayStr;
-    return !s.date || s.date <= todayStr || s.important;
+    return !s.date || s.date <= todayStr || (s.important && s.date < horizon);
+  });
+}
+
+/**
+ * The dashboard's habits: those due or done on some day from `from` (the
+ * strip's first day) to six days past today. A habit whose next due day is a
+ * week or more out has nothing to tick on a seven-day strip.
+ */
+export function dashboardHabits(seeds: Seed[], from: string, todayStr: string, firstDay: FirstDayOfWeek = 0): Seed[] {
+  const to = addDays(todayStr, DASHBOARD_DAYS - 1);
+  return seeds.filter((s) => {
+    if (!isHabit(s)) return false;
+    for (let day = from; day <= to; day = addDays(day, 1)) {
+      if (isDueOn(s, day, firstDay) || isDoneOn(s, day)) return true;
+    }
+    return false;
   });
 }
 

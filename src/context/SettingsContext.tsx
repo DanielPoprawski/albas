@@ -1,12 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   applyAppearance,
-  applyLayout,
   applyTheme,
   type FontChoice,
   type FontSizeChoice,
   readAppearance,
-  readLayout,
   readThemePref,
   resolveTheme,
   SYSTEM_DARK_QUERY,
@@ -91,7 +89,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const themePref = readThemePref(settings);
   const theme = resolveTheme(themePref, systemDark);
   const appearance = useMemo(() => readAppearance(settings), [settings.accent, settings.font, settings.fontSize]);
-  const layout = useMemo(() => readLayout(settings), [settings.__layout_sidebar_w, settings.__layout_right_w]);
 
   // The accent's derived shades depend on the theme, so any of the four
   // appearance keys re-derives all of them. Layout effects, not effects, so
@@ -101,9 +98,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     applyTheme(theme, themePref);
     applyAppearance(theme, appearance);
   }, [hydrated, theme, themePref, appearance]);
-  useLayoutEffect(() => {
-    if (hydrated) applyLayout(layout);
-  }, [hydrated, layout]);
 
   const hiddenOwners = useMemo<string[]>(() => {
     try {

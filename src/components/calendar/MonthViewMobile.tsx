@@ -63,8 +63,9 @@ export default function MonthViewMobile({ weeks, onEdit, onToggle, onDayClick, o
   const slide = useMonthSlide();
 
   return (
-    // full bleed — the grid meets both screen edges, so no rounding or border
-    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-surface" {...swipe}>
+    // full bleed — the grid meets both screen edges, so no rounding or border;
+    // condensed type fits more of each title in a narrow column
+    <div className="condensed flex-1 min-h-0 overflow-hidden flex flex-col bg-surface" {...swipe}>
       {/* Weekday headers. Outside the sliding element: they're identical every
           month, and animating them would just flicker. */}
       <div className="grid grid-cols-7 border-b flex-shrink-0 border-line bg-subtle">
@@ -106,7 +107,7 @@ export default function MonthViewMobile({ weeks, onEdit, onToggle, onDayClick, o
                 />
               ))}
 
-              <BarsOverlay week={week} topClass="top-5" onEdit={onEdit} />
+              <BarsOverlay week={week} variant="mobile" onEdit={onEdit} />
             </div>
           ))}
         </div>

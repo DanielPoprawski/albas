@@ -32,6 +32,16 @@
   font-display: swap;
 }
 
+/* The phone's month grid (`condensed`): a narrow face fits more of an event
+   title in a 3rem column. Variable weight, subset to Latin. */
+@font-face {
+  font-family: "Roboto Condensed";
+  src: url("/RobotoCondensed/RobotoCondensed-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* The serif option in Settings › Appearance. One weight only. */
 @font-face {
   font-family: "Slabo 27px";
@@ -78,6 +88,7 @@
      references them, and a `var()` on :root is never pruned. */
   --t-font-body: "Outfit", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --t-font-heading: "Sora", "Outfit", system-ui, -apple-system, sans-serif;
+  --t-font-condensed: "Roboto Condensed", sans-serif;
   /* Not bundled: named first so dropping a file into public/ is all it takes;
      the system mono renders until then (recovery codes, the export path). */
   --t-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -596,6 +607,13 @@
 /* The uppercase 0.75rem label above an input, a card's title row, or a
    sidebar section ("MENU", "CATEGORIES"). `tracking-wider` (0.05em) is the
    0.5px the design specifies at this font size. */
+/* Repoints the body stack for a whole subtree. A `font-*` utility can't: the
+   `*` rule in `@layer base` sets every element's own font-family, so nothing
+   inherits it — but each element reads `--t-font-body`, which does inherit. */
+@utility condensed {
+  --t-font-body: var(--t-font-condensed);
+}
+
 @utility micro-label {
   @apply text-xs font-bold uppercase tracking-wider text-ink-muted;
 }
@@ -843,13 +861,10 @@ html.qr-scanning #root {
  */
 @layer components {
   .sidebar {
-    /* Adjustable via a drag handle, persisted as `__layout_sidebar_w` and
-       applied by `applyLayout()` in appearance.ts; the fallback is this same
-       12.5rem for a device with nothing stored yet. */
-    width: var(--layout-sidebar-w, 12.5rem);
+    width: 12.5rem;
     flex-shrink: 0;
-    background: var(--t-surface);
-    border-right: 1px solid var(--t-border);
+    /* Set apart by the page tone rather than a border, like the right panel. */
+    background: var(--t-page);
     padding: 1.5rem 1rem;
     display: flex;
     flex-direction: column;

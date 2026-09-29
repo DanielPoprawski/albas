@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../ui/icon';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek, weekdayAt } from '../../dates';
@@ -16,47 +15,14 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** A desktop cell has room for two chips and a bottom-pinned stack. */
 export const PILL_CAP = 2;
 
-/**
- * A day cell wants to be 3 wide by 2 tall. Height is dictated by the window,
- * so the grid derives its own *width* from the height it was given and lets
- * whatever is beside it have the rest — rather than stretching to fill and
- * leaving the cells over-wide.
- */
-const CELL_ASPECT = 3 / 2;
-
 export default function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, onShowDay }: MonthLayoutProps) {
   const { firstDayOfWeek, currentMonth, setCurrentMonth, setSelectedDate, showRightPanel, toggleRightPanel } = useApp();
 
-  // Measure the rows area, not the whole sheet: the weekday header's height
-  // isn't part of any cell. Width never feeds back into height (that comes from
-  // the flex parent), so this settles in one pass.
-  const rowsRef = useRef<HTMLDivElement>(null);
-  const [rowsHeight, setRowsHeight] = useState(0);
-  useEffect(() => {
-    const el = rowsRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(([entry]) => setRowsHeight(entry.contentRect.height));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const rows = Math.max(weeks.length, 1);
-  // 0 until the first measurement lands; full width is the sane starting point
-  const width = rowsHeight > 0 ? (rowsHeight / rows) * CELL_ASPECT * 7 : undefined;
-
   const nav = { setCurrentMonth, setSelectedDate };
 
-  const reservedRight = showRightPanel ? ' + 0.5rem + var(--layout-right-w, 20rem)' : '';
-  const reserved = `var(--layout-sidebar-w, 12.5rem) + 1rem + 0.5rem${reservedRight}`;
-
   return (
-    <Card
-      // dynamic: width follows the ResizeObserver, see above
-      style={{ width, maxWidth: `calc(100vw - (${reserved}))` }}
-      // self-center: the width is aspect-derived, so any slack in the content
-      // slot splits evenly instead of piling up on the right.
-      className="flex-1 min-h-0 self-center overflow-hidden flex flex-col"
-    >
+    // Fills whatever the sidebars leave, so the cells take the window's shape.
+    <Card className="flex-1 min-h-0 overflow-hidden flex flex-col">
       {/* Calendar header: Today + month navigation on the left, search
           centred (adding is a click on a day — the "+ Add" button that used
           to sit here duplicated that). The third column toggles the companion panel
@@ -116,7 +82,7 @@ export default function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, 
       </div>
 
       {/* Week rows */}
-      <div ref={rowsRef} className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-hide">
         {weeks.map((week) => (
           <div key={week.key} className="flex-1 relative min-h-[5.75rem]">
             {/* Day cells */}
@@ -136,7 +102,7 @@ export default function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, 
               ))}
             </div>
 
-            <BarsOverlay week={week} topClass="top-[2.125rem]" onEdit={onEdit} />
+            <BarsOverlay week={week} variant="desktop" onEdit={onEdit} />
           </div>
         ))}
       </div>

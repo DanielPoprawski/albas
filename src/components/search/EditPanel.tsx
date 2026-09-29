@@ -6,6 +6,7 @@ import { REMINDER_CHOICES } from '../../reminders';
 import { kindLabel } from '../../seedLogic';
 import { BulkNotice, DeleteConfirm } from '../bulk/BulkControls';
 import { plural } from '../bulk/useBulkActions';
+import TagChips from './TagChips';
 import type { SearchState } from './useSearchState';
 
 const SECTION = 'micro-label';
@@ -15,9 +16,9 @@ const LIST_BTN = 'flex items-center gap-2 px-2 py-1 text-xs font-medium hover:bg
 
 /**
  * The right-hand column that appears once something is selected: what's
- * selected, and the edits that make sense in bulk — list, a date shift, a
- * reminder, deletion. One selected item also gets the door to the full
- * editor.
+ * selected, and the edits that make sense in bulk — list, tags, a date
+ * shift, a reminder, deletion. One selected item also gets the door to the
+ * full editor. On a phone it stacks under the results instead.
  */
 export default function EditPanel({ s }: { s: SearchState }) {
   const items = s.selectedItems;
@@ -35,7 +36,7 @@ export default function EditPanel({ s }: { s: SearchState }) {
         .join(' · ');
 
   return (
-    <aside className="flex w-[17.5rem] shrink-0 flex-col overflow-y-auto border-l border-line bg-surface-hover">
+    <aside className="flex w-[17.5rem] shrink-0 flex-col overflow-y-auto border-l border-line bg-surface-hover max-md:max-h-[55%] max-md:w-full max-md:border-t max-md:border-l-0">
       <div className="flex items-start justify-between gap-3 border-b border-line px-[0.875rem] pt-3 pb-2">
         <div className="min-w-0">
           <div className="truncate font-heading text-[0.8125rem] font-bold text-ink">
@@ -71,6 +72,18 @@ export default function EditPanel({ s }: { s: SearchState }) {
               {s.commonList === l.id && <Icon name="check" size="0.75rem" className="text-accent" />}
             </button>
           ))}
+        </section>
+
+        <section className="flex flex-col gap-1.5">
+          <h4 className={SECTION}>Tags</h4>
+          <TagChips
+            tags={s.tagOptions}
+            stateOf={(id) => {
+              const n = items.filter((i) => i.seed.tags.includes(id)).length;
+              return n === 0 ? 'off' : n === items.length ? 'on' : 'some';
+            }}
+            onToggle={s.applyTag}
+          />
         </section>
 
         <section className="flex flex-col gap-1.5">

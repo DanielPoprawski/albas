@@ -1,5 +1,9 @@
 import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { extendTailwindMerge } from 'tailwind-merge';
+
+// The @theme font sizes in App.css. Unregistered, tailwind-merge reads
+// `text-micro` as a colour and drops it whenever a `text-<colour>` follows.
+const twMerge = extendTailwindMerge({ extend: { theme: { text: ['micro', 'meta', 'ui', 'h1'] } } });
 
 /** Merge conditional class names, letting later Tailwind utilities win. */
 export function cn(...inputs: ClassValue[]) {

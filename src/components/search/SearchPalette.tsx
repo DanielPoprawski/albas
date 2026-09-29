@@ -7,7 +7,9 @@ import AddModal from '../AddModal';
 import EditPanel from './EditPanel';
 import PaletteResults from './PaletteResults';
 import PaletteTrigger, { KBD } from './PaletteTrigger';
-import type { SearchPage } from './types';
+import TagChips from './TagChips';
+import { COLOR_CLASSES } from '../../colors';
+import type { SearchItem, SearchPage } from './types';
 import { useSearchState } from './useSearchState';
 
 /** Palette width in rem: results alone, and with the edit panel beside them. */
@@ -24,11 +26,29 @@ const EDGE_REM = 1;
  * The overlay portals to `<body>`: every page header sits inside an
  * `overflow-hidden` card, which would clip anything positioned within it.
  */
-export default function SearchPalette({ scope, className }: { scope: SearchPage; className?: string }) {
-  const s = useSearchState(scope);
+export default function SearchPalette({
+  scope,
+  compact = false,
+  className,
+}: {
+  scope: SearchPage;
+  /** The phone header's icon button: a pick opens the item's editor, as there is no room for the edit panel. */
+  compact?: boolean;
+  className?: string;
+}) {
+  const base = useSearchState(scope);
+  const s = compact
+    ? {
+        ...base,
+        primaryAction: (item: SearchItem) => (item.selectable ? base.setEditing(item.seed) : base.primaryAction(item)),
+      }
+    : base;
   const trigger = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [anchor, setAnchor] = useState({ cx: 0, viewport: 0 });
+  const [tagsOpen, setTagsOpen] = useState(false);
+  // The filter's tags, in the order they were added; a since-deleted one drops out.
+  const filterTags = s.tagFilter.flatMap((id) => s.tagOptions.find((t) => t.id === id) ?? []);
 
   const openPalette = useCallback(() => {
     s.setOpen(true);
@@ -80,6 +100,11 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
       else s.setOpen(false);
       return;
     }
+    if (e.key === 'Backspace' && !e.currentTarget.value && s.tagFilter.length) {
+      e.preventDefault();
+      s.setTagFilter((prev) => prev.slice(0, -1));
+      return;
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       s.setActive((a) => Math.min(a + 1, Math.max(0, s.hits.length - 1)));
@@ -124,7 +149,14 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
 
   return (
     <>
-      <PaletteTrigger ref={trigger} query={s.query} count={s.counts.all} onOpen={openPalette} className={className} />
+      <PaletteTrigger
+        ref={trigger}
+        query={[...filterTags.map((t) => `#${t.name}`), s.query].filter(Boolean).join(' ')}
+        count={s.counts.all}
+        onOpen={openPalette}
+        compact={compact}
+        className={className}
+      />
 
       {s.open &&
         createPortal(
@@ -138,13 +170,29 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
               role="dialog"
               aria-label="Search"
               data-search-palette=""
-              className="absolute top-[0.625rem] flex max-h-[calc(100%-1.25rem)] border border-line bg-surface shadow-modal transition-[left,width] duration-200 animate-[palette-in_180ms_cubic-bezier(0.2,0.8,0.2,1)_both] motion-reduce:animate-none"
+              className="absolute top-[0.625rem] flex max-md:flex-col max-h-[calc(100%-1.25rem)] border border-line bg-surface shadow-modal transition-[left,width] duration-200 animate-[palette-in_180ms_cubic-bezier(0.2,0.8,0.2,1)_both] motion-reduce:animate-none"
               // dynamic: centred on the trigger, measured at open/resize
               style={{ left, width }}
             >
               <div className="flex min-w-0 flex-1 flex-col">
-                <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-[0.875rem]">
+                <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line px-[0.875rem] py-1.5">
                   <Icon name="search" size="1rem" className="text-accent" />
+                  {/* The tag filter, as removable chips ahead of the text; Backspace in an empty input drops the last. */}
+                  {filterTags.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-label={`Remove tag filter ${t.name}`}
+                      onClick={() => s.toggleTagFilter(t.id)}
+                      className={cn(
+                        'flex shrink-0 items-center gap-1 px-1.5 py-0.5 text-micro font-semibold text-on-accent max-md:min-h-8',
+                        COLOR_CLASSES[t.color].bg,
+                      )}
+                    >
+                      #{t.name}
+                      <Icon name="close" size="0.75rem" />
+                    </button>
+                  ))}
                   <input
                     ref={input}
                     type="search"
@@ -155,7 +203,7 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
                     aria-label="Search"
                     autoComplete="off"
                     spellCheck={false}
-                    className="min-w-0 flex-1 bg-transparent text-base font-medium text-ink placeholder:text-ink-muted"
+                    className="min-w-32 flex-1 bg-transparent text-base font-medium text-ink placeholder:text-ink-muted"
                   />
                   {regexChip && (
                     <span
@@ -168,12 +216,26 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
                       {regexChip.text}
                     </span>
                   )}
-                  {s.query && (
+                  <button
+                    type="button"
+                    aria-label="Filter by tag"
+                    title="Filter by tag"
+                    aria-pressed={tagsOpen}
+                    onClick={() => setTagsOpen((v) => !v)}
+                    className={cn(
+                      'shrink-0 hover:text-ink max-md:p-1.5',
+                      tagsOpen || filterTags.length ? 'text-accent' : 'text-ink-muted',
+                    )}
+                  >
+                    <Icon name="sell" size="1rem" />
+                  </button>
+                  {(s.query || filterTags.length > 0) && (
                     <button
                       type="button"
                       aria-label="Clear search"
                       onClick={() => {
                         s.setQuery('');
+                        s.setTagFilter([]);
                         input.current?.focus();
                       }}
                       className="shrink-0 text-ink-muted hover:text-ink"
@@ -181,8 +243,16 @@ export default function SearchPalette({ scope, className }: { scope: SearchPage;
                       <Icon name="close" size="0.875rem" />
                     </button>
                   )}
-                  <kbd className={KBD}>esc</kbd>
+                  <kbd className={cn(KBD, 'max-md:hidden')}>esc</kbd>
                 </div>
+                {tagsOpen && (
+                  <TagChips
+                    tags={s.tagOptions}
+                    stateOf={(id) => (s.tagFilter.includes(id) ? 'on' : 'off')}
+                    onToggle={s.toggleTagFilter}
+                    className="shrink-0 border-b border-line px-[0.875rem] py-2"
+                  />
+                )}
                 <PaletteResults s={s} />
               </div>
               {s.selectedItems.length > 0 && <EditPanel s={s} />}

@@ -1,17 +1,15 @@
 import { useApp } from '../context/AppContext';
 import InlineEditor from './InlineEditor';
 import QuickAddField from './QuickAddField';
-import ResizeHandle, { useResizableWidth } from './ResizeHandle';
 import { useInlineEdit } from './useInlineEdit';
 import { fmt, weekOf } from '../dates';
-import { byDashboardOrder, byHabitOrder, bySort, dashboardTasks, groupByList, isHabit } from '../seedLogic';
+import { byDashboardOrder, byHabitOrder, bySort, dashboardHabits, dashboardTasks, groupByList } from '../seedLogic';
 import type { Seed } from '../types';
 import { COLOR_CLASSES } from '../colors';
 import { cn } from '@/lib/utils';
-import { Card } from './ui/card';
 import { Icon } from './ui/icon';
 import { SectionHeading } from './ui/section-heading';
-import HabitStrip from './habits/HabitStrip';
+import HabitStrip, { StripLabels } from './habits/HabitStrip';
 import { cellsFor } from './habits/habitModel';
 import TaskRow from './todo/TaskRow';
 
@@ -24,18 +22,17 @@ import TaskRow from './todo/TaskRow';
 export default function RightPanel() {
   const { seeds, lists, firstDayOfWeek, listById, colorOf, iconOf, isVisible } = useApp();
   const { expandedId, toggleExpanded, setEditing, editModal } = useInlineEdit();
-  // The handle sits on the panel's *left* edge, so dragging left widens it.
-  const resize = useResizableWidth('right', -1);
 
   // Get today's date
   const today = fmt(new Date());
 
-  // Minus what the sidebar has hidden; habits in the user's order.
-  const visible = seeds.filter(isVisible);
-  const habits = visible.filter(isHabit).sort(byHabitOrder);
-
-  // Get this week's dates (7 days)
+  // This week's dates (7 days)
   const weekDateStrs = weekOf(new Date(), firstDayOfWeek);
+
+  // Minus what the sidebar has hidden; habits with something to tick this
+  // week or the next few days, in the user's order.
+  const visible = seeds.filter(isVisible);
+  const habits = dashboardHabits(visible, weekDateStrs[0], today, firstDayOfWeek).sort(byHabitOrder);
 
   // The task panel: undated, due-today, overdue and starred to-dos (see
   // `dashboardTasks`). Unfiled ones form the top "Tasks" list — that's where
@@ -58,51 +55,52 @@ export default function RightPanel() {
 
   return (
     <>
-      {/* Sits on the panel's left edge, as a sibling flex item in
-          `.shell-content` — not absolutely positioned over the panel — so its
-          own 0.5rem is genuinely reserved (see MonthViewDesktop's RESERVED). */}
-      <ResizeHandle side="left" {...resize} ariaLabel="Resize right panel" />
-      <aside className="flex-none h-full w-[var(--layout-right-w,20rem)] border-l border-line bg-surface flex flex-col px-4 py-4 overflow-y-auto scrollbar-hide">
-        {/* Habits Section */}
+      <aside className="flex-none h-full w-80 bg-page flex flex-col px-4 py-4 overflow-y-auto scrollbar-hide">
+        {/* Habits: one borderless line each — name, then the week's cells
+            under a single row of weekday initials. */}
         <div className="mb-4">
-          <SectionHeading className="text-sm font-bold tracking-wider text-accent-deep mb-2">Habits</SectionHeading>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <SectionHeading className="text-sm font-bold tracking-wider text-accent-deep">Habits</SectionHeading>
+            <StripLabels dates={weekDateStrs} today={today} cellClass="size-3.5" />
+          </div>
 
-          <div className="space-y-xs">
-            {habits.map((habit) => {
-              const color = colorOf(habit);
-              const icon = iconOf(habit);
-              return (
-                <Card key={habit.id} className="p-2.5">
+          {habits.map((habit) => {
+            const color = colorOf(habit);
+            const icon = iconOf(habit);
+            return (
+              <div key={habit.id}>
+                <div className="flex items-center gap-2 py-0.5">
                   <button
                     type="button"
                     aria-expanded={expandedId === habit.id}
                     onClick={() => toggleExpanded(habit.id)}
                     className={cn(
-                      'micro-label flex items-center gap-1 w-full text-left truncate mb-[0.375rem] hover:underline',
+                      'micro-label flex min-w-0 flex-1 items-center gap-1 text-left hover:underline',
                       COLOR_CLASSES[color].text,
                     )}
                   >
                     {icon && <Icon name={icon} size="0.75rem" />}
-                    {habit.title}
+                    <span className="truncate">{habit.title}</span>
                   </button>
-
-                  {expandedId === habit.id && (
-                    <InlineEditor seed={habit} autoFocusTitle onAdvanced={() => setEditing(habit)} className="mb-2" />
-                  )}
-
                   <HabitStrip
                     seed={habit}
                     cells={cellsFor(habit, weekDateStrs, firstDayOfWeek, today)}
                     color={color}
                     today={today}
-                    cellClass="size-[1.125rem]"
+                    cellClass="size-3.5"
+                    labels={false}
+                    className="shrink-0"
                   />
-                </Card>
-              );
-            })}
+                </div>
 
-            <QuickAddField kind="habit" className="mt-xs" />
-          </div>
+                {expandedId === habit.id && (
+                  <InlineEditor seed={habit} autoFocusTitle onAdvanced={() => setEditing(habit)} className="my-2" />
+                )}
+              </div>
+            );
+          })}
+
+          <QuickAddField kind="habit" className="mt-xs" />
         </div>
 
         {/* Tasks: the unfiled list first, then one group per list */}

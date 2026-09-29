@@ -63,7 +63,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
             <span className="font-medium text-ink-muted tabular-nums">{s.counts[t.id]}</span>
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-3 text-micro text-ink-muted">
+        <div className="ml-auto flex items-center gap-3 text-micro text-ink-muted max-md:hidden">
           <span>{summaryText(s)}</span>
           <button type="button" className={LINK} onClick={s.selectAll}>
             Select all
@@ -81,7 +81,9 @@ export default function PaletteResults({ s }: { s: SearchState }) {
           <li className="px-[0.875rem] py-6 text-center text-[0.8125rem] text-ink-muted">
             {s.plan.mode === 'regex' && !s.plan.ok
               ? 'Finish the pattern to see matches.'
-              : `Nothing matches “${s.query.trim()}” in ${tabName}.`}
+              : s.query.trim() || !s.tagFilter.length
+                ? `Nothing matches “${s.query.trim()}” in ${tabName}.`
+                : `Nothing with those tags in ${tabName}.`}
           </li>
         )}
         {s.hits.map((hit, i) => {
@@ -146,7 +148,8 @@ export default function PaletteResults({ s }: { s: SearchState }) {
         })}
       </ul>
 
-      <div className="flex items-center justify-between gap-4 border-t border-line px-[0.875rem] py-2 text-micro text-ink-muted">
+      {/* Keyboard hints: nothing to press on a phone. */}
+      <div className="flex items-center justify-between gap-4 border-t border-line px-[0.875rem] py-2 text-micro text-ink-muted max-md:hidden">
         <span>↑↓ move · ↵ open · ⇧↵ select · Ctrl+⇧A select all · Ctrl+⇧D deselect all</span>
         <span className="font-mono text-[0.625rem] whitespace-nowrap">
           'exact !exclude ^start end$ /regex/ cat:health

@@ -11,7 +11,6 @@ import HabitsView from './HabitsView';
 import Settings from './Settings';
 import Welcome from './Welcome';
 import AddModal from './AddModal';
-import ResizeHandle, { useResizableWidth } from './ResizeHandle';
 import { Logo } from './Logo';
 import { goToday, stepMonth, stepYear } from '../calendarNav';
 import { useApp } from '../context/AppContext';
@@ -197,9 +196,6 @@ export default function AppShell() {
   // knows how to render standalone (see the calendar day-click callers).
   const [addRequest, setAddRequest] = useState<{ doable: boolean; repeating?: boolean; date?: string } | null>(null);
 
-  // The handle sits on the sidebar's *right* edge, so dragging right widens it.
-  const sidebarResize = useResizableWidth('sidebar', 1);
-
   useShortcuts({
     newItem() {
       const date = selectedDate ?? fmt(new Date());
@@ -241,8 +237,6 @@ export default function AppShell() {
     <div className="flex h-screen flex-col">
       <div className="flex flex-1 overflow-hidden max-md:flex-col">
         <Sidebar view={activeView} onNavigate={setActiveView} />
-
-        <ResizeHandle side="right" {...sidebarResize} ariaLabel="Resize sidebar" />
 
         {/* The content slot. A flex row, so a two-column screen is simply two
             children of it; single-column screens fill it. */}

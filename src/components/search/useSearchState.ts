@@ -32,6 +32,7 @@ export function useSearchState(page: SearchPage) {
   const {
     allSeeds,
     lists,
+    tags,
     listById,
     tagById,
     colorOf,
@@ -45,6 +46,8 @@ export function useSearchState(page: SearchPage) {
   } = app;
 
   const [query, setQuery] = useState('');
+  /** Tag ids an item must all carry to match — the chips in the input row. */
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ScopeTab>(DEFAULT_TAB[page]);
   const [active, setActive] = useState(0);
@@ -61,7 +64,11 @@ export function useSearchState(page: SearchPage) {
   const itemByKey = useMemo(() => new Map(items.map((i) => [i.key, i])), [items]);
 
   const plan = useMemo(() => parseQuery(query, { autoRegex }), [query, autoRegex]);
-  const allMatches = useMemo(() => matchAll(plan, items), [plan, items]);
+  const allMatches = useMemo(
+    () =>
+      matchAll(plan, tagFilter.length ? items.filter((i) => tagFilter.every((t) => i.seed.tags.includes(t))) : items),
+    [plan, items, tagFilter],
+  );
 
   const counts = useMemo(() => {
     const c: Record<ScopeTab, number> = { all: allMatches.length, events: 0, tasks: 0, habits: 0 };
@@ -76,7 +83,7 @@ export function useSearchState(page: SearchPage) {
   const hits = useMemo(() => tabMatches.slice(0, MAX_HITS), [tabMatches]);
 
   // A new query or tab starts the cursor over; the selection is untouched.
-  useEffect(() => setActive(0), [query, tab]);
+  useEffect(() => setActive(0), [query, tab, tagFilter]);
 
   const selectedItems = useMemo<SearchItem[]>(() => {
     const out: SearchItem[] = [];
@@ -109,6 +116,12 @@ export function useSearchState(page: SearchPage) {
   const datedCount = selectedItems.filter((i) => i.seed.date).length;
 
   const listOptions = useMemo(() => [...lists].sort(bySort), [lists]);
+  const tagOptions = useMemo(() => [...tags].sort(bySort), [tags]);
+
+  const toggleTagFilter = useCallback(
+    (id: string) => setTagFilter((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id])),
+    [],
+  );
 
   // --- selection ---
 
@@ -185,7 +198,7 @@ export function useSearchState(page: SearchPage) {
     if (selectedItems.length === 1) setEditing(selectedItems[0].seed);
   }, [selectedItems]);
 
-  const { applyList, applyReminder } = bulk;
+  const { applyList, applyReminder, applyTag } = bulk;
 
   const applyShift = useCallback((dir: 1 | -1) => bulk.applyShift(shiftN * dir), [bulk.applyShift, shiftN]);
 
@@ -198,6 +211,8 @@ export function useSearchState(page: SearchPage) {
     // state
     query,
     setQuery,
+    tagFilter,
+    setTagFilter,
     open,
     setOpen,
     tab,
@@ -222,6 +237,7 @@ export function useSearchState(page: SearchPage) {
     commonReminder,
     datedCount,
     listOptions,
+    tagOptions,
     firstDayOfWeek,
     // actions
     toggleSelect,
@@ -230,7 +246,9 @@ export function useSearchState(page: SearchPage) {
     clearSelection,
     primaryAction,
     openFullEditor,
+    toggleTagFilter,
     applyList,
+    applyTag,
     applyShift,
     applyReminder,
     applyDelete,
