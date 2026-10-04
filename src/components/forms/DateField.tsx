@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { fieldDate } from '../../dates';
+import { fieldDate, parse } from '../../dates';
 import { parseStrictDate } from '../../nlDate';
 import { useIsCoarsePointer } from '../../useMedia';
 
@@ -75,7 +75,7 @@ export default function DateField({
       }
       return false;
     }
-    const parsed = parseStrictDate(raw);
+    const parsed = parseStrictDate(raw, value ? parse(value) : new Date());
     if (!parsed) {
       setInvalid(true);
       return false;

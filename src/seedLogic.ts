@@ -3,8 +3,20 @@
 // and habits — the views are filters over it (`isTask`/`isHabit`/dated).
 
 import { DEFAULT_COLOR } from './colors';
-import { addDays, addMonths, diffDays, fmt, hhmm, monthsBetween, parse, rotateWeek, shortDate, weekOf } from './dates';
-import type { ColorKey, FirstDayOfWeek, NewSeed, Repeat, RepeatUnit, Seed, Tag } from './types';
+import {
+  addDays,
+  addMonths,
+  diffDays,
+  fmt,
+  hhmm,
+  monthPosition,
+  monthsBetween,
+  parse,
+  rotateWeek,
+  shortDate,
+  weekOf,
+} from './dates';
+import type { ColorKey, FirstDayOfWeek, NewSeed, RepeatUnit, Seed, Tag } from './types';
 
 // --- Kind --------------------------------------------------------------------
 
@@ -176,9 +188,21 @@ export function isDueOn(s: Seed, date: string, firstDay: FirstDayOfWeek = 0): bo
       if (!days.includes(parse(date).getDay())) return false;
       return n === 1 || (diffDays(weekStart(start, firstDay), weekStart(date, firstDay)) / 7) % n === 0;
     }
-    case 'month':
-      // same day-of-month; months lacking that day are skipped
-      return monthsBetween(start, date) % n === 0 && parse(date).getDate() === parse(start).getDate();
+    case 'month': {
+      if (monthsBetween(start, date) % n !== 0) return false;
+      const d = parse(date);
+      if (r.nth) {
+        // the anchor's weekday, nth in the month (-1 = last)
+        if (d.getDay() !== parse(start).getDay()) return false;
+        const { nth, last } = monthPosition(date);
+        return r.nth === -1 ? last : nth === r.nth;
+      }
+      // chosen days of the month (default: the anchor's); months lacking a day skip it
+      const day = d.getDate();
+      return (r.monthDays ?? [parse(start).getDate()]).some(
+        (m) => m === day || (m === -1 && monthPosition(date).lastDay),
+      );
+    }
     case 'year':
       return date.slice(5) === start.slice(5) && (parse(date).getFullYear() - parse(start).getFullYear()) % n === 0;
   }
@@ -268,16 +292,6 @@ export function expandSeeds(seeds: Seed[], from: string, to: string, firstDay: F
   return out.sort(
     (a, b) => a.startDate.localeCompare(b.startDate) || (a.seed.time ?? '').localeCompare(b.seed.time ?? ''),
   );
-}
-
-/** True when the occurrence spans more than one day or the seed is all-day. */
-export function isBarOccurrence(o: Occurrence): boolean {
-  return o.seed.time === null || o.startDate !== o.endDate;
-}
-
-/** Week-plus spans (trips, 12-week programs) render as thin background lanes instead of thick titled bars. */
-export function isLongOccurrence(o: Occurrence): boolean {
-  return diffDays(o.startDate, o.endDate) + 1 >= 7;
 }
 
 /** "14:30" -> minutes since midnight. */
@@ -396,9 +410,12 @@ const UNIT_WORD: Record<RepeatUnit, [string, string]> = {
   month: ['monthly', 'months'],
   year: ['yearly', 'years'],
 };
+/** The word for a monthly rule's `nth`. */
+export const NTH_WORDS: Record<number, string> = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth', [-1]: 'last' };
 
-/** Human-readable repeat summary, e.g. "every 3 days after last done", "Mon Wed Fri". */
-export function repeatLabel(repeat: Repeat, firstDay: FirstDayOfWeek = 0): string {
+/** Human-readable repeat summary, e.g. "every 3 days after last done", "Mon Wed Fri", "monthly on the second Fri". */
+export function repeatLabel(s: Pick<Seed, 'repeat' | 'date' | 'createdAt'>, firstDay: FirstDayOfWeek = 0): string {
+  const repeat = s.repeat;
   switch (repeat.type) {
     case 'none':
       return 'one-time';
@@ -419,7 +436,13 @@ export function repeatLabel(repeat: Repeat, firstDay: FirstDayOfWeek = 0): strin
                 .join(' ');
         base = n === 1 ? names : `${names} every ${n} weeks`;
       }
-      return repeat.fromDone ? `${n === 1 ? `every ${repeat.unit}` : base} after last done` : base;
+      if (repeat.fromDone) return `${n === 1 ? `every ${repeat.unit}` : base} after last done`;
+      if (repeat.unit === 'month' && repeat.nth) {
+        base += ` on the ${NTH_WORDS[repeat.nth]} ${DAY_NAMES[parse(anchorOf(s)).getDay()]}`;
+      } else if (repeat.unit === 'month' && repeat.monthDays?.length) {
+        base += ` on ${repeat.monthDays.map((m) => (m === -1 ? 'last day' : String(m))).join(', ')}`;
+      }
+      return base;
     }
   }
 }
@@ -436,7 +459,7 @@ export function statusLabel(s: Seed, todayStr: string, firstDay: FirstDayOfWeek 
     return next === todayStr ? 'due today' : `next ${shortDate(next!)}`;
   }
   const streak = streakOf(s, firstDay);
-  return streak > 0 ? `${streak} day streak` : repeatLabel(r, firstDay);
+  return streak > 0 ? `${streak} day streak` : repeatLabel(s, firstDay);
 }
 
 /** Display label for seeds in no list (`list === ''`): the neutral inbox, not an error state. */

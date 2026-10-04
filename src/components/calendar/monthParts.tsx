@@ -11,7 +11,7 @@ import { type DayCell, occDone, type WeekRow } from './monthModel';
 
 /**
  * What separates the two month layouts inside a cell. Everything else — the
- * span corners, the day number's colour ladder, the period titles, the bar
+ * span corners, the day number's colour ladder, the span titles, the bar
  * lane spacer, the dimmed chip group and its overflow count — is `MonthCell`.
  */
 const CELL_VARIANTS = {
@@ -133,7 +133,7 @@ export function MonthCell({
       )}
       onClick={() => onDayClick(cell.dateStr)}
     >
-      <PeriodCorners cell={cell} />
+      <SpanCorners cell={cell} />
 
       <div className={v.dayRow}>
         <span
@@ -152,7 +152,7 @@ export function MonthCell({
         </span>
       </div>
 
-      <PeriodTitles cell={cell} onEdit={onEdit} />
+      <SpanTitles cell={cell} onEdit={onEdit} />
 
       {/* space reserved for the spanning bars overlay */}
       {week.barLaneCount > 0 && (
@@ -163,7 +163,7 @@ export function MonthCell({
       {/* Chips. Past/outside days dull their chips as one group rather than
           each chip computing its own dim — the wrapper isn't absolutely
           positioned, so opacity here doesn't disturb the overlay layers
-          (BarsOverlay/PeriodCorners) painted outside it. */}
+          (BarsOverlay/SpanCorners) painted outside it. */}
       <div className={cn('flex flex-col overflow-hidden', v.chips, dim && 'opacity-50')}>
         {cell.shownOccs.map(chip)}
         {cell.hiddenCount > 0 && (
@@ -196,8 +196,8 @@ export function dimCell(cell: DayCell): boolean {
   return cell.isPast || !cell.isCurrentMonth;
 }
 
-/** Half-border brackets marking the start/end days of a week-plus span, drawn in its colour via `border-current`. */
-export function PeriodCorners({ cell }: { cell: DayCell }) {
+/** Half-border brackets marking the start/end days of a multi-day span, drawn in its colour via `border-current`. */
+export function SpanCorners({ cell }: { cell: DayCell }) {
   const { colorOf } = useApp();
   return (
     <>
@@ -218,7 +218,7 @@ export function PeriodCorners({ cell }: { cell: DayCell }) {
 }
 
 /** The span's name, shown once on its start day. */
-export function PeriodTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occurrence) => void }) {
+export function SpanTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occurrence) => void }) {
   const { colorOf } = useApp();
   // Multiplied rather than a separate `opacity-50` class: an inline `style`
   // always wins over a class, so a shared seed's own opacity would silently
@@ -249,7 +249,7 @@ export function PeriodTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occu
 }
 
 /**
- * All-day/multi-day bars, absolutely positioned over the week's cells.
+ * All-day bars, absolutely positioned over the week's cells.
  * `variant` places them below the day-number row, which is shorter on the
  * phone, and sets their weight.
  *

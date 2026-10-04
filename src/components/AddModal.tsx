@@ -240,7 +240,7 @@ export default function AddModal({
     // exists — silently rewriting a stored rule is worse than staying open. A
     // brand-new one falls back to not repeating instead.
     let rule = has('repeat')
-      ? buildRepeat(repeat, edit?.repeat.type === 'every' ? edit.repeat.exdates : undefined)
+      ? buildRepeat(repeat, date, edit?.repeat.type === 'every' ? edit.repeat.exdates : undefined)
       : { type: 'none' as const };
     if (!rule) {
       if (!lenient || edit) {
@@ -370,7 +370,13 @@ export default function AddModal({
     repeat: has('repeat') && (
       <FieldRow label="Repeat" align="start" onRemove={() => removeOn('repeat')}>
         <div className="flex-1">
-          <RepeatField value={repeat} onChange={setRepeat} firstDayOfWeek={firstDayOfWeek} />
+          <RepeatField
+            value={repeat}
+            onChange={setRepeat}
+            firstDayOfWeek={firstDayOfWeek}
+            date={date}
+            doable={doable}
+          />
         </div>
       </FieldRow>
     ),

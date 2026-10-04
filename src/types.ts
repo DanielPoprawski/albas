@@ -21,9 +21,10 @@ export type RepeatUnit = 'day' | 'week' | 'month' | 'year';
 
 /**
  * How a seed repeats. `every` is a fixed cadence from the seed's `date`
- * (`days` picks weekdays when the unit is a week); `fromDone` re-anchors it
- * on the last completion (a chore); `timesPer` is a quota per week or month.
- * `until` ends the series, `exdates` are occurrences deleted individually.
+ * (`days` picks weekdays when the unit is a week; `monthDays` or `nth` pick
+ * the days when it is a month); `fromDone` re-anchors it on the last
+ * completion (a chore); `timesPer` is a quota per week or month. `until` ends
+ * the series, `exdates` are occurrences deleted individually.
  */
 export type Repeat =
   | { type: 'none' }
@@ -32,6 +33,10 @@ export type Repeat =
       n: number;
       unit: RepeatUnit;
       days?: number[]; // JS getDay() values: 0=Sun … 6=Sat
+      /** Monthly only: days of the month (1–31; -1 = last day), -1 last. Absent = the anchor's day. */
+      monthDays?: number[];
+      /** Monthly only: the anchor's weekday, nth (1–4) in the month, or -1 for the last. Beats `monthDays`. */
+      nth?: number;
       fromDone?: boolean;
       until?: string | null;
       exdates?: string[];

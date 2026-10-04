@@ -45,7 +45,7 @@ function RepeatingRow({
             'micro-label flex items-center gap-1 truncate text-left min-w-0 hover:underline',
             COLOR_CLASSES[color].text,
           )}
-          title={repeatLabel(seed.repeat, firstDayOfWeek)}
+          title={repeatLabel(seed, firstDayOfWeek)}
         >
           {icon && <Icon name={icon} size="0.75rem" />}
           {seed.title}

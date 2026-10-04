@@ -46,7 +46,7 @@ export default function DayView() {
       {/* All-day strip */}
       {hasAllDayContent && (
         <div className="border-b flex-shrink-0 px-sm py-sm flex flex-col gap-xs border-line bg-subtle">
-          {/* week-plus spans (trips, programs) shown as summary lines */}
+          {/* multi-day spans shown as summary lines */}
           {longOccs.map((o) => (
             <button
               type="button"

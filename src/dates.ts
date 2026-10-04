@@ -5,6 +5,7 @@ import {
   differenceInCalendarMonths,
   eachDayOfInterval,
   format,
+  getDaysInMonth,
   parseISO,
   startOfWeek,
 } from 'date-fns';
@@ -62,6 +63,17 @@ export function addMonths(dateStr: string, n: number): string {
 /** Whole calendar months from `fromStr`'s month to `toStr`'s month. */
 export function monthsBetween(fromStr: string, toStr: string): number {
   return differenceInCalendarMonths(parse(toStr), parse(fromStr));
+}
+
+/**
+ * Where a day sits in its month: its weekday's ordinal (`nth`, 1–5), whether
+ * it is that weekday's last occurrence, and whether it is the month's last day.
+ */
+export function monthPosition(dateStr: string): { nth: number; last: boolean; lastDay: boolean } {
+  const d = parse(dateStr);
+  const day = d.getDate();
+  const days = getDaysInMonth(d);
+  return { nth: Math.ceil(day / 7), last: day + 7 > days, lastDay: day === days };
 }
 
 /** "2026-07-04" -> "Jul 4" */

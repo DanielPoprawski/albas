@@ -1,17 +1,7 @@
 import { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { diffDays, fmt } from '../../dates';
-import {
-  completionDay,
-  expandSeeds,
-  isBarOccurrence,
-  isDone,
-  isDoneOn,
-  isHabit,
-  isLongOccurrence,
-  isRepeating,
-  type Occurrence,
-} from '../../seedLogic';
+import { completionDay, expandSeeds, isDone, isDoneOn, isHabit, isRepeating, type Occurrence } from '../../seedLogic';
 import type { ColorKey, FirstDayOfWeek, Seed } from '../../types';
 
 export function getCalendarDays(
@@ -50,17 +40,17 @@ const MAX_BAR_LANES = 3;
 /* ── Occurrence kinds ── */
 
 /**
- * How an occurrence is drawn on every calendar surface: a week-plus wash, a
- * spanning bar, a same-day chip, or a timed block in the hour grid. A doable
+ * How an occurrence is drawn on every calendar surface: a multi-day wash, an
+ * all-day bar, a same-day chip, or a timed block in the hour grid. A doable
  * seed with no time is a chip even though it is "all-day" — it is a thing to
  * tick off, not a stretch of time — and one with a time is a block.
  */
 export type OccKind = 'long' | 'bar' | 'chip' | 'timed';
 
 export function occKind(o: Occurrence): OccKind {
-  if (isLongOccurrence(o)) return 'long';
-  if (o.seed.track) return o.startDate !== o.endDate ? 'bar' : o.seed.time ? 'timed' : 'chip';
-  return isBarOccurrence(o) ? 'bar' : 'timed';
+  if (o.startDate !== o.endDate) return 'long';
+  if (o.seed.time) return 'timed';
+  return o.seed.track ? 'chip' : 'bar';
 }
 
 /** Whether a doable occurrence reads as done: a one-off on any day, a habit on that day. */
@@ -139,7 +129,7 @@ export interface DayCell {
   isPast: boolean;
   /** From getDay(), not the column index — a Sunday start moves the weekend columns. */
   isWeekend: boolean;
-  /** Cell wash from the first week-plus span covering this day, if any. */
+  /** Cell wash from the first multi-day span covering this day, if any. */
   wash: ColorKey | undefined;
   longStarts: Occurrence[];
   longEnds: Occurrence[];
@@ -207,7 +197,7 @@ export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): Wee
     const weeks: { date: Date; isCurrentMonth: boolean }[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 
-    // week-plus spans (trips, programs) tint their day cells instead of taking a lane
+    // multi-day spans tint their day cells instead of taking a lane
     const longOccs = occurrences.filter((o) => occKind(o) === 'long');
     const barOccs = occurrences.filter((o) => occKind(o) === 'bar');
 

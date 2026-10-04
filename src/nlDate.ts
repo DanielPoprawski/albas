@@ -84,10 +84,15 @@ export function describeWhen(parsed: NlDateMatch): string {
  * title, where the suggestion chip shows the interpretation before it lands.
  */
 const strictDayFirst = new chrono.Chrono(chrono.en.configuration.createConfiguration(true, true));
+// The day-first grammar refuses a month name before a two-digit day ("Oct 10"); this one reads those.
+const strictMonthFirst = new chrono.Chrono(chrono.en.configuration.createConfiguration(true, false));
 
+/** A missing year is the one that puts the date closest to `ref` — pass the field's current date. */
 export function parseStrictDate(text: string, ref: Date = new Date()): string | null {
-  const [result] = strictDayFirst.parse(text.trim(), ref, { forwardDate: true });
-  return result ? fmt(result.start.date()) : null;
+  const raw = text.trim();
+  const [result] = strictDayFirst.parse(raw, ref);
+  const match = result ?? strictMonthFirst.parse(raw, ref)[0];
+  return match ? fmt(match.start.date()) : null;
 }
 
 /**

@@ -140,7 +140,7 @@ export default function HabitRow({
             <Tag color={color} className="shrink-0">
               {routine?.label ?? fallbackLabel(seed)}
             </Tag>
-            <Tag className="shrink-0">{repeatLabel(seed.repeat, firstDayOfWeek)}</Tag>
+            <Tag className="shrink-0">{repeatLabel(seed, firstDayOfWeek)}</Tag>
             {seed.reminders.length > 0 && (
               <span className="flex items-center gap-1 text-meta text-ink-muted whitespace-nowrap">
                 <Icon name="notifications" size="0.75rem" aria-label="Reminder" />

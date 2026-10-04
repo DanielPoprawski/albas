@@ -89,7 +89,7 @@ export default function WeekView() {
         })}
       </div>
 
-      {/* All-day section: thin week-plus lanes, all-day/multi-day bars, to-do chips */}
+      {/* All-day section: thin multi-day lanes, all-day bars, to-do chips */}
       {hasAllDayContent && (
         <div className="flex border-b flex-shrink-0 border-line">
           <div className="flex-shrink-0 w-gutter-w flex items-start justify-end pr-2 pt-1">
