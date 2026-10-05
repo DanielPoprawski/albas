@@ -15,7 +15,7 @@ import { useIsCoarsePointer } from '../../useMedia';
  * On a coarse pointer the field is a native `type="date"` input instead, so a
  * phone gets the system picker rather than a keyboard.
  */
-export default function DateField({
+export function DateField({
   value,
   onChange,
   allowEmpty = false,

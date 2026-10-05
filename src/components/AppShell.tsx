@@ -1,26 +1,26 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Icon } from './ui/icon';
-import { remindDue } from '../notifications';
-import MonthView from './calendar/MonthView';
-import WeekView from './calendar/WeekView';
-import DayView from './calendar/DayView';
-import HomeView from './HomeView';
-import RightPanel from './RightPanel';
-import TodoViewRedesign from './TodoViewRedesign';
-import HabitsView from './HabitsView';
-import Settings from './Settings';
-import Welcome from './Welcome';
-import AddModal from './AddModal';
-import { Logo } from './Logo';
+import { type ReactNode, useEffect, useState } from 'react';
+import { cn, initialsOf } from '@/lib/utils';
 import { goToday, stepMonth, stepYear } from '../calendarNav';
 import { useApp } from '../context/AppContext';
 import { fmt, stampLabel, timeAgo } from '../dates';
-import { cn, initialsOf } from '@/lib/utils';
+import { remindDue } from '../notifications';
 import { inTauri } from '../persistence';
-import { useIsMobile } from '../useMedia';
 import { useEditorMode, useShortcuts } from '../shortcuts';
-import SidebarOrganize from './sidebar/SidebarOrganize';
 import type { ActiveView } from '../types';
+import { useIsMobile } from '../useMedia';
+import { AddModal } from './AddModal';
+import { DayView } from './calendar/DayView';
+import { MonthView } from './calendar/MonthView';
+import { WeekView } from './calendar/WeekView';
+import { HabitsView } from './HabitsView';
+import { HomeView } from './HomeView';
+import { Logo } from './Logo';
+import { RightPanel } from './RightPanel';
+import { Settings } from './Settings';
+import { SidebarOrganize } from './sidebar/SidebarOrganize';
+import { TodoViewRedesign } from './TodoViewRedesign';
+import { Icon } from './ui/icon';
+import { Welcome } from './Welcome';
 
 const NAV: { view: ActiveView; label: string; icon: ReactNode }[] = [
   { view: 'calendar', label: 'Dashboard', icon: <Icon name="grid_view" size="1rem" /> },
@@ -71,7 +71,7 @@ function Sidebar({ view, onNavigate }: { view: ActiveView; onNavigate: (view: Ac
         Albas
       </div>
 
-      <div className={'flex flex-col gap-2'}>
+      <div className="flex flex-col gap-2">
         <div className="sidebar-title">Menu</div>
         {NAV.filter((n) => n.view !== 'settings').map((item) => (
           <NavLink key={item.view} item={item} current={view} onNavigate={onNavigate} />
@@ -80,12 +80,12 @@ function Sidebar({ view, onNavigate }: { view: ActiveView; onNavigate: (view: Ac
 
       {/* Lists and tags filter every screen but Settings */}
       {view !== 'settings' && (
-        <div className={'flex flex-col gap-2'}>
+        <div className="flex flex-col gap-2">
           <SidebarOrganize />
         </div>
       )}
 
-      <div className={'flex flex-col gap-2 mt-auto'}>
+      <div className="flex flex-col gap-2 mt-auto">
         <NavLink item={NAV[NAV.length - 1]} current={view} onNavigate={onNavigate} />
       </div>
     </aside>
@@ -167,7 +167,7 @@ function BottomBar() {
 
 /* ── Shell ───────────────────────────────────────────────────────────────*/
 
-export default function AppShell() {
+export function AppShell() {
   const isMobile = useIsMobile();
   const {
     activeView,
@@ -223,7 +223,7 @@ export default function AppShell() {
   useEffect(() => {
     if (!loaded) return; // don't notify against empty pre-load state
     const check = () => remindDue(allSeeds, firstDayOfWeek);
-    check();
+    void check();
     const id = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [allSeeds, loaded, firstDayOfWeek]);
@@ -282,7 +282,7 @@ export default function AppShell() {
           {activeView === 'habits' && <HabitsView />}
 
           {activeView === 'settings' && (
-            <div className={'min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5'}>
+            <div className="min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5">
               <Settings />
             </div>
           )}

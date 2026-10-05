@@ -1,8 +1,7 @@
-import * as React from 'react';
 import { Select as SelectPrimitive } from 'radix-ui';
-import { Icon } from './icon';
-
+import type * as React from 'react';
 import { cn } from '@/lib/utils';
+import { Icon } from './icon';
 
 /*
  * Radix Select, skinned from the theme tokens: a `field-input`-shaped

@@ -96,12 +96,12 @@ export async function apiRequest(
     method,
     headers: {
       ...(fallback.token ? { Authorization: `Bearer ${fallback.token}` } : {}),
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text().catch(() => '');
-  let parsed: any;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
@@ -112,10 +112,7 @@ export async function apiRequest(
 
 /** The server's plain-text error for a non-2xx `ApiResponse`, or a fallback. */
 export function apiError(res: ApiResponse, fallback: string): string {
-  const msg = typeof res.body?.message === 'string' ? res.body.message.trim() : '';
+  const message = (res.body as { message?: unknown } | null)?.message;
+  const msg = typeof message === 'string' ? message.trim() : '';
   return msg || `${fallback} (HTTP ${res.status}).`;
 }
-
-// Re-exported for existing imports — the rules themselves live in
-// `shared/authRules.ts` (repo root) so the web portal can share them too.
-export { NAME_PATTERN, MIN_PASSWORD_LENGTH } from '../shared/authRules';

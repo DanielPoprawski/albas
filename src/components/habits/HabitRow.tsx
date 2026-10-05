@@ -1,14 +1,14 @@
-import type { ReactNode } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Icon } from '../ui/icon';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { COLOR_CLASSES } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { repeatLabel } from '../../seedLogic';
 import type { RowClickResult } from '../bulk/useListSelection';
+import { Icon } from '../ui/icon';
 import { Dot, Tag } from '../ui/tag';
-import HabitStrip from './HabitStrip';
+import { HabitStrip } from './HabitStrip';
 import { fallbackLabel, type HabitData, ROUTINE_OPTIONS } from './habitModel';
 
 const STAT_LABELS: [keyof Pick<HabitData, 'currentStreak' | 'bestStreak' | 'weeklyRate'>, string, string][] = [
@@ -24,7 +24,7 @@ const STAT_LABELS: [keyof Pick<HabitData, 'currentStreak' | 'bestStreak' | 'week
  * `wide` (1100px) the stats and tag go so the name keeps its room; on a
  * phone the strip wraps onto its own line. Must sit in a `SortableContext`.
  */
-export default function HabitRow({
+export function HabitRow({
   habit,
   today,
   open,

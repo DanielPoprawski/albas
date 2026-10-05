@@ -6,15 +6,15 @@ import { fmt, parse, rotateWeek, weekOf } from '../../dates';
 import { expandSeeds, type Occurrence } from '../../seedLogic';
 import { seedTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import type { Seed } from '../../types';
-import AddModal from '../AddModal';
+import { AddModal } from '../AddModal';
 import { Icon } from '../ui/icon';
-import HourGrid from './HourGrid';
+import { HourGrid } from './HourGrid';
 import { assignLanes, gridSeeds, laneCount, occDone, occKind, occToggleDate, weekSegments } from './monthModel';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-export default function WeekView() {
+export function WeekView() {
   const { selectedDate, setSelectedDate, allSeeds, firstDayOfWeek, isVisible, colorOf, iconOf, toggleDone } = useApp();
   const [editing, setEditing] = useState<{ seed: Seed; date: string } | null>(null);
   const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);

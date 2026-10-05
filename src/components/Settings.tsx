@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { inTauri } from '../persistence';
-import * as ipc from '../ipc';
 import type { SyncStatusInfo } from '../ipc';
-import { useBrowserSignIn, usePasswordSignIn } from './auth/signInHooks';
+import * as ipc from '../ipc';
+import { inTauri } from '../persistence';
 import { normalizeSyncUrl, syncEndpoint } from '../syncServer';
+import { useBrowserSignIn, usePasswordSignIn } from './auth/signInHooks';
 import { AccountSigninCard, ProfileCard, SessionCard, SessionsCard } from './settings/AccountCards';
 import { AppearanceCard } from './settings/AppearanceCard';
-import { ListsCard } from './settings/ListsCard';
-import { TagsCard } from './settings/TagsCard';
 import { DangerZoneCard } from './settings/DangerZoneCard';
 import { ImportCard, SharingCard } from './settings/IntegrationsCards';
+import { ListsCard } from './settings/ListsCard';
 import { AboutCard, PreferencesCard, ShortcutsCard } from './settings/misc';
 import { useAsyncState } from './settings/shared';
+import { TagsCard } from './settings/TagsCard';
 
-export default function Settings() {
+export function Settings() {
   const { setSetting, syncNow, reloadFromStore, syncToken } = useApp();
   const [status, setStatus] = useState<SyncStatusInfo | null>(null);
   const { state: syncState, setState: setSyncState, run } = useAsyncState();
@@ -36,7 +36,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (!available) return;
-    (async () => {
+    void (async () => {
       try {
         setStatus(await ipc.syncStatus());
       } catch {

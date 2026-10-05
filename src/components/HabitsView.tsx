@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -9,21 +8,22 @@ import {
   useSensors,
 } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import QuickAddField from './QuickAddField';
-import SearchPalette from './search/SearchPalette';
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { fmt } from '../dates';
 import { seedKey } from '../itemKeys';
 import { byHabitOrder, isHabit } from '../seedLogic';
-import SelectionBar from './bulk/SelectionBar';
+import { SelectionBar } from './bulk/SelectionBar';
 import { useListSelection } from './bulk/useListSelection';
-import HabitDrawer from './habits/HabitDrawer';
-import HabitRow from './habits/HabitRow';
+import { HabitDrawer } from './habits/HabitDrawer';
+import { HabitRow } from './habits/HabitRow';
 import { buildHabitData, groupHabits, reorderHabits } from './habits/habitModel';
+import { QuickAddField } from './QuickAddField';
+import { SearchPalette } from './search/SearchPalette';
 import { toSearchItems } from './search/searchItems';
 import { AccordionHeader } from './ui/accordion-header';
 
-export default function HabitsView() {
+export function HabitsView() {
   const { seeds, updateSeed, firstDayOfWeek, listById, tagById, colorOf, habitsLayout, isVisible } = useApp();
   const today = fmt(new Date());
 

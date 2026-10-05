@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Icon } from '../ui/icon';
+import { goToday as navToday, stepPeriod, syncMonth } from '../../calendarNav';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
-import { goToday as navToday, stepPeriod, syncMonth } from '../../calendarNav';
-import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
-import { IconButton } from '../ui/button';
 import type { CalendarMode } from '../../types';
+import { IconButton } from '../ui/button';
+import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
+import { Icon } from '../ui/icon';
 
 const MODES: { value: CalendarMode; label: string; icon: string; hint: string }[] = [
   { value: 'month', label: 'Month', icon: 'calendar_view_month', hint: 'The whole month at a glance' },
@@ -147,7 +147,7 @@ export function ModeModal({
  * the one row where space is tightest. Week and day view keep them, because
  * neither is swipeable.
  */
-export default function CalendarNav({ compact = false }: { compact?: boolean }) {
+export function CalendarNav({ compact = false }: { compact?: boolean }) {
   const { setCurrentMonth, selectedDate, setSelectedDate, calendarMode, setCalendarMode } = useApp();
 
   const todayStr = fmt(new Date());

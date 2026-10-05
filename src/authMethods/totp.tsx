@@ -21,9 +21,10 @@
  * image. Every request goes through `apiRequest` (a Rust hop inside the
  * app), same as `password.tsx`.
  */
-import { errorMessage } from '@/lib/utils';
-import { useEffect, useState } from 'react';
+
 import { QRCodeSVG } from 'qrcode.react';
+import { useEffect, useState } from 'react';
+import { errorMessage } from '@/lib/utils';
 import { apiError, apiRequest } from '../syncServer';
 import type { AuthMethod, AuthMethodContext, AuthMethodRow } from './registry';
 

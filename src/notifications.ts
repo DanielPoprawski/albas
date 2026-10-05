@@ -1,6 +1,6 @@
 import { addDays, fmt, parse, shortDate } from './dates';
 import { inTauri } from './persistence';
-import { expandSeeds, isDoneOn, shortTime, type Occurrence } from './seedLogic';
+import { expandSeeds, isDoneOn, type Occurrence, shortTime } from './seedLogic';
 import type { FirstDayOfWeek, Seed } from './types';
 
 const SENT_KEY = 'albas-reminders-sent';

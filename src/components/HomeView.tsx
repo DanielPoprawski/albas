@@ -1,18 +1,18 @@
 import { useState } from 'react';
-import { Icon } from './ui/icon';
-import MonthView from './calendar/MonthView';
-import WeekView from './calendar/WeekView';
-import DayView from './calendar/DayView';
-import CalendarNav from './calendar/CalendarNav';
-import AddModal from './AddModal';
-import SearchPalette from './search/SearchPalette';
-import HabitsSection from './todo/HabitsSection';
-import TasksSection from './todo/TasksSection';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
-import { fmt, weekOf, parse, shortDate } from '../dates';
-import { useInlineEdit } from './useInlineEdit';
+import { fmt, parse, shortDate, weekOf } from '../dates';
 import type { Seed } from '../types';
+import { AddModal } from './AddModal';
+import { CalendarNav } from './calendar/CalendarNav';
+import { DayView } from './calendar/DayView';
+import { MonthView } from './calendar/MonthView';
+import { WeekView } from './calendar/WeekView';
+import { SearchPalette } from './search/SearchPalette';
+import { HabitsSection } from './todo/HabitsSection';
+import { TasksSection } from './todo/TasksSection';
+import { Icon } from './ui/icon';
+import { useInlineEdit } from './useInlineEdit';
 
 /** The phone header's square icon button — must match `CalendarNav`'s view picker so the bar's two corners agree. */
 const MOBILE_HEADER_BUTTON =
@@ -46,7 +46,7 @@ const CONTENT = 'px-1 pt-1 pb-32';
  * viewport-relative height keeps roughly the same amount of month visible on
  * any device.
  */
-export default function HomeView() {
+export function HomeView() {
   const { calendarMode, currentMonth, selectedDate, setActiveView, firstDayOfWeek } = useApp();
   const { setEditing, editModal } = useInlineEdit();
   const [currentTab, setCurrentTab] = useState<MobileTab>('dashboard');
@@ -54,16 +54,16 @@ export default function HomeView() {
   const displayDate = () => {
     if (calendarMode === 'month') {
       return currentMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-    } else if (calendarMode === 'week') {
+    }
+    if (calendarMode === 'week') {
       const week = weekOf(parse(selectedDate ?? fmt(new Date())), firstDayOfWeek);
       return `${shortDate(week[0])} – ${shortDate(week[6])}`;
-    } else {
-      return parse(selectedDate ?? fmt(new Date())).toLocaleDateString(undefined, {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-      });
     }
+    return parse(selectedDate ?? fmt(new Date())).toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    });
   };
 
   return (

@@ -1,8 +1,8 @@
-import { Icon } from '../ui/icon';
 import { useApp } from '../../context/AppContext';
-import InlineEditor from '../InlineEditor';
+import { InlineEditor } from '../InlineEditor';
+import { Icon } from '../ui/icon';
 import { useInlineEdit } from '../useInlineEdit';
-import HabitCell from './HabitCell';
+import { HabitCell } from './HabitCell';
 import { cycleCell, type HabitData, HISTORY_WEEKS, monthLabels } from './habitModel';
 
 /**
@@ -11,7 +11,7 @@ import { cycleCell, type HabitData, HISTORY_WEEKS, monthLabels } from './habitMo
  * "Advanced…" is the way into the full modal. Left-inset so the grid lines up
  * under the row's name.
  */
-export default function HabitDrawer({ habit }: { habit: HabitData }) {
+export function HabitDrawer({ habit }: { habit: HabitData }) {
   const { toggleDone, setDone, colorOf } = useApp();
   const { setEditing, editModal } = useInlineEdit();
   const { seed } = habit;

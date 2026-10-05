@@ -76,5 +76,5 @@ export interface Props {
 
 export interface SubmitData {
   title: string;
-  fields: Record<string, any>;
+  fields: Record<string, unknown>;
 }

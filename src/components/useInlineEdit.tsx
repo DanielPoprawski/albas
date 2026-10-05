@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { Seed } from '../types';
-import AddModal from './AddModal';
+import { AddModal } from './AddModal';
 
 /**
  * The state every list keeps for editing in place: which one row has its

@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
 import type { ColorKey, Seed } from '../../types';
-import HabitCell from './HabitCell';
+import { HabitCell } from './HabitCell';
 import { cycleCell, type HistoryCell, weekdayInitial } from './habitModel';
 
 const GRID = 'grid grid-flow-col auto-cols-max gap-[0.25rem]';
@@ -50,7 +50,7 @@ export function StripLabels({
  * across the full width (the phone dashboard) instead of packing them from
  * the left.
  */
-export default function HabitStrip({
+export function HabitStrip({
   seed,
   cells,
   color,

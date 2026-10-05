@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import type { Screen } from '../../App';
-import { registerWithPassword, saveSession, type Session } from '../../lib/api';
-import { GoogleSignInButton } from './GoogleSignInButton';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, NAME_PATTERN } from '../../../../shared/authRules';
+import type { Screen } from '../../App';
+import { registerWithPassword, type Session, saveSession } from '../../lib/api';
+import { GoogleSignInButton } from './GoogleSignInButton';
 
 export function RegisterForm({
   onNavigate,

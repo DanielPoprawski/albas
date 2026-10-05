@@ -1,6 +1,6 @@
-import type { List, Seed, Tag } from './types';
-import * as ipc from './ipc';
 import type { WipeKind } from './ipc';
+import * as ipc from './ipc';
+import type { List, Seed, Tag } from './types';
 
 const STORAGE_KEY = 'albas-data-v2';
 

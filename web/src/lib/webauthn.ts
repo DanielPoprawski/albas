@@ -46,7 +46,7 @@ export function prepareCreationOptions(publicKey: Record<string, unknown>): Cred
   const user = publicKey.user as Record<string, unknown>;
   pk.user = { ...user, id: base64urlToBuffer(user.id as string) };
 
-  const exclude = publicKey.excludeCredentials as Array<Record<string, unknown>> | undefined;
+  const exclude = publicKey.excludeCredentials as Record<string, unknown>[] | undefined;
   if (exclude) {
     pk.excludeCredentials = exclude.map((c) => ({ ...c, id: base64urlToBuffer(c.id as string) }));
   }
@@ -70,7 +70,7 @@ export function prepareRequestOptions(publicKey: Record<string, unknown>): Crede
   const pk = { ...publicKey } as Record<string, unknown>;
   pk.challenge = base64urlToBuffer(publicKey.challenge as string);
 
-  const allow = publicKey.allowCredentials as Array<Record<string, unknown>> | undefined;
+  const allow = publicKey.allowCredentials as Record<string, unknown>[] | undefined;
   if (allow) {
     pk.allowCredentials = allow.map((c) => ({ ...c, id: base64urlToBuffer(c.id as string) }));
   }

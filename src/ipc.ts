@@ -122,7 +122,7 @@ export function loadShared(): Promise<RawSharedRow[]> {
  */
 export interface ApiResponse {
   status: number;
-  body: any;
+  body: unknown;
 }
 
 export interface AppSigninStartResult {

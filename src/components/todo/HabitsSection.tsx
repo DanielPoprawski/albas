@@ -1,16 +1,16 @@
+import { cn } from '@/lib/utils';
+import { COLOR_CLASSES } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { fmt, weekOf } from '../../dates';
 import { byHabitOrder, isHabit, repeatLabel, statusLabel } from '../../seedLogic';
-import { COLOR_CLASSES } from '../../colors';
-import { cn } from '@/lib/utils';
-import InlineEditor from '../InlineEditor';
-import HabitStrip from '../habits/HabitStrip';
+import type { Seed } from '../../types';
+import { useIsCoarsePointer } from '../../useMedia';
+import { HabitStrip } from '../habits/HabitStrip';
 import { cellsFor, groupHabits } from '../habits/habitModel';
+import { InlineEditor } from '../InlineEditor';
 import { Icon } from '../ui/icon';
 import { SectionHeading } from '../ui/section-heading';
 import { useInlineEdit } from '../useInlineEdit';
-import type { Seed } from '../../types';
-import { useIsCoarsePointer } from '../../useMedia';
 
 /**
  * Repeating to-do: title + status, then the week strip. The title opens the inline editor (desktop) or the
@@ -61,7 +61,7 @@ function RepeatingRow({
 }
 
 /** Repeating to-dos (habits and chores) with their week strips. */
-export default function HabitsSection({ onEdit }: { onEdit: (s: Seed) => void }) {
+export function HabitsSection({ onEdit }: { onEdit: (s: Seed) => void }) {
   const { seeds, habitsLayout, isVisible } = useApp();
   const { expandedId, toggleExpanded } = useInlineEdit();
 

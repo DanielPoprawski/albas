@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { type KeyboardEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
-import { registerFocusTarget } from '../../shortcuts';
-import AddModal from '../AddModal';
-import EditPanel from './EditPanel';
-import PaletteResults from './PaletteResults';
-import PaletteTrigger, { KBD } from './PaletteTrigger';
-import TagChips from './TagChips';
 import { COLOR_CLASSES } from '../../colors';
+import { registerFocusTarget } from '../../shortcuts';
+import { AddModal } from '../AddModal';
+import { Icon } from '../ui/icon';
+import { EditPanel } from './EditPanel';
+import { PaletteResults } from './PaletteResults';
+import { KBD, PaletteTrigger } from './PaletteTrigger';
+import { TagChips } from './TagChips';
 import type { SearchItem, SearchPage } from './types';
 import { useSearchState } from './useSearchState';
 
@@ -26,7 +26,7 @@ const EDGE_REM = 1;
  * The overlay portals to `<body>`: every page header sits inside an
  * `overflow-hidden` card, which would clip anything positioned within it.
  */
-export default function SearchPalette({
+export function SearchPalette({
   scope,
   compact = false,
   className,
@@ -85,7 +85,7 @@ export default function SearchPalette({
       if (document.querySelector('[role="dialog"]:not([data-search-palette])')) return;
       if (e.target === input.current) return; // the input's own handler covers it
       e.preventDefault();
-      if (s.selectedItems.length) s.clearSelection();
+      if (s.selectedItems.length > 0) s.clearSelection();
       else s.setOpen(false);
     }
     window.addEventListener('keydown', onKey);
@@ -96,11 +96,11 @@ export default function SearchPalette({
     const mod = e.ctrlKey;
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (s.selectedItems.length) s.clearSelection();
+      if (s.selectedItems.length > 0) s.clearSelection();
       else s.setOpen(false);
       return;
     }
-    if (e.key === 'Backspace' && !e.currentTarget.value && s.tagFilter.length) {
+    if (e.key === 'Backspace' && !e.currentTarget.value && s.tagFilter.length > 0) {
       e.preventDefault();
       s.setTagFilter((prev) => prev.slice(0, -1));
       return;
@@ -135,8 +135,8 @@ export default function SearchPalette({
   }
 
   const remPx =
-    typeof document === 'undefined' ? 16 : parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  const wantRem = s.selectedItems.length ? WIDTH_WITH_PANEL_REM : WIDTH_REM;
+    typeof document === 'undefined' ? 16 : Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const wantRem = s.selectedItems.length > 0 ? WIDTH_WITH_PANEL_REM : WIDTH_REM;
   const width = Math.min(wantRem * remPx, anchor.viewport - 2 * EDGE_REM * remPx);
   const left = Math.max(EDGE_REM * remPx, Math.min(anchor.cx - width / 2, anchor.viewport - EDGE_REM * remPx - width));
 
@@ -224,7 +224,7 @@ export default function SearchPalette({
                     onClick={() => setTagsOpen((v) => !v)}
                     className={cn(
                       'shrink-0 hover:text-ink max-md:p-1.5',
-                      tagsOpen || filterTags.length ? 'text-accent' : 'text-ink-muted',
+                      tagsOpen || filterTags.length > 0 ? 'text-accent' : 'text-ink-muted',
                     )}
                   >
                     <Icon name="sell" size="1rem" />

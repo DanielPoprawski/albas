@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
 import * as chrono from 'chrono-node';
+import { useMemo } from 'react';
 import { fmt, hhmm } from './dates';
 
 export interface NlDateComponent {

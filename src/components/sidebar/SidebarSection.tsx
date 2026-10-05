@@ -1,9 +1,9 @@
 import { type KeyboardEvent, type ReactNode, useState } from 'react';
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { COLOR_CLASSES, DEFAULT_COLOR } from '../../colors';
 import type { ColorKey } from '../../types';
 import { ColorPopover } from '../forms/shared';
+import { Icon } from '../ui/icon';
 import { Dot } from '../ui/tag';
 import { IconPopover, RowMenu } from './RowMenu';
 
@@ -39,7 +39,7 @@ export interface SectionRow {
  * for tags colour and icon). The hidden set lives in `UiContext`; this
  * component only owns its transient edit modes.
  */
-export default function SidebarSection({
+export function SidebarSection({
   title,
   noun,
   rows,

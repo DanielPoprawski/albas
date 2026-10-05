@@ -1,7 +1,7 @@
 import { useApp } from '../../context/AppContext';
 import { inTauri } from '../../persistence';
-import { Segmented } from '../ui/segmented';
 import { formatKeys, SHORTCUTS, type ShortcutGroup } from '../../shortcuts';
+import { Segmented } from '../ui/segmented';
 import { Card } from './shared';
 
 /* ── Preferences ─────────────────────────────────────────────────────────*/
@@ -104,11 +104,11 @@ export function ShortcutsCard() {
 export function AboutCard() {
   // No Tauri platform check — `os` would be a plugin and an async call for one
   // word of text. Android's WebView is the only one that says so in the UA.
-  const platform = !inTauri()
-    ? 'Browser (data stays in this browser)'
-    : /android/i.test(navigator.userAgent)
+  const platform = inTauri()
+    ? /android/i.test(navigator.userAgent)
       ? 'Android app'
-      : 'Desktop app';
+      : 'Desktop app'
+    : 'Browser (data stays in this browser)';
 
   return (
     <Card title="About">

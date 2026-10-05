@@ -8,7 +8,7 @@ import { toParts } from '../searchMatch';
  * characters; regex matches come as runs. Either way `toParts` merges
  * neighbours so each run is one element.
  */
-export default function Highlighted({ text, positions }: { text: string; positions: number[] | undefined }) {
+export function Highlighted({ text, positions }: { text: string; positions: number[] | undefined }) {
   const parts = toParts(text, positions);
   if (parts.length === 1 && !parts[0].hit) return <>{text}</>;
   return (

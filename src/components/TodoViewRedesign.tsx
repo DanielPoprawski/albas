@@ -3,18 +3,18 @@ import { useApp } from '../context/AppContext';
 import { fmt } from '../dates';
 import { seedKey } from '../itemKeys';
 import { byDashboardOrder, bySort, GENERAL, isDone, isTask } from '../seedLogic';
-import TaskRow from './todo/TaskRow';
-import AddModal from './AddModal';
-import { useInlineEdit } from './useInlineEdit';
-import { AccordionHeader } from './ui/accordion-header';
-import QuickAddField from './QuickAddField';
-import SearchPalette from './search/SearchPalette';
-import SelectionBar from './bulk/SelectionBar';
-import { useListSelection } from './bulk/useListSelection';
-import { toSearchItems } from './search/searchItems';
 import type { Seed } from '../types';
+import { AddModal } from './AddModal';
+import { SelectionBar } from './bulk/SelectionBar';
+import { useListSelection } from './bulk/useListSelection';
+import { QuickAddField } from './QuickAddField';
+import { SearchPalette } from './search/SearchPalette';
+import { toSearchItems } from './search/searchItems';
+import { TaskRow } from './todo/TaskRow';
+import { AccordionHeader } from './ui/accordion-header';
+import { useInlineEdit } from './useInlineEdit';
 
-export default function TodoViewRedesign() {
+export function TodoViewRedesign() {
   const { seeds, lists, listById, tagById, colorOf, firstDayOfWeek, hiddenListIds, isVisible, showCompleted } =
     useApp();
   const today = fmt(new Date());

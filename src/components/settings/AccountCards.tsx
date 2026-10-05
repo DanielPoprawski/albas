@@ -1,25 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useApp } from '../../context/AppContext';
-import { useSettings } from '../../context/SettingsContext';
-import * as ipc from '../../ipc';
-import type { SyncStatusInfo } from '../../ipc';
-import type { useBrowserSignIn, usePasswordSignIn } from '../auth/signInHooks';
-import PasswordForm from '../auth/PasswordForm';
-import { SignedInPanel, SignedOutPanel } from '../auth/CrossDevice';
-import { FormMessage, MicroLabel } from '../ui/field';
-import { Tag } from '../ui/tag';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/dialog';
-import { DEFAULT_SYNC_URL, apiBase, apiError, apiRequest } from '../../syncServer';
-import { timeAgo } from '../../dates';
 import { errorMessage, initialsOf } from '@/lib/utils';
 import {
-  authMethods,
-  METHOD_PILL,
   type AuthMethod,
   type AuthMethodContext,
   type AuthMethodRow,
+  authMethods,
+  METHOD_PILL,
 } from '../../authMethods/registry';
+import { useApp } from '../../context/AppContext';
+import { useSettings } from '../../context/SettingsContext';
+import { timeAgo } from '../../dates';
+import type { SyncStatusInfo } from '../../ipc';
+import * as ipc from '../../ipc';
+import { apiBase, apiError, apiRequest, DEFAULT_SYNC_URL } from '../../syncServer';
+import { SignedInPanel, SignedOutPanel } from '../auth/CrossDevice';
+import { PasswordForm } from '../auth/PasswordForm';
+import type { useBrowserSignIn, usePasswordSignIn } from '../auth/signInHooks';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
+import { FormMessage, MicroLabel } from '../ui/field';
+import { Tag } from '../ui/tag';
 import {
+  AsyncMessage,
+  type AsyncState,
   Card,
   LINK_MUTED,
   SettingItem,
@@ -27,8 +29,6 @@ import {
   SettingsTableNote,
   SW_TD,
   SW_TR,
-  type AsyncState,
-  AsyncMessage,
   useAsyncState,
 } from './shared';
 
@@ -284,7 +284,50 @@ export function AccountSigninCard({
 
   return (
     <Card title={configured ? title : 'Account & Sign-in'} span>
-      {!configured ? (
+      {configured ? (
+        <>
+          <SettingsTable headers={['Name', 'Type']}>
+            {rows.map((row) => {
+              const pill = METHOD_PILL[row.type];
+              return (
+                <tr key={`${row.methodId}:${row.key}`} className={SW_TR}>
+                  <td className={SW_TD}>
+                    {row.name}
+                    {row.detail && <span className="setting-desc mt-0 ml-2">{row.detail}</span>}
+                  </td>
+                  <td className={SW_TD}>
+                    <Tag color={pill}>{row.type}</Tag>
+                  </td>
+                </tr>
+              );
+            })}
+            {!loading && rows.length === 0 && (
+              <SettingsTableNote span={2}>No sign-in methods are attached to this account yet.</SettingsTableNote>
+            )}
+            {loading && <SettingsTableNote span={2}>Loading…</SettingsTableNote>}
+          </SettingsTable>
+
+          {/* One line per method that failed to load. The table above keeps
+              whatever the other methods did return. */}
+          {methods.map((m) => {
+            const error = byId[m.id]?.error;
+            return error ? (
+              <FormMessage key={m.id}>
+                {m.id}: {error}
+              </FormMessage>
+            ) : null;
+          })}
+
+          {/* The action row — each method's own control for adding/changing it. */}
+          <div className="flex flex-wrap gap-4 items-start mt-5">
+            {methods.map((m) => (m.Action ? <m.Action key={m.id} ctx={ctx} /> : null))}
+          </div>
+
+          <div className="mt-6 pt-5 border-t border-line">
+            <ExportDataSection ctx={ctx} />
+          </div>
+        </>
+      ) : (
         <div className="py-4">
           <p className="text-sm text-ink-secondary mb-4">
             Sign in with your account name and password. Accounts are free; passkeys and two-factor can be added once
@@ -342,49 +385,6 @@ export function AccountSigninCard({
             </div>
           )}
         </div>
-      ) : (
-        <>
-          <SettingsTable headers={['Name', 'Type']}>
-            {rows.map((row) => {
-              const pill = METHOD_PILL[row.type];
-              return (
-                <tr key={`${row.methodId}:${row.key}`} className={SW_TR}>
-                  <td className={SW_TD}>
-                    {row.name}
-                    {row.detail && <span className="setting-desc mt-0 ml-2">{row.detail}</span>}
-                  </td>
-                  <td className={SW_TD}>
-                    <Tag color={pill}>{row.type}</Tag>
-                  </td>
-                </tr>
-              );
-            })}
-            {!loading && rows.length === 0 && (
-              <SettingsTableNote span={2}>No sign-in methods are attached to this account yet.</SettingsTableNote>
-            )}
-            {loading && <SettingsTableNote span={2}>Loading…</SettingsTableNote>}
-          </SettingsTable>
-
-          {/* One line per method that failed to load. The table above keeps
-              whatever the other methods did return. */}
-          {methods.map((m) => {
-            const error = byId[m.id]?.error;
-            return error ? (
-              <FormMessage key={m.id}>
-                {m.id}: {error}
-              </FormMessage>
-            ) : null;
-          })}
-
-          {/* The action row — each method's own control for adding/changing it. */}
-          <div className="flex flex-wrap gap-4 items-start mt-5">
-            {methods.map((m) => (m.Action ? <m.Action key={m.id} ctx={ctx} /> : null))}
-          </div>
-
-          <div className="mt-6 pt-5 border-t border-line">
-            <ExportDataSection ctx={ctx} />
-          </div>
-        </>
       )}
     </Card>
   );

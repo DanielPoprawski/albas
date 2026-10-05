@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/lib/utils';
+import { MIN_PASSWORD_LENGTH, NAME_PATTERN } from '../../../shared/authRules';
 import { useApp } from '../../context/AppContext';
-import { apiBase, MIN_PASSWORD_LENGTH, NAME_PATTERN } from '../../syncServer';
 import * as ipc from '../../ipc';
+import { apiBase } from '../../syncServer';
 
 /**
  * The API base a sign-in talks to: whatever server this device is pointed at

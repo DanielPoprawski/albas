@@ -551,7 +551,7 @@ export function nextHabitSort(seeds: Seed[]): number {
 export function byImportanceThenDue(a: Seed, b: Seed): number {
   if (a.important !== b.important) return a.important ? -1 : 1;
   const key = dueSortKey(a).localeCompare(dueSortKey(b));
-  return key !== 0 ? key : a.title.localeCompare(b.title);
+  return key === 0 ? a.title.localeCompare(b.title) : key;
 }
 
 /** How far ahead the dashboard looks: anything a week or more out is hidden. */
@@ -634,7 +634,7 @@ export function groupByList(seeds: Seed[], order: string[] = []): ListGroup[] {
       if (b === '') return 1;
       const ra = rank.get(a) ?? Number.POSITIVE_INFINITY;
       const rb = rank.get(b) ?? Number.POSITIVE_INFINITY;
-      return ra !== rb ? ra - rb : a.localeCompare(b);
+      return ra === rb ? a.localeCompare(b) : ra - rb;
     })
     .map(([list, group]) => ({ list, seeds: group.sort(byImportanceThenDue) }));
 }

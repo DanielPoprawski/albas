@@ -1,17 +1,17 @@
+import { cn } from '@/lib/utils';
+import { COLOR_CLASSES } from '../colors';
 import { useApp } from '../context/AppContext';
-import InlineEditor from './InlineEditor';
-import QuickAddField from './QuickAddField';
-import { useInlineEdit } from './useInlineEdit';
 import { fmt, weekOf } from '../dates';
 import { byDashboardOrder, byHabitOrder, bySort, dashboardHabits, dashboardTasks, groupByList } from '../seedLogic';
 import type { Seed } from '../types';
-import { COLOR_CLASSES } from '../colors';
-import { cn } from '@/lib/utils';
+import { HabitStrip, StripLabels } from './habits/HabitStrip';
+import { cellsFor } from './habits/habitModel';
+import { InlineEditor } from './InlineEditor';
+import { QuickAddField } from './QuickAddField';
+import { TaskRow } from './todo/TaskRow';
 import { Icon } from './ui/icon';
 import { SectionHeading } from './ui/section-heading';
-import HabitStrip, { StripLabels } from './habits/HabitStrip';
-import { cellsFor } from './habits/habitModel';
-import TaskRow from './todo/TaskRow';
+import { useInlineEdit } from './useInlineEdit';
 
 /**
  * The calendar's companion column — habits and tasks beside the month.
@@ -19,7 +19,7 @@ import TaskRow from './todo/TaskRow';
  * `AppShell` mounts it for the calendar view only. It displays habits with
  * weekly checkboxes and today's tasks.
  */
-export default function RightPanel() {
+export function RightPanel() {
   const { seeds, lists, firstDayOfWeek, listById, colorOf, iconOf, isVisible } = useApp();
   const { expandedId, toggleExpanded, setEditing, editModal } = useInlineEdit();
 

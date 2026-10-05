@@ -1,6 +1,6 @@
 import { addDays, diffDays, shortDate } from '../../dates';
 import { seedKey } from '../../itemKeys';
-import { type Plan, matchItem } from '../../searchMatch';
+import { matchItem, type Plan } from '../../searchMatch';
 import { isHabit, kindLabel, nearestDate, shortTime, streakOf } from '../../seedLogic';
 import type { ColorKey, FirstDayOfWeek, List, Seed, Tag } from '../../types';
 import type { Hit, ScopeTab, SearchItem } from './types';

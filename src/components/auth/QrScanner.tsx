@@ -1,6 +1,6 @@
-import { errorMessage } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { errorMessage } from '@/lib/utils';
 
 /**
  * Full-screen QR scanner, Android only (see `isAndroid` in `persistence.ts`).
@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom';
  *
  * `onScan` receives the raw QR text once; the caller decides what it means.
  */
-export default function QrScanner({
+export function QrScanner({
   hint,
   onScan,
   onCancel,
@@ -29,7 +29,7 @@ export default function QrScanner({
     document.documentElement.classList.add('qr-scanning');
     let cancelled = false;
 
-    (async () => {
+    void (async () => {
       try {
         const scanner = await import('@tauri-apps/plugin-barcode-scanner');
         let perm = await scanner.checkPermissions();

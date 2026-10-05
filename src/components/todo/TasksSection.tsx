@@ -1,10 +1,10 @@
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
 import { byImportanceThenDue, bySort, GENERAL, groupByList, isDone, isTask } from '../../seedLogic';
-import TaskRow from './TaskRow';
+import type { Seed } from '../../types';
 import { SectionHeading } from '../ui/section-heading';
 import { useInlineEdit } from '../useInlineEdit';
-import type { Seed } from '../../types';
+import { TaskRow } from './TaskRow';
 
 /**
  * One-time to-dos, grouped by list with unfiled first and completed ones
@@ -12,7 +12,7 @@ import type { Seed } from '../../types';
  * to-do shouldn't move it out of the group it belongs to, so it keeps its
  * list and star and simply stops competing for attention.
  */
-export default function TasksSection({ onEdit }: { onEdit: (s: Seed) => void }) {
+export function TasksSection({ onEdit }: { onEdit: (s: Seed) => void }) {
   const { seeds, lists, listById, isVisible } = useApp();
   const { expandedId, toggleExpanded } = useInlineEdit();
   const today = fmt(new Date());

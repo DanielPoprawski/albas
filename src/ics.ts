@@ -101,7 +101,7 @@ function parseRrule(value: string, startDate: string): Repeat {
     const last = all[all.length - 1];
     if (last) until = fromFloating(last);
   }
-  return { type: 'every', n, unit, ...(days.length ? { days } : {}), until };
+  return { type: 'every', n, unit, ...(days.length > 0 ? { days } : {}), until };
 }
 
 export interface IcsImportResult {

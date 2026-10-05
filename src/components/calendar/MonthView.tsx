@@ -3,9 +3,9 @@ import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
 import type { Occurrence } from '../../seedLogic';
 import type { Seed } from '../../types';
-import AddModal from '../AddModal';
-import MonthViewDesktop, { PILL_CAP as DESKTOP_PILL_CAP } from './MonthViewDesktop';
-import MonthViewMobile, { MIN_WEEKS as MOBILE_MIN_WEEKS, PILL_CAP as MOBILE_PILL_CAP } from './MonthViewMobile';
+import { AddModal } from '../AddModal';
+import { PILL_CAP as DESKTOP_PILL_CAP, MonthViewDesktop } from './MonthViewDesktop';
+import { MIN_WEEKS as MOBILE_MIN_WEEKS, PILL_CAP as MOBILE_PILL_CAP, MonthViewMobile } from './MonthViewMobile';
 import { occToggleDate, useMonthModel } from './monthModel';
 
 /**
@@ -18,7 +18,7 @@ interface MonthViewProps {
   isMobile?: boolean;
 }
 
-export default function MonthView({ isMobile = false }: MonthViewProps) {
+export function MonthView({ isMobile = false }: MonthViewProps) {
   const { setSelectedDate, setCalendarMode, toggleDone } = useApp();
   const [editing, setEditing] = useState<{ seed: Seed; date: string } | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);

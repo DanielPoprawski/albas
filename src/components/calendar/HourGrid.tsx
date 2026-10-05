@@ -75,7 +75,7 @@ interface Props {
   onAddAt?: (dateStr: string, time: string) => void;
 }
 
-export default function HourGrid({ days, occurrences, onEdit, onToggle, onSelectDate, onAddAt }: Props) {
+export function HourGrid({ days, occurrences, onEdit, onToggle, onSelectDate, onAddAt }: Props) {
   const { colorOf, iconOf } = useApp();
   const scrollRef = useRef<HTMLDivElement>(null);
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LockedOutError, loginWithPassword, saveSession, type Session, TotpRequiredError } from '../../lib/api';
+import { LockedOutError, loginWithPassword, type Session, saveSession, TotpRequiredError } from '../../lib/api';
 
 export function PasswordLogin({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
   const [name, setName] = useState('');

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import * as ipc from '../ipc';
 import type { SyncOutcome } from '../ipc';
+import * as ipc from '../ipc';
 import { inTauri, persistence } from '../persistence';
 import { onSyncRequest } from '../syncBus';
 
 const DEBOUNCE_DEFAULT_MS = 2000;
 const DEBOUNCE_MIN_MS = 500;
-const DEBOUNCE_MAX_MS = 10000;
+const DEBOUNCE_MAX_MS = 10_000;
 /** Upper bound on the close-time push: a dead server must not hold the window hostage. */
 const CLOSE_SYNC_TIMEOUT_MS = 5000;
 
@@ -241,7 +241,7 @@ export function useSyncEngine({
       setLastSync(null);
       return;
     }
-    (async () => {
+    void (async () => {
       try {
         const status = await ipc.syncStatus();
         configured.current = status.configured;

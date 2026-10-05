@@ -1,7 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type React from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { fmt } from '../dates';
-import * as ipc from '../ipc';
 import type { SyncOutcome, WipeKind } from '../ipc';
+import * as ipc from '../ipc';
 import { loadInitialState } from '../loadState';
 import { inTauri, matchesWipe, persistence } from '../persistence';
 import { isHabit, keywordMatches, nextHabitSort, resolveColor, resolveIcon, targetOf } from '../seedLogic';
@@ -89,7 +90,7 @@ function withKeywordTags(current: string[], title: string, prevTitle: string, ow
   const added = keywordMatches(title, own)
     .map((m) => m.tag.id)
     .filter((id) => !before.has(id) && !current.includes(id));
-  return added.length ? [...new Set(added), ...current] : current;
+  return added.length > 0 ? [...new Set(added), ...current] : current;
 }
 
 function withDone(s: Seed, date: string, value: number): Seed {

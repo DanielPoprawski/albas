@@ -19,8 +19,8 @@
  * rewriting it with JSON.stringify would reflow the whole file).
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -54,7 +54,7 @@ if (arg === '--check') {
   // tauri.properties is gitignored, so a fresh checkout (CI) has none: check it only where it exists.
   const bad = targets.slice(1).filter((t) => existsSync(join(root, t.file)) && current(t) !== want);
   for (const t of bad) console.error(`  ${t.file}: ${current(t)} (expected ${want})`);
-  if (bad.length) {
+  if (bad.length > 0) {
     console.error(`\nversion drift: package.json says ${want}. Run: bun run version:set ${want}`);
     process.exit(1);
   }

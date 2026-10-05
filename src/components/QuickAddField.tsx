@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Icon } from './ui/icon';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
 import { buildCreate } from '../createItem';
-import InlineEditor from './InlineEditor';
 import { fmt } from '../dates';
 import { parseWhen, stripMatch } from '../nlDate';
-import AddModal from './AddModal';
+import { AddModal } from './AddModal';
+import { InlineEditor } from './InlineEditor';
+import { Icon } from './ui/icon';
 
 /** The surface the field sits on — a preset of defaults, not a type of its own. */
 type Kind = 'event' | 'task' | 'habit';
@@ -29,7 +29,7 @@ const PLACEHOLDER: Record<Kind, string> = {
  * An event with a parsed time is an hour long unless a range was given; one
  * without a time is all-day, so "trip sun to thu" lands as a four-day bar.
  */
-export default function QuickAddField({
+export function QuickAddField({
   kind,
   defaultList,
   className,

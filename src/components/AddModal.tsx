@@ -1,18 +1,11 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import { cn, samePatch } from '@/lib/utils';
-import { Button } from './ui/button';
-import { Checkbox } from './ui/checkbox';
-import { Icon } from './ui/icon';
-import { ModalChrome } from './ui/modal-chrome';
-import { Segmented } from './ui/segmented';
-import { Dot } from './ui/tag';
-import { StarButton } from './ui/star';
-import { type ColorKey, type Routine, ROUTINES } from '../types';
-import { useApp } from '../context/AppContext';
 import { COLOR_CLASSES, DEFAULT_COLOR } from '../colors';
+import { useApp } from '../context/AppContext';
 import { buildCreate, splitLocation } from '../createItem';
-import { REMINDER_QUICK, reminderLabel } from '../reminders';
 import { addDays, addMinutes, fmt, nowFloor15, shortDate } from '../dates';
+import { type NlDateMatch, stripMatch } from '../nlDate';
+import { REMINDER_QUICK, reminderLabel } from '../reminders';
 import {
   bySort,
   isRepeating,
@@ -25,17 +18,24 @@ import {
   validateSeed,
 } from '../seedLogic';
 import { TAG_ICONS } from '../tagIcons';
-import { stripMatch, type NlDateMatch } from '../nlDate';
+import { type ColorKey, ROUTINES, type Routine } from '../types';
 import { useIsCoarsePointer } from '../useMedia';
-import DateField from './forms/DateField';
+import { FIELD_ROW, type FieldKey, OPTIONS, PLACEHOLDER, type Props } from './addModal/catalog';
+import { FieldRow } from './addModal/parts';
+import { DateField } from './forms/DateField';
 import { NlDateSuggestion, useNlSuggestion } from './forms/NlDateSuggestion';
-import RepeatField, { buildRepeat, draftFromRepeat, repeatError, type RepeatDraft } from './forms/RepeatField';
+import { buildRepeat, draftFromRepeat, type RepeatDraft, RepeatField, repeatError } from './forms/RepeatField';
 import { ColorPicker, ColorPopover, Select } from './forms/shared';
+import { Marked } from './Highlighted';
+import { Button } from './ui/button';
+import { Checkbox } from './ui/checkbox';
+import { Icon } from './ui/icon';
+import { ModalChrome } from './ui/modal-chrome';
+import { Segmented } from './ui/segmented';
+import { StarButton } from './ui/star';
+import { Dot } from './ui/tag';
 import { useModalDismiss } from './ui/useModalDismiss';
 import { useSpringHeight } from './ui/useSpringHeight';
-import { FIELD_ROW, OPTIONS, PLACEHOLDER, type FieldKey, type Props } from './addModal/catalog';
-import { FieldRow } from './addModal/parts';
-import { Marked } from './Highlighted';
 
 const ROUTINE_OPTIONS = ROUTINES.filter((r): r is Exclude<Routine, ''> => r !== '').map((value) => ({
   value,
@@ -46,7 +46,7 @@ const LEAD_UNITS = [
   { value: 'minutes', label: 'minutes before', mult: 1 },
   { value: 'hours', label: 'hours before', mult: 60 },
   { value: 'days', label: 'days before', mult: 1440 },
-  { value: 'weeks', label: 'weeks before', mult: 10080 },
+  { value: 'weeks', label: 'weeks before', mult: 10_080 },
 ] as const;
 
 /**
@@ -64,7 +64,7 @@ const DANGER = 'text-danger hover:text-danger';
  * stored seed, saves back over it, and puts Delete in the footer. Leaving
  * either way saves — only Cancel throws the draft away.
  */
-export default function AddModal({
+export function AddModal({
   onClose,
   edit,
   editDate,
@@ -133,9 +133,9 @@ export default function AddModal({
       if (targetOf(edit) > 1 || unitOf(edit)) keys.push('target');
       if (edit.routine) keys.push('routine');
       if (edit.list) keys.push('list');
-      if (edit.tags.length) keys.push('tags');
+      if (edit.tags.length > 0) keys.push('tags');
       if (stored.location) keys.push('location');
-      if (edit.reminders.length) keys.push('remind');
+      if (edit.reminders.length > 0) keys.push('remind');
       if (stored.notes) keys.push('notes');
     } else {
       // An event starts timed (an hour from now); a to-do starts all-day.

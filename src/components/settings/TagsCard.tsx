@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { Icon } from '../ui/icon';
-import { useApp } from '../../context/AppContext';
-import { COLOR_CLASSES, DEFAULT_COLOR } from '../../colors';
-import { Button } from '../ui/button';
 import { cn } from '@/lib/utils';
-import { ColorPicker, inputClass } from '../forms/shared';
+import { COLOR_CLASSES, DEFAULT_COLOR } from '../../colors';
+import { useApp } from '../../context/AppContext';
 import { bySort, moveSorted, nextSort } from '../../seedLogic';
 import { TAG_ICONS } from '../../tagIcons';
 import type { ColorKey } from '../../types';
+import { ColorPicker, inputClass } from '../forms/shared';
 import { IconPicker } from '../sidebar/RowMenu';
+import { Button } from '../ui/button';
+import { Icon } from '../ui/icon';
 import { DeleteRow, MoveButtons } from './ListsCard';
 import { Card } from './shared';
 

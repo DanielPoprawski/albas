@@ -7,7 +7,7 @@ import { Icon } from '../ui/icon';
  * Every tag as a toggle chip — the palette's tag filter and the edit panel's
  * bulk tagging. `some` (a mixed selection carries it) draws as a tint.
  */
-export default function TagChips({
+export function TagChips({
   tags,
   stateOf,
   onToggle,

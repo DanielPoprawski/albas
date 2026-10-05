@@ -10,9 +10,11 @@
  * through `apiRequest` — a Rust hop inside the app, since the WebView can't
  * reach the server directly (see `syncServer.ts`).
  */
-import { errorMessage } from '@/lib/utils';
+
 import { useState } from 'react';
-import { apiError, apiRequest, MIN_PASSWORD_LENGTH } from '../syncServer';
+import { errorMessage } from '@/lib/utils';
+import { MIN_PASSWORD_LENGTH } from '../../shared/authRules';
+import { apiError, apiRequest } from '../syncServer';
 import type { AuthMethod, AuthMethodContext, AuthMethodRow } from './registry';
 
 async function load(ctx: AuthMethodContext): Promise<AuthMethodRow[]> {

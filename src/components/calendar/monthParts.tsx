@@ -125,7 +125,7 @@ export function MonthCell({
       className={cn(
         'relative flex flex-col cursor-pointer overflow-hidden',
         v.cell,
-        !cell.isCurrentMonth ? 'bg-outside-cell' : cell.isPast ? 'bg-past-cell' : v.liveBg,
+        cell.isCurrentMonth ? (cell.isPast ? 'bg-past-cell' : v.liveBg) : 'bg-outside-cell',
         // a long span washes its cells in its own tint
         cell.wash && COLOR_CLASSES[cell.wash].tint,
         cell.isToday && 'today-cell',
@@ -139,13 +139,13 @@ export function MonthCell({
         <span
           className={cn(
             v.dayNumber,
-            !cell.isCurrentMonth
-              ? 'text-outside-ink'
-              : cell.isPast
+            cell.isCurrentMonth
+              ? cell.isPast
                 ? 'text-past-ink'
                 : cell.isWeekend
                   ? 'font-bold text-ink'
-                  : 'text-ink-secondary',
+                  : 'text-ink-secondary'
+              : 'text-outside-ink',
           )}
         >
           {cell.date.getDate()}

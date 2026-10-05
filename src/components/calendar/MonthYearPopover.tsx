@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { IconButton } from '../ui/button';
+import { Icon } from '../ui/icon';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).toLocaleString('default', { month: 'short' }));
@@ -15,7 +15,7 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).toLocal
  * The stepper only moves the year *shown in the grid*; the calendar changes
  * when a month is clicked. Opening resets the shown year to the viewed one.
  */
-export default function MonthYearPopover({ month, onPick }: { month: Date; onPick: (month: Date) => void }) {
+export function MonthYearPopover({ month, onPick }: { month: Date; onPick: (month: Date) => void }) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(month.getFullYear());
   const now = new Date();

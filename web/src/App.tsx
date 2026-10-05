@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import './index.css';
-import { claimGoogleTicket, getSession, saveSession, type Session } from './lib/api';
-import { OfflineInfo, Splash } from './components/auth/Splash';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { RegisterForm } from './components/auth/RegisterForm';
 import { SignedIn } from './components/auth/SignedIn';
+import { OfflineInfo, Splash } from './components/auth/Splash';
+import { claimGoogleTicket, getSession, type Session, saveSession } from './lib/api';
 
 export type Screen = 'splash' | 'login' | 'register' | 'offline';
 

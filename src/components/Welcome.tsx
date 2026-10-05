@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { useBrowserSignIn, usePasswordSignIn } from './auth/signInHooks';
-import PasswordForm from './auth/PasswordForm';
 import { SignedOutPanel } from './auth/CrossDevice';
-import { Card } from './ui/card';
+import { PasswordForm } from './auth/PasswordForm';
+import { useBrowserSignIn, usePasswordSignIn } from './auth/signInHooks';
 import { Logo } from './Logo';
+import { Card } from './ui/card';
 
 type Screen = 'splash' | 'signin' | 'register' | 'offline';
 
@@ -17,7 +17,7 @@ type Screen = 'splash' | 'signin' | 'register' | 'offline';
  * and are reached through `useBrowserSignIn`; a QR handoff covers signing in
  * with another device (`auth/CrossDevice.tsx`).
  */
-export default function Welcome() {
+export function Welcome() {
   const { setSetting } = useApp();
   const browser = useBrowserSignIn();
   const password = usePasswordSignIn();

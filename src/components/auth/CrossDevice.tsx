@@ -1,12 +1,12 @@
-import { errorMessage } from '@/lib/utils';
-import { useCallback, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { isAndroid } from '../../persistence';
-import QrScanner, { parseQrPayload } from './QrScanner';
-import type { useBrowserSignIn } from './signInHooks';
-import * as ipc from '../../ipc';
+import { useCallback, useState } from 'react';
+import { errorMessage } from '@/lib/utils';
 import type { AppSessionApproval, AppSessionOffer } from '../../ipc';
+import * as ipc from '../../ipc';
+import { isAndroid } from '../../persistence';
 import { FormMessage } from '../ui/field';
+import { parseQrPayload, QrScanner } from './QrScanner';
+import type { useBrowserSignIn } from './signInHooks';
 
 /**
  * Cross-device sign-in, both directions, on top of the browser handoff's

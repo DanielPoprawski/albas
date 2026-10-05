@@ -1,7 +1,7 @@
+import { cn } from '@/lib/utils';
 import { COLOR_CLASSES } from '../../colors';
 import { targetOf, valueOn } from '../../seedLogic';
 import type { ColorKey, Seed } from '../../types';
-import { cn } from '@/lib/utils';
 import type { HistoryCell } from './habitModel';
 
 /**
@@ -15,7 +15,7 @@ import type { HistoryCell } from './habitModel';
  * - a day the schedule never asks for: a small grey square, still clickable
  *   on past days so an off-schedule completion can be recorded
  */
-export default function HabitCell({
+export function HabitCell({
   cell,
   seed,
   color,

@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import { monthPosition, parse, rotateWeek } from '../../dates';
 import { NTH_WORDS } from '../../seedLogic';
 import type { FirstDayOfWeek, Repeat, RepeatUnit } from '../../types';
-import DateField from './DateField';
+import { DateField } from './DateField';
 import { CheckboxRow, inputClass, Select } from './shared';
 
 /**
@@ -205,7 +205,7 @@ export function buildRepeat(d: RepeatDraft, date: string, exdates?: string[]): R
         else if (d.monthBy === 'nth') {
           // a 5th-week date has no "fifth": it is the last
           if (date) month.nth = monthPosition(date).nth > 4 ? -1 : monthPosition(date).nth;
-        } else if (d.monthDays.length) {
+        } else if (d.monthDays.length > 0) {
           // -1 (the last day) sorts after the 31st
           month.monthDays = [...d.monthDays].sort((a, b) => (a === -1 ? 32 : a) - (b === -1 ? 32 : b));
         }
@@ -214,7 +214,7 @@ export function buildRepeat(d: RepeatDraft, date: string, exdates?: string[]): R
         type: 'every',
         n,
         unit: d.unit,
-        ...(d.unit === 'week' && !d.fromDone && d.days.length ? { days: [...d.days].sort() } : {}),
+        ...(d.unit === 'week' && !d.fromDone && d.days.length > 0 ? { days: [...d.days].sort() } : {}),
         ...month,
         ...(d.fromDone ? { fromDone: true } : {}),
         until,
@@ -279,7 +279,7 @@ function MonthDayPicker({
   startDay: number;
   onChange: (days: number[]) => void;
 }) {
-  const days = value.length ? value : startDay ? [startDay] : [];
+  const days = value.length > 0 ? value : startDay ? [startDay] : [];
   const cell = (day: number, label: string, className?: string) => {
     const active = days.includes(day);
     return (
@@ -312,7 +312,7 @@ function MonthDayPicker({
  * a `Repeat` with `buildRepeat` when it commits. `date` is the seed's start
  * date, which names the presets; `doable` gates the habit-only rules.
  */
-export default function RepeatField({
+export function RepeatField({
   value,
   onChange,
   firstDayOfWeek,

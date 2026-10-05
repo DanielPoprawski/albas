@@ -2,9 +2,9 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek } from '../../dates';
+import type { MonthLayoutProps } from './monthModel';
 import { BarsOverlay, MonthCell } from './monthParts';
 import { useMonthSwipe } from './useMonthSwipe';
-import type { MonthLayoutProps } from './monthModel';
 
 /** A phone column is ~3.125rem — three letters plus padding is wider than that. */
 const WEEKDAYS_NARROW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -57,7 +57,7 @@ function useMonthSlide(): { key: number; className: string } {
   };
 }
 
-export default function MonthViewMobile({ weeks, onEdit, onToggle, onDayClick, onShowDay }: MonthLayoutProps) {
+export function MonthViewMobile({ weeks, onEdit, onToggle, onDayClick, onShowDay }: MonthLayoutProps) {
   const { firstDayOfWeek } = useApp();
   const swipe = useMonthSwipe();
   const slide = useMonthSlide();

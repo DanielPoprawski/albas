@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { FONT_SIZES, FONT_STACKS, type FontChoice, type FontSizeChoice } from '../../appearance';
-import { useApp } from '../../context/AppContext';
-import { DEFAULT_ACCENT, isHex, PALETTE_COMPACT } from '../../colors';
-import { Segmented } from '../ui/segmented';
 import { cn } from '@/lib/utils';
+import { FONT_SIZES, FONT_STACKS, type FontChoice, type FontSizeChoice } from '../../appearance';
+import { DEFAULT_ACCENT, isHex, PALETTE_COMPACT } from '../../colors';
+import { useApp } from '../../context/AppContext';
 import type { ThemePref } from '../../types';
+import { Segmented } from '../ui/segmented';
 import { Card } from './shared';
 
 /**

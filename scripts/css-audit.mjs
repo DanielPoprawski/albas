@@ -40,7 +40,7 @@
  * (g) Every `@theme` key and every `@keyframes` name is referenced somewhere
  *     (a utility in TSX, `@apply`/`var()` in App.css, or an `animate-[…]`).
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -129,9 +129,9 @@ if (only('--classes')) {
     if (users.length === 0 && !applied) dead.push(name);
     else if (users.length === 1 && !applied) single.push(`${name} → ${users[0]}`);
   }
-  if (dead.length) fail(`dead classes in src/App.css: ${dead.join(', ')}`);
+  if (dead.length > 0) fail(`dead classes in src/App.css: ${dead.join(', ')}`);
   else console.log(`✓ no dead classes (${declared.size} declared)`);
-  if (single.length) {
+  if (single.length > 0) {
     console.log(`  ${single.length} single-file classes (informational):`);
     for (const s of single) note(s);
   }
@@ -291,8 +291,8 @@ if (only('--utilities')) {
       }
     });
   }
-  if (seen.size) {
-    fail(`unknown theme utilities (compile to nothing):`);
+  if (seen.size > 0) {
+    fail('unknown theme utilities (compile to nothing):');
     for (const [tok, path] of seen) note(`${tok} — ${path}`);
   } else console.log('✓ every theme-keyed utility resolves');
 }
@@ -340,7 +340,7 @@ if (only('--tokens')) {
       if (hex || fn) hexHits.push(`${s.path}:${i + 1}: ${line.trim().slice(0, 90)}`);
     });
   }
-  if (hexHits.length) {
+  if (hexHits.length > 0) {
     fail('colour literals (hex / rgb() / hsl()) outside the allowlist:');
     hexHits.forEach(note);
   } else console.log('✓ no colour literals outside colors.ts');
@@ -349,12 +349,11 @@ if (only('--tokens')) {
 /* ── (d) one breakpoint, expressed as `max-md:` ─────────────────────── */
 if (only('--breakpoint')) {
   const media = [...css.matchAll(/@media\s*\(max-width[^)]*\)/g)].map((m) => m[0]);
-  if (media.length) fail(`phone layout must be max-md: utilities, not App.css media queries: ${media.join(', ')}`);
+  if (media.length > 0) fail(`phone layout must be max-md: utilities, not App.css media queries: ${media.join(', ')}`);
   else console.log('✓ no max-width media queries in App.css');
   const useMedia = readFileSync(join(ROOT, 'src/useMedia.ts'), 'utf8');
-  if (!/MOBILE_QUERY = '\(max-width: 768px\)'/.test(useMedia))
-    fail("useMedia.ts MOBILE_QUERY must stay '(max-width: 768px)' (= Tailwind md, 48rem)");
-  else console.log('✓ MOBILE_QUERY matches the md breakpoint');
+  if (/MOBILE_QUERY = '\(max-width: 768px\)'/.test(useMedia)) console.log('✓ MOBILE_QUERY matches the md breakpoint');
+  else fail("useMedia.ts MOBILE_QUERY must stay '(max-width: 768px)' (= Tailwind md, 48rem)");
   const desktopFirst = [];
   for (const s of code) {
     if (!s.path.endsWith('.tsx')) continue;
@@ -363,7 +362,7 @@ if (only('--breakpoint')) {
       if (/(?<![\w-])md:[a-z[!-]/.test(line)) desktopFirst.push(`${s.path}:${i + 1}`);
     });
   }
-  if (desktopFirst.length) {
+  if (desktopFirst.length > 0) {
     fail('desktop-first `md:` variant (phone layout is `max-md:`; the desktop is the default):');
     desktopFirst.forEach(note);
   } else console.log('✓ no desktop-first md: variants');
@@ -380,7 +379,7 @@ if (only('--px')) {
       }
     });
   }
-  if (px.length) {
+  if (px.length > 0) {
     fail('px in a class beyond a 1–2px hairline (Settings › Text size scales rem, not px):');
     px.forEach(note);
   } else console.log('✓ no px geometry in classes');
@@ -407,7 +406,7 @@ if (only('--theme')) {
   for (const m of cssCode.matchAll(/@keyframes\s+([a-z][\w-]*)/g)) {
     if (!new RegExp(`animate-\\[${m[1]}[_\\]]`).test(allCode + cssCode)) unused.push(`@keyframes ${m[1]}`);
   }
-  if (unused.length) fail(`declared but unused in src/App.css: ${unused.join(', ')}`);
+  if (unused.length > 0) fail(`declared but unused in src/App.css: ${unused.join(', ')}`);
   else console.log(`✓ every @theme key and keyframe is used (${themeKeys.size} keys)`);
 }
 
@@ -422,7 +421,7 @@ if (only('--inline')) {
       if (!lines.slice(Math.max(0, i - 3), i + 1).some((l) => /dynamic:/.test(l))) bare.push(`${s.path}:${i + 1}`);
     });
   }
-  if (bare.length) {
+  if (bare.length > 0) {
     fail('inline style without a `// dynamic:` comment (static styling belongs in utilities):');
     bare.forEach(note);
   } else console.log('✓ every inline style is annotated as dynamic');

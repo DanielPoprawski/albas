@@ -1,13 +1,13 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { type KeyboardEvent, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
 import { bySort, GENERAL, isHabit, isRepeating, movedEnd } from '../seedLogic';
 import type { ColorKey, Routine, Seed } from '../types';
-import DateField from './forms/DateField';
+import { DateField } from './forms/DateField';
 import { ColorPopover, Select } from './forms/shared';
 import { ROUTINE_OPTIONS } from './habits/habitModel';
-import { Dot } from './ui/tag';
 import { StarButton } from './ui/star';
+import { Dot } from './ui/tag';
 
 /**
  * The title input every inline editor shares: a draft that commits on blur
@@ -109,7 +109,7 @@ function ColorSwatch({
  * anything that doesn't repeat. Every change is written straight through
  * `updateSeed`; "Advanced…" hands off to the full modal.
  */
-export default function InlineEditor({
+export function InlineEditor({
   seed,
   autoFocusTitle,
   onAdvanced,

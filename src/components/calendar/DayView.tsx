@@ -6,12 +6,12 @@ import { fmt, shortDate } from '../../dates';
 import { expandSeeds, type Occurrence } from '../../seedLogic';
 import { seedTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import type { Seed } from '../../types';
-import AddModal from '../AddModal';
+import { AddModal } from '../AddModal';
 import { Icon } from '../ui/icon';
-import HourGrid from './HourGrid';
+import { HourGrid } from './HourGrid';
 import { occDone, occKind, occToggleDate } from './monthModel';
 
-export default function DayView() {
+export function DayView() {
   const { selectedDate, setSelectedDate, allSeeds, toggleDone, firstDayOfWeek, isVisible, colorOf, iconOf } = useApp();
   const [editing, setEditing] = useState<{ seed: Seed; date: string } | null>(null);
   const [addAt, setAddAt] = useState<{ date: string; time: string } | null>(null);

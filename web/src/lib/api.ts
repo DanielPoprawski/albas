@@ -65,7 +65,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const res = await fetch(`/api${path}`, {
     method,
     headers: Object.keys(finalHeaders).length > 0 ? finalHeaders : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 
   if (!res.ok) {

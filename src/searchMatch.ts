@@ -256,7 +256,7 @@ function parseTerms(raw: string, opts: { autoRegex?: boolean }): Plan {
       return term;
     })
     .filter((t) => t.text);
-  return terms.length ? { mode: 'fuzzy', ok: true, terms } : { mode: 'empty', ok: true };
+  return terms.length > 0 ? { mode: 'fuzzy', ok: true, terms } : { mode: 'empty', ok: true };
 }
 
 function regexRanges(re: RegExp, s: string): [number, number][] {
@@ -304,7 +304,7 @@ export function matchItem(plan: Plan, fields: string[]): MatchResult | null {
     let any = false;
     fields.forEach((f, fi) => {
       const ranges = regexRanges(plan.re, f);
-      if (!ranges.length) return;
+      if (ranges.length === 0) return;
       any = true;
       score += ranges.length;
       for (const [s, e] of ranges) for (let k = s; k < e; k++) positions[fi].push(k);

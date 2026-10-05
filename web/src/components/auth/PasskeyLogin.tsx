@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { loginStart, loginWithPasskey, saveSession, type Session } from '../../lib/api';
+import { loginStart, loginWithPasskey, type Session, saveSession } from '../../lib/api';
 import { type AuthenticationChallenge, webauthnSupported } from '../../lib/webauthn';
 
 export function PasskeyLogin({ onSignedIn }: { onSignedIn: (session: Session) => void }) {

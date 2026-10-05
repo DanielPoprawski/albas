@@ -1,12 +1,12 @@
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
-import InlineEditor from '../InlineEditor';
 import { shortDate } from '../../dates';
 import { REMINDER_CHOICES } from '../../reminders';
 import { kindLabel } from '../../seedLogic';
 import { BulkNotice, DeleteConfirm } from '../bulk/BulkControls';
 import { plural } from '../bulk/useBulkActions';
-import TagChips from './TagChips';
+import { InlineEditor } from '../InlineEditor';
+import { Icon } from '../ui/icon';
+import { TagChips } from './TagChips';
 import type { SearchState } from './useSearchState';
 
 const SECTION = 'micro-label';
@@ -20,7 +20,7 @@ const LIST_BTN = 'flex items-center gap-2 px-2 py-1 text-xs font-medium hover:bg
  * shift, a reminder, deletion. One selected item also gets the door to the
  * full editor. On a phone it stacks under the results instead.
  */
-export default function EditPanel({ s }: { s: SearchState }) {
+export function EditPanel({ s }: { s: SearchState }) {
   const items = s.selectedItems;
   const one = items.length === 1 ? items[0] : null;
 

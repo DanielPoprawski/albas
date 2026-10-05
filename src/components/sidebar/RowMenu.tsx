@@ -1,8 +1,8 @@
-import { type ReactNode, useRef } from 'react';
 import { DropdownMenu, Popover as PopoverPrimitive } from 'radix-ui';
-import { Icon } from '../ui/icon';
+import { type ReactNode, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { TAG_ICONS } from '../../tagIcons';
+import { Icon } from '../ui/icon';
 import { PopoverContent } from '../ui/popover';
 
 /** The sidebar's hover-revealed "…" trigger: laid out always, painted on hover/focus/open. */

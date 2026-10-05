@@ -1,11 +1,11 @@
-import { type ReactNode, useId } from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
+import { type ReactNode, useId } from 'react';
+import { cn } from '@/lib/utils';
 import { COLOR_CLASSES, COLOR_KEYS, COLOR_LABELS, DEFAULT_COLOR } from '../../colors';
 import type { ColorKey } from '../../types';
-import { cn } from '@/lib/utils';
 import { Checkbox } from '../ui/checkbox';
 import { PopoverContent } from '../ui/popover';
-import { Select as SelectRoot, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { SelectContent, SelectItem, Select as SelectRoot, SelectTrigger, SelectValue } from '../ui/select';
 
 /* The shared text-input skin: the `field-input` utility (App.css), which bakes in its own `:focus` border. */
 export const inputClass = 'field-input';

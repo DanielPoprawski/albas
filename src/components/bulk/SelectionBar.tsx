@@ -15,7 +15,7 @@ const ACTION = 'button-small';
  * the three selection shortcuts, and the bulk edits from `useBulkActions` —
  * the same callbacks the search palette's panel runs.
  */
-export default function SelectionBar({
+export function SelectionBar({
   items,
   scope,
   selection,

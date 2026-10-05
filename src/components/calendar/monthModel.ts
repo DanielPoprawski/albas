@@ -232,7 +232,7 @@ export function useMonthModel({ pillCap, minWeeks = 0 }: MonthModelOptions): Wee
           // YYYY-MM-DD sorts lexically, so a string compare is a date compare
           isPast: dateStr < todayStr,
           isWeekend: date.getDay() === 0 || date.getDay() === 6,
-          wash: cellLongs.length ? colorOf(cellLongs[0].seed) : undefined,
+          wash: cellLongs.length > 0 ? colorOf(cellLongs[0].seed) : undefined,
           longStarts: cellLongs.filter((o) => o.startDate === dateStr),
           longEnds: cellLongs.filter((o) => o.endDate === dateStr),
           shownOccs,

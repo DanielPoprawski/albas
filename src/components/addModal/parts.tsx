@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
+import { Icon } from '../ui/icon';
 import { FIELD_ROW } from './catalog';
 
 /**

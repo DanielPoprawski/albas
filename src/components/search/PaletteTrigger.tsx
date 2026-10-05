@@ -1,6 +1,6 @@
 import { forwardRef, type KeyboardEvent } from 'react';
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
+import { Icon } from '../ui/icon';
 
 export const KBD =
   'inline-flex items-center border border-accent-2 bg-page px-[0.3125rem] py-px text-[0.625rem] font-semibold leading-none text-accent-2';
@@ -12,7 +12,7 @@ export const KBD =
  * closed palette isn't a forgotten filter. `compact` (the phone header) is
  * just the icon, in the accent while a query is live; `className` styles it.
  */
-const PaletteTrigger = forwardRef<
+export const PaletteTrigger = forwardRef<
   HTMLDivElement,
   { query: string; count: number; onOpen: () => void; compact?: boolean; className?: string }
 >(function PaletteTrigger({ query, count, onOpen, compact, className }, ref) {
@@ -56,5 +56,3 @@ const PaletteTrigger = forwardRef<
     </div>
   );
 });
-
-export default PaletteTrigger;

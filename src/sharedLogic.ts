@@ -95,7 +95,7 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
     const seeds = new Map<string, Seed>();
     const lists: List[] = [];
     const tags: Tag[] = [];
-    const done: Array<[string, string, number]> = [];
+    const done: [string, string, number][] = [];
 
     for (const { tbl, pk, payload } of ownerRows) {
       const p = payload as Record<string, unknown>;

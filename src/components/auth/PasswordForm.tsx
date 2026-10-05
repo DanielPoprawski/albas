@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { MIN_PASSWORD_LENGTH } from '../../syncServer';
+import { type FormEvent, useState } from 'react';
+import { MIN_PASSWORD_LENGTH } from '../../../shared/authRules';
 import type { PasswordSignInState } from './signInHooks';
 
 const INPUT = 'field-input disabled:opacity-50';
@@ -12,7 +12,7 @@ const LABEL = 'micro-label block mb-xs';
  * (`state.kind === 'totp'`), so an account without an authenticator never
  * sees it.
  */
-export default function PasswordForm({
+export function PasswordForm({
   mode,
   state,
   onLogin,

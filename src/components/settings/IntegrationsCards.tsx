@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { inTauri } from '../../persistence';
 import { parseIcs } from '../../ics';
-import * as ipc from '../../ipc';
 import type { SharesRes } from '../../ipc';
+import * as ipc from '../../ipc';
+import { inTauri } from '../../persistence';
 import { Switch } from '../ui/switch';
 import { AsyncMessage, Card, ROW_INSET, useAsyncState } from './shared';
 

@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
-import Highlighted from '../Highlighted';
-import { Checkbox } from '../ui/checkbox';
 import { COLOR_CLASSES } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { isDone, isTask, kindLabel } from '../../seedLogic';
-import { MAX_HITS, dateLabel } from './searchItems';
+import { Highlighted } from '../Highlighted';
+import { Checkbox } from '../ui/checkbox';
+import { Icon } from '../ui/icon';
+import { dateLabel, MAX_HITS } from './searchItems';
 import type { ScopeTab } from './types';
 import type { SearchState } from './useSearchState';
 
@@ -28,7 +28,7 @@ function summaryText(s: SearchState): string {
 }
 
 /** Scope tabs with live counts, the summary/select links, the rows, and the key legend. */
-export default function PaletteResults({ s }: { s: SearchState }) {
+export function PaletteResults({ s }: { s: SearchState }) {
   const { iconOf } = useApp();
   const list = useRef<HTMLUListElement>(null);
 
@@ -83,7 +83,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
           <li className="px-[0.875rem] py-6 text-center text-[0.8125rem] text-ink-muted">
             {s.plan.mode === 'regex' && !s.plan.ok
               ? 'Finish the pattern to see matches.'
-              : s.query.trim() || !s.tagFilter.length
+              : s.query.trim() || s.tagFilter.length === 0
                 ? `Nothing matches “${s.query.trim()}” in ${tabName}.`
                 : `Nothing with those tags in ${tabName}.`}
           </li>

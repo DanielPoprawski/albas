@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
 import { describeWhen, type NlDateMatch, useNlDate } from '../../nlDate';
+import { Icon } from '../ui/icon';
 
 /**
  * A natural-language date found in a title, minus the one the user waved
@@ -34,11 +34,7 @@ export function NlDateSuggestion({
   return (
     <div className={cn('flex items-center justify-between gap-2', className)}>
       <span className="text-sm text-ink-muted truncate">
-        {'→ '}
-        <span className="text-accent font-semibold">{describeWhen(suggestion)}</span>
-        {' — from “'}
-        {suggestion.matched.text}
-        {'”'}
+        →<span className="text-accent font-semibold">{describeWhen(suggestion)}</span>— from “{suggestion.matched.text}”
       </span>
       <span className="flex items-center gap-2 shrink-0">
         <button type="button" onClick={onApply} className="text-sm font-semibold text-accent hover:underline">

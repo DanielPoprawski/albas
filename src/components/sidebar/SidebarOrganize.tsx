@@ -2,14 +2,14 @@ import { DEFAULT_COLOR } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { bySort, GENERAL, isDone, isTask, moveSorted, nextSort } from '../../seedLogic';
 import { TAG_ICONS } from '../../tagIcons';
-import SidebarSection, { ToggleRow } from './SidebarSection';
+import { SidebarSection, ToggleRow } from './SidebarSection';
 
 /**
  * The sidebar's two organising sections: Lists (with the unfiled "General"
  * row first) and Tags. Each row is a visibility tick — hiding a list or a
  * tag hides its seeds on every screen — plus the management menu.
  */
-export default function SidebarOrganize() {
+export function SidebarOrganize() {
   const {
     seeds,
     lists,

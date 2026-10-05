@@ -3,14 +3,14 @@
 // and the bulk-edit panel.
 
 /** The short list the chip surfaces (Add modal, bulk panel) show. */
-export const REMINDER_QUICK = [0, 5, 10, 15, 30, 60, 1440, 10080] as const;
+export const REMINDER_QUICK = [0, 5, 10, 15, 30, 60, 1440, 10_080] as const;
 
 /** A bulk-edit choice: no reminder, or one lead time. */
 export type ReminderChoice = 'none' | number;
 
 type Unit = 'week' | 'day' | 'hour' | 'minute';
 const UNITS: [Unit, number][] = [
-  ['week', 10080],
+  ['week', 10_080],
   ['day', 1440],
   ['hour', 60],
   ['minute', 1],

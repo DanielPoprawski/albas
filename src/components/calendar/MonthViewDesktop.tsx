@@ -1,13 +1,13 @@
-import { Icon } from '../ui/icon';
+import { goToday, isThisMonth, stepMonth } from '../../calendarNav';
 import { useApp } from '../../context/AppContext';
 import { rotateWeek, weekdayAt } from '../../dates';
-import { goToday, isThisMonth, stepMonth } from '../../calendarNav';
-import { BarsOverlay, MonthCell } from './monthParts';
-import SearchPalette from '../search/SearchPalette';
-import type { MonthLayoutProps } from './monthModel';
-import MonthYearPopover from './MonthYearPopover';
+import { SearchPalette } from '../search/SearchPalette';
 import { Button, IconButton } from '../ui/button';
 import { Card } from '../ui/card';
+import { Icon } from '../ui/icon';
+import { MonthYearPopover } from './MonthYearPopover';
+import type { MonthLayoutProps } from './monthModel';
+import { BarsOverlay, MonthCell } from './monthParts';
 
 // Sunday-first to match getDay(); rotated into display order via rotateWeek
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -15,7 +15,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** A desktop cell has room for two chips and a bottom-pinned stack. */
 export const PILL_CAP = 2;
 
-export default function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, onShowDay }: MonthLayoutProps) {
+export function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, onShowDay }: MonthLayoutProps) {
   const { firstDayOfWeek, currentMonth, setCurrentMonth, setSelectedDate, showRightPanel, toggleRightPanel } = useApp();
 
   const nav = { setCurrentMonth, setSelectedDate };

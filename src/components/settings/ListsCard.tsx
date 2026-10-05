@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Icon } from '../ui/icon';
-import { useApp } from '../../context/AppContext';
-import { Button, IconButton } from '../ui/button';
 import { cn } from '@/lib/utils';
-import { inputClass } from '../forms/shared';
+import { useApp } from '../../context/AppContext';
 import { bySort, moveSorted, nextSort } from '../../seedLogic';
+import { inputClass } from '../forms/shared';
+import { Button, IconButton } from '../ui/button';
+import { Icon } from '../ui/icon';
 import { Card } from './shared';
 
 /** The inline "Delete? Yes / No" every organiser row asks instead of `window.confirm`. */

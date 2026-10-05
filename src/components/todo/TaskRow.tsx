@@ -1,13 +1,13 @@
-import { Icon } from '../ui/icon';
 import { cn } from '@/lib/utils';
-import { StarButton } from '../ui/star';
 import { COLOR_CLASSES } from '../../colors';
 import { useApp } from '../../context/AppContext';
 import { completionDay, dueLabel, isDone } from '../../seedLogic';
 import type { Seed } from '../../types';
-import InlineEditor from '../InlineEditor';
-import type { RowClickResult } from '../bulk/useListSelection';
 import { useIsCoarsePointer } from '../../useMedia';
+import type { RowClickResult } from '../bulk/useListSelection';
+import { InlineEditor } from '../InlineEditor';
+import { Icon } from '../ui/icon';
+import { StarButton } from '../ui/star';
 
 interface TaskRowProps {
   task: Seed;
@@ -33,7 +33,7 @@ interface TaskRowProps {
  * editor beneath it. On touch there is no inline editor: the row opens the
  * full modal, which is the only editor a phone gets.
  */
-export default function TaskRow({
+export function TaskRow({
   task,
   today,
   onEdit,

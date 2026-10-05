@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { jumpTo } from '../../calendarNav';
-import { useBulkActions } from '../bulk/useBulkActions';
 import { useApp } from '../../context/AppContext';
 import { fmt } from '../../dates';
 import { REMINDER_QUICK, type ReminderChoice } from '../../reminders';
 import { parseQuery } from '../../searchMatch';
 import { bySort } from '../../seedLogic';
 import type { Seed } from '../../types';
+import { useBulkActions } from '../bulk/useBulkActions';
 import { MAX_HITS, matchAll, rankHits, tabOf, toSearchItems } from './searchItems';
 import type { ScopeTab, SearchItem, SearchPage } from './types';
 
@@ -14,7 +14,7 @@ const DEFAULT_TAB: Record<SearchPage, ScopeTab> = { calendar: 'events', todos: '
 
 /** The one value every selected item shares, or null when they differ (or nothing is selected). */
 function common<T>(values: T[]): T | null {
-  if (!values.length) return null;
+  if (values.length === 0) return null;
   return values.every((v) => v === values[0]) ? values[0] : null;
 }
 
@@ -66,7 +66,10 @@ export function useSearchState(page: SearchPage) {
   const plan = useMemo(() => parseQuery(query, { autoRegex }), [query, autoRegex]);
   const allMatches = useMemo(
     () =>
-      matchAll(plan, tagFilter.length ? items.filter((i) => tagFilter.every((t) => i.seed.tags.includes(t))) : items),
+      matchAll(
+        plan,
+        tagFilter.length > 0 ? items.filter((i) => tagFilter.every((t) => i.seed.tags.includes(t))) : items,
+      ),
     [plan, items, tagFilter],
   );
 

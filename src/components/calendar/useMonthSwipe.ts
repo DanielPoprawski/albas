@@ -1,5 +1,5 @@
+import type { MouseEvent, TouchEvent, WheelEvent } from 'react';
 import { useRef } from 'react';
-import type { TouchEvent, WheelEvent, MouseEvent } from 'react';
 import { useApp } from '../../context/AppContext';
 
 /** Horizontal travel before a drag counts as a month swipe. */
