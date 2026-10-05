@@ -27,7 +27,6 @@ export default defineConfig(async () => ({
         manualChunks: {
           react: ['react', 'react-dom', 'radix-ui'],
           dates: ['date-fns', 'chrono-node', 'rrule'],
-          icons: ['lucide-react'],
         },
       },
     },

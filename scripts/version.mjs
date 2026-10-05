@@ -18,7 +18,7 @@
  * their existing formatting (tauri.conf.json is indented with six spaces, and
  * rewriting it with JSON.stringify would reflow the whole file).
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -51,7 +51,8 @@ const arg = process.argv[2];
 
 if (arg === '--check') {
   const want = current(targets[0]);
-  const bad = targets.slice(1).filter((t) => current(t) !== want);
+  // tauri.properties is gitignored, so a fresh checkout (CI) has none: check it only where it exists.
+  const bad = targets.slice(1).filter((t) => existsSync(join(root, t.file)) && current(t) !== want);
   for (const t of bad) console.error(`  ${t.file}: ${current(t)} (expected ${want})`);
   if (bad.length) {
     console.error(`\nversion drift: package.json says ${want}. Run: bun run version:set ${want}`);

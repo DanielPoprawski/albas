@@ -1,6 +1,6 @@
 [package]
 name = "albas"
-version = "1.13.1"
+version = "1.13.2"
 description = "To-do list and calendar"
 authors = ["Daniel Poprawski"]
 edition = "2024"
