@@ -82,6 +82,21 @@ export function resolveIcon(s: Pick<Seed, 'tags'>, tagById: (id: string) => Tag 
   return (last && tagById(last)?.icon) || null;
 }
 
+/** Every place a tag's keyword occurs in `title` as a whole word (any case), in title order. */
+export function keywordMatches(title: string, tags: Tag[]): { tag: Tag; index: number; length: number }[] {
+  const hits: { tag: Tag; index: number; length: number }[] = [];
+  for (const tag of tags) {
+    for (const kw of tag.keywords.split(',')) {
+      const word = kw.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (!word) continue;
+      for (const m of title.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${word}(?![\\p{L}\\p{N}])`, 'giu'))) {
+        hits.push({ tag, index: m.index, length: m[0].length });
+      }
+    }
+  }
+  return hits.sort((a, b) => a.index - b.index);
+}
+
 // --- Done --------------------------------------------------------------------
 
 /** Start/anchor day for repeating rules. */

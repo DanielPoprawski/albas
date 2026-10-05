@@ -99,7 +99,9 @@ function makeLocalPersistence(): Persistence {
         if (parsed && typeof parsed === 'object') {
           state.seeds = Array.isArray(parsed.seeds) ? parsed.seeds : [];
           state.lists = Array.isArray(parsed.lists) ? parsed.lists : [];
-          state.tags = Array.isArray(parsed.tags) ? parsed.tags : [];
+          state.tags = Array.isArray(parsed.tags)
+            ? parsed.tags.map((t: Tag) => ({ ...t, keywords: t.keywords ?? '' }))
+            : [];
           state.settings = parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {};
         }
       } catch {

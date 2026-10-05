@@ -111,27 +111,31 @@ export default function WeekView() {
                 style={{ gridColumn: `${seg.startCol} / span ${seg.span}`, gridRow: lane + 1 }}
               />
             ))}
-            {barLanes.map(({ seg, lane }) => (
-              <div
-                key={seg.item.key}
-                onClick={() => open(seg.item)}
-                title={sharedTitleAttr(seg.item.seed)}
-                className={cn(
-                  'cursor-pointer text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
-                  COLOR_CLASSES[colorOf(seg.item.seed)].bg,
-                  seg.startsHere && 'ml-1',
-                  seg.endsHere && 'mr-1',
-                )}
-                // dynamic: grid placement, dimmed when shared
-                style={{
-                  gridColumn: `${seg.startCol} / span ${seg.span}`,
-                  gridRow: nLongLanes + lane + 1,
-                  opacity: sharedOpacity(seg.item.seed),
-                }}
-              >
-                {seg.startsHere ? seedTitle(seg.item.seed) : '…'}
-              </div>
-            ))}
+            {barLanes.map(({ seg, lane }) => {
+              const icon = seg.startsHere ? iconOf(seg.item.seed) : null;
+              return (
+                <div
+                  key={seg.item.key}
+                  onClick={() => open(seg.item)}
+                  title={sharedTitleAttr(seg.item.seed)}
+                  className={cn(
+                    'cursor-pointer flex items-center gap-1 text-xs font-bold px-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
+                    COLOR_CLASSES[colorOf(seg.item.seed)].bg,
+                    seg.startsHere && 'ml-1',
+                    seg.endsHere && 'mr-1',
+                  )}
+                  // dynamic: grid placement, dimmed when shared
+                  style={{
+                    gridColumn: `${seg.startCol} / span ${seg.span}`,
+                    gridRow: nLongLanes + lane + 1,
+                    opacity: sharedOpacity(seg.item.seed),
+                  }}
+                >
+                  {icon && <Icon name={icon} size="0.75rem" />}
+                  {seg.startsHere ? seedTitle(seg.item.seed) : '…'}
+                </div>
+              );
+            })}
             {/* to-do chips, one sub-grid row under the bars */}
             {weekDays.map((dateStr, i) => {
               const chips = chipOccs.filter((o) => o.startDate === dateStr);
@@ -188,6 +192,7 @@ export default function WeekView() {
         days={weekDays}
         occurrences={timedOccs}
         onEdit={open}
+        onToggle={(o) => toggleDone(o.seed.id, occToggleDate(o, todayStr))}
         onSelectDate={setSelectedDate}
         onAddAt={(date, time) => setAddAt({ date, time })}
       />

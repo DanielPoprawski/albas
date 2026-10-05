@@ -6,6 +6,7 @@ import { fmt } from '../../dates';
 import { type Occurrence, shortTime, timeToMinutes } from '../../seedLogic';
 import { seedTitle, sharedOpacity, sharedTitleAttr } from '../../sharedLogic';
 import { Icon } from '../ui/icon';
+import { occDone } from './monthModel';
 
 /** `top`/`height` for a point `min` minutes into the day, in hour-grid units. */
 function atMinutes(min: number): string {
@@ -67,12 +68,14 @@ interface Props {
   /** Timed single-day occurrences only (bars and chips live in the all-day section). */
   occurrences: Occurrence[];
   onEdit: (o: Occurrence) => void;
+  /** The checkbox on a doable block. */
+  onToggle: (o: Occurrence) => void;
   onSelectDate?: (dateStr: string) => void;
   /** A click on empty grid: the day and the hour (`HH:00`) under the pointer. */
   onAddAt?: (dateStr: string, time: string) => void;
 }
 
-export default function HourGrid({ days, occurrences, onEdit, onSelectDate, onAddAt }: Props) {
+export default function HourGrid({ days, occurrences, onEdit, onToggle, onSelectDate, onAddAt }: Props) {
   const { colorOf, iconOf } = useApp();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -152,6 +155,7 @@ export default function HourGrid({ days, occurrences, onEdit, onSelectDate, onAd
               {positioned.map(({ occ, startMin, endMin, lane, lanes }) => {
                 const c = COLOR_CLASSES[colorOf(occ.seed)];
                 const icon = iconOf(occ.seed);
+                const done = !!occ.seed.track && occDone(occ);
                 const minutes = endMin - startMin;
                 return (
                   <div
@@ -176,8 +180,21 @@ export default function HourGrid({ days, occurrences, onEdit, onSelectDate, onAd
                     }}
                   >
                     <div className="flex items-center gap-1 text-xs font-bold overflow-hidden whitespace-nowrap">
+                      {occ.seed.track && !occ.seed.sharedBy && (
+                        <Icon
+                          name={done ? 'check_box' : 'check_box_outline_blank'}
+                          size="0.75rem"
+                          className="cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggle(occ);
+                          }}
+                        />
+                      )}
                       {icon && <Icon name={icon} size="0.75rem" />}
-                      <span className="min-w-0 truncate">{seedTitle(occ.seed)}</span>
+                      <span className={cn('min-w-0 truncate', done && 'line-through opacity-50')}>
+                        {seedTitle(occ.seed)}
+                      </span>
                     </div>
                     {minutes >= 45 && (
                       <div className="text-xs opacity-70 overflow-hidden whitespace-nowrap">

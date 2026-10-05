@@ -10,7 +10,7 @@ import HabitsSection from './todo/HabitsSection';
 import TasksSection from './todo/TasksSection';
 import { cn } from '@/lib/utils';
 import { useApp } from '../context/AppContext';
-import { fmt } from '../dates';
+import { fmt, weekOf, parse, shortDate } from '../dates';
 import { useInlineEdit } from './useInlineEdit';
 import type { Seed } from '../types';
 
@@ -47,11 +47,24 @@ const CONTENT = 'px-1 pt-1 pb-32';
  * any device.
  */
 export default function HomeView() {
-  const { setActiveView } = useApp();
+  const { calendarMode, currentMonth, selectedDate, setActiveView, firstDayOfWeek } = useApp();
   const { setEditing, editModal } = useInlineEdit();
   const [currentTab, setCurrentTab] = useState<MobileTab>('dashboard');
   const [adding, setAdding] = useState(false);
-  const today = new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  const displayDate = () => {
+    if (calendarMode === 'month') {
+      return currentMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    } else if (calendarMode === 'week') {
+      const week = weekOf(parse(selectedDate ?? fmt(new Date())), firstDayOfWeek);
+      return `${shortDate(week[0])} – ${shortDate(week[6])}`;
+    } else {
+      return parse(selectedDate ?? fmt(new Date())).toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      });
+    }
+  };
 
   return (
     <div className="flex h-full w-full flex-col bg-page">
@@ -60,7 +73,8 @@ export default function HomeView() {
       <div className="z-10 flex h-10 shrink-0 items-center justify-between border-b border-line bg-surface px-2">
         <div className="flex w-18 gap-2">{currentTab === 'dashboard' && <CalendarNav compact />}</div>
         <div className="flex-1 text-center font-heading text-sm font-bold text-ink">
-          {currentTab === 'dashboard' && today}
+          {/* Top bar view with either the date or the tab name, depending on which tab is active. */}
+          {currentTab === 'dashboard' && displayDate()}
           {currentTab === 'habits' && 'Habits'}
           {currentTab === 'tasks' && 'Tasks'}
         </div>

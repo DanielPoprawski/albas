@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { toParts } from '../searchMatch';
 
 /**
@@ -19,4 +19,28 @@ export default function Highlighted({ text, positions }: { text: string; positio
       })}
     </>
   );
+}
+
+/** Renders `text` with each `{index, length}` run wrapped in a span of its own class; a run overlapping an earlier one is dropped. */
+export function Marked({
+  text,
+  marks,
+}: {
+  text: string;
+  marks: { index: number; length: number; className: string }[];
+}) {
+  const out: ReactNode[] = [];
+  let at = 0;
+  for (const m of [...marks].sort((a, b) => a.index - b.index)) {
+    if (m.index < at) continue;
+    out.push(text.slice(at, m.index));
+    out.push(
+      <span key={m.index} className={m.className}>
+        {text.slice(m.index, m.index + m.length)}
+      </span>,
+    );
+    at = m.index + m.length;
+  }
+  out.push(text.slice(at));
+  return <>{out}</>;
 }

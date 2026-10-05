@@ -22,7 +22,7 @@ const CELL_VARIANTS = {
     dayNumber: 'text-xs font-semibold',
     chips: 'gap-[2px] mt-auto text-xs',
     chip: 'text-xs font-semibold px-xs py-[2px] overflow-hidden whitespace-nowrap border hover:shadow-pop',
-    /* The time prefix and the tag icon only fit at desktop widths. */
+    /* The time prefix only fits at desktop widths. */
     time: true,
     more: (n: number) => `+${n} more`,
     moreClass: 'pl-xs',
@@ -81,7 +81,7 @@ export function MonthCell({
   const chip = (o: Occurrence): ReactNode => {
     const c = COLOR_CLASSES[colorOf(o.seed)];
     const done = !!o.seed.track && occDone(o);
-    const icon = v.time ? iconOf(o.seed) : null;
+    const icon = iconOf(o.seed);
     return (
       <div
         key={o.key}
@@ -219,31 +219,35 @@ export function SpanCorners({ cell }: { cell: DayCell }) {
 
 /** The span's name, shown once on its start day. */
 export function SpanTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occurrence) => void }) {
-  const { colorOf } = useApp();
+  const { colorOf, iconOf } = useApp();
   // Multiplied rather than a separate `opacity-50` class: an inline `style`
   // always wins over a class, so a shared seed's own opacity would silently
   // swallow the dim.
   const dimFactor = dimCell(cell) ? 0.5 : 1;
   return (
     <>
-      {cell.longStarts.map((o) => (
-        <div
-          key={`t-${o.key}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit(o);
-          }}
-          title={sharedTitleAttr(o.seed)}
-          className={cn(
-            'text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap hover:opacity-70 hover:shadow-pop',
-            COLOR_CLASSES[colorOf(o.seed)].text,
-          )}
-          // dynamic: dimmed when shared or elapsed
-          style={{ opacity: (sharedOpacity(o.seed) ?? 1) * dimFactor }}
-        >
-          {seedTitle(o.seed)}
-        </div>
-      ))}
+      {cell.longStarts.map((o) => {
+        const icon = iconOf(o.seed);
+        return (
+          <div
+            key={`t-${o.key}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(o);
+            }}
+            title={sharedTitleAttr(o.seed)}
+            className={cn(
+              'flex items-center gap-1 text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap hover:opacity-70 hover:shadow-pop',
+              COLOR_CLASSES[colorOf(o.seed)].text,
+            )}
+            // dynamic: dimmed when shared or elapsed
+            style={{ opacity: (sharedOpacity(o.seed) ?? 1) * dimFactor }}
+          >
+            {icon && <Icon name={icon} size="0.75rem" />}
+            {seedTitle(o.seed)}
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -268,7 +272,7 @@ export function BarsOverlay({
   variant: MonthCellVariant;
   onEdit: (o: Occurrence) => void;
 }) {
-  const { colorOf } = useApp();
+  const { colorOf, iconOf } = useApp();
   const v = CELL_VARIANTS[variant];
   if (week.barLanes.length === 0) return null;
   return (
@@ -278,6 +282,7 @@ export function BarsOverlay({
         // always wins over a class, so a shared seed's own opacity would
         // silently swallow the dim.
         const dimFactor = week.days.slice(seg.startCol - 1, seg.startCol - 1 + seg.span).every(dimCell) ? 0.5 : 1;
+        const icon = seg.startsHere ? iconOf(seg.item.seed) : null;
         return (
           <div
             key={seg.item.key}
@@ -287,7 +292,7 @@ export function BarsOverlay({
             }}
             title={sharedTitleAttr(seg.item.seed)}
             className={cn(
-              'pointer-events-auto cursor-pointer text-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
+              'pointer-events-auto cursor-pointer flex items-center gap-1 text-xs overflow-hidden whitespace-nowrap hover:opacity-90 hover:shadow-pop h-lane-h leading-(--spacing-lane-h) mb-0.5 text-on-accent',
               v.bar,
               COLOR_CLASSES[colorOf(seg.item.seed)].bg,
               seg.startsHere && v.barStart,
@@ -300,6 +305,7 @@ export function BarsOverlay({
               opacity: (sharedOpacity(seg.item.seed) ?? 1) * dimFactor,
             }}
           >
+            {icon && <Icon name={icon} size="0.75rem" />}
             {seg.startsHere ? seedTitle(seg.item.seed) : '…'}
           </div>
         );

@@ -66,7 +66,7 @@ export function TagsCard() {
   function handleAdd() {
     const name = newName.trim();
     if (!name) return;
-    addTag({ name, color: newColor, icon: newIcon, sort: nextSort(tags) });
+    addTag({ name, color: newColor, icon: newIcon, sort: nextSort(tags), keywords: '' });
     setNewName('');
     setNewOpen(false);
   }
@@ -82,7 +82,7 @@ export function TagsCard() {
     <Card title="Tags" span>
       <p className="setting-desc mb-4">
         Labels with a colour and an icon. A seed can carry several; the last one colours it unless the seed has a colour
-        of its own.
+        of its own. A keyword found as a whole word in a title adds the tag.
       </p>
       <div className="space-y-sm">
         {sorted.map((t, i) => (
@@ -99,6 +99,13 @@ export function TagsCard() {
                 value={t.name}
                 aria-label="Tag name"
                 onChange={(e) => updateTag(t.id, { name: e.target.value })}
+              />
+              <input
+                className={`${inputClass} flex-[2_1_12rem] min-w-32`}
+                value={t.keywords}
+                placeholder="Keywords, comma-separated"
+                aria-label="Tag keywords"
+                onChange={(e) => updateTag(t.id, { keywords: e.target.value })}
               />
               <MoveButtons index={i} length={sorted.length} onMove={(dir) => move(t.id, dir)} />
               <DeleteRow

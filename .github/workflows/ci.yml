@@ -9,6 +9,21 @@ on:
   pull_request:
 
 jobs:
+  # Tags a green push to main with package.json's version, once. Bumping the
+  # version (`bun run version:set`) is what cuts a release; other pushes no-op.
+  tag:
+    needs: [frontend, app]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to push tags
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag release from package.json
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          git ls-remote --exit-code --tags origin "$v" >/dev/null || { git tag "$v" && git push origin "$v"; }
+
   frontend:
     runs-on: ubuntu-latest
     steps:

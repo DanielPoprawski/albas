@@ -4,7 +4,7 @@ import * as ipc from '../ipc';
 import type { SyncOutcome, WipeKind } from '../ipc';
 import { loadInitialState } from '../loadState';
 import { inTauri, matchesWipe, persistence } from '../persistence';
-import { isHabit, nextHabitSort, resolveColor, resolveIcon, targetOf } from '../seedLogic';
+import { isHabit, keywordMatches, nextHabitSort, resolveColor, resolveIcon, targetOf } from '../seedLogic';
 import { mapSharedRows } from '../sharedLogic';
 import type { ColorKey, List, NewList, NewSeed, NewTag, Seed, SharedGroup, Tag } from '../types';
 import { useSettings } from './SettingsContext';
@@ -83,6 +83,15 @@ function patchRow<T extends { id: string }>(list: T[], id: string, updates: Part
   return hit ? next : list;
 }
 
+/** `current` with the tags whose keywords `title` gained over `prevTitle` in front, so a chosen last tag keeps the colour. */
+function withKeywordTags(current: string[], title: string, prevTitle: string, own: Tag[]): string[] {
+  const before = new Set(keywordMatches(prevTitle, own).map((m) => m.tag.id));
+  const added = keywordMatches(title, own)
+    .map((m) => m.tag.id)
+    .filter((id) => !before.has(id) && !current.includes(id));
+  return added.length ? [...new Set(added), ...current] : current;
+}
+
 function withDone(s: Seed, date: string, value: number): Seed {
   const done = { ...s.done };
   if (value <= 0) delete done[date];
@@ -152,6 +161,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     (seed: NewSeed): Seed => {
       const full: Seed = {
         ...seed,
+        tags: withKeywordTags(seed.tags, seed.title, '', tags),
         id: crypto.randomUUID(),
         createdAt: fmt(new Date()),
         done: {},
@@ -163,15 +173,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       scheduleSync();
       return full;
     },
-    [scheduleSync, seeds],
+    [scheduleSync, seeds, tags],
   );
 
   const updateSeed = useCallback(
     (id: string, updates: Partial<Omit<Seed, 'id' | 'done'>>) => {
-      setSeeds((prev) => patchRow(prev, id, updates, persistence.saveSeed));
+      setSeeds((prev) => {
+        const old = prev.find((s) => s.id === id);
+        const patch =
+          old && updates.title !== undefined
+            ? { ...updates, tags: withKeywordTags(updates.tags ?? old.tags, updates.title, old.title, tags) }
+            : updates;
+        return patchRow(prev, id, patch, persistence.saveSeed);
+      });
       scheduleSync();
     },
-    [scheduleSync],
+    [scheduleSync, tags],
   );
 
   const deleteSeed = useCallback(

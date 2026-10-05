@@ -99,12 +99,13 @@ CREATE TABLE IF NOT EXISTS tags (
   color TEXT NOT NULL DEFAULT 'grey',
   icon TEXT NOT NULL DEFAULT '',
   sort INTEGER NOT NULL DEFAULT 0,
+  keywords TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0
 );
 ";
 
-const CURRENT_VERSION: i64 = 10;
+const CURRENT_VERSION: i64 = 11;
 
 /// The full current schema, for tests that need a throwaway in-memory DB.
 #[cfg(test)]
@@ -183,6 +184,17 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
         if version < 10 {
             conn.execute_batch(SCHEMA_V10)?;
             migrate_v10(&conn)?;
+        }
+        // v11: tag keywords. Below v10 the column came with `SCHEMA_V10`. The
+        // bump re-pushes every tag, so no server row lacks the column (a pull
+        // would read one as a newer schema and park).
+        if version < 11 {
+            if version == 10 {
+                conn.execute_batch(
+                    "ALTER TABLE tags ADD COLUMN keywords TEXT NOT NULL DEFAULT '';",
+                )?;
+            }
+            conn.execute("UPDATE tags SET updated_at = ?1", params![now_ms()])?;
         }
     }
     conn.pragma_update(None, "user_version", CURRENT_VERSION)?;
@@ -778,6 +790,8 @@ pub struct Tag {
     pub color: String,
     pub icon: String,
     pub sort: i64,
+    #[serde(default)]
+    pub keywords: String,
 }
 
 #[derive(Serialize)]
@@ -884,7 +898,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
         .map_err(err)?;
 
     let tags = conn
-        .prepare("SELECT id, name, color, icon, sort FROM tags WHERE deleted = 0")
+        .prepare("SELECT id, name, color, icon, sort, keywords FROM tags WHERE deleted = 0")
         .map_err(err)?
         .query_map([], |r| {
             Ok(Tag {
@@ -893,6 +907,7 @@ pub fn load_state(db: tauri::State<Db>) -> Result<AppData, String> {
                 color: r.get(2)?,
                 icon: r.get(3)?,
                 sort: r.get(4)?,
+                keywords: r.get(5)?,
             })
         })
         .map_err(err)?
@@ -1054,9 +1069,9 @@ pub fn delete_list(db: tauri::State<Db>, id: String) -> Result<(), String> {
 pub fn save_tag(db: tauri::State<Db>, tag: Tag) -> Result<(), String> {
     let conn = db.0.lock().map_err(err)?;
     conn.execute(
-        "INSERT INTO tags (id, name, color, icon, sort, updated_at, deleted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)
-         ON CONFLICT(id) DO UPDATE SET name=?2, color=?3, icon=?4, sort=?5, updated_at=?6, deleted=0",
-        params![tag.id, tag.name, tag.color, tag.icon, tag.sort, now_ms()],
+        "INSERT INTO tags (id, name, color, icon, sort, keywords, updated_at, deleted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)
+         ON CONFLICT(id) DO UPDATE SET name=?2, color=?3, icon=?4, sort=?5, keywords=?6, updated_at=?7, deleted=0",
+        params![tag.id, tag.name, tag.color, tag.icon, tag.sort, tag.keywords, now_ms()],
     )
     .map_err(err)?;
     Ok(())
@@ -1468,6 +1483,35 @@ DROP TABLE weights;
 
     /// v10 on a current (v9) file: every kind of row lands in the seed tables
     /// with its dates, rules, colour and completions intact.
+    #[test]
+    fn a_version_10_database_gains_tag_keywords_and_re_pushes_its_tags() {
+        let old = TempDb::new("v10");
+        {
+            let c = open(&old.0).unwrap();
+            c.execute_batch(
+                "ALTER TABLE tags DROP COLUMN keywords;
+                 INSERT INTO tags (id, name, updated_at) VALUES ('t1', 'Gym', 1);
+                 PRAGMA user_version = 10;",
+            )
+            .unwrap();
+        }
+        let fresh = TempDb::new("v10-fresh");
+        let fresh = open(&fresh.0).unwrap();
+
+        let c = open(&old.0).unwrap();
+        assert_eq!(user_version(&c), CURRENT_VERSION);
+        assert_same_shape(&c, &fresh);
+        let (keywords, updated_at): (String, i64) = c
+            .query_row(
+                "SELECT keywords, updated_at FROM tags WHERE id = 't1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(keywords, "");
+        assert!(updated_at > 1, "the tag is re-pushed with its new column");
+    }
+
     #[test]
     fn a_version_9_database_migrates_rows_into_seeds() {
         let old = TempDb::new("v9");

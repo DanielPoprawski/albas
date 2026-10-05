@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "albas"
-version = "1.11.0"
+version = "1.13.1"
 dependencies = [
  "keyring",
  "rusqlite",

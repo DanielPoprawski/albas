@@ -107,6 +107,8 @@ export interface Tag {
   color: ColorKey;
   icon: string;
   sort: number;
+  /** Comma-separated; any of them found as a whole word in a seed's title adds this tag. */
+  keywords: string;
 }
 
 /**

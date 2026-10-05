@@ -99,7 +99,7 @@ const TABLES: &[Spec] = &[
     Spec {
         tbl: "tags",
         pk: &["id"],
-        cols: &["name", "color", "icon", "sort"],
+        cols: &["name", "color", "icon", "sort", "keywords"],
     },
 ];
 

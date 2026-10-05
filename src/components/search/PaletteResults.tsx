@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import Highlighted from '../Highlighted';
 import { Checkbox } from '../ui/checkbox';
 import { COLOR_CLASSES } from '../../colors';
+import { useApp } from '../../context/AppContext';
 import { isDone, isTask, kindLabel } from '../../seedLogic';
 import { MAX_HITS, dateLabel } from './searchItems';
 import type { ScopeTab } from './types';
@@ -28,6 +29,7 @@ function summaryText(s: SearchState): string {
 
 /** Scope tabs with live counts, the summary/select links, the rows, and the key legend. */
 export default function PaletteResults({ s }: { s: SearchState }) {
+  const { iconOf } = useApp();
   const list = useRef<HTMLUListElement>(null);
 
   // Keep the active row in view by nudging the list's own scroll — not
@@ -92,6 +94,7 @@ export default function PaletteResults({ s }: { s: SearchState }) {
           const isSelected = s.selected.has(item.key);
           const notes = item.seed.track ? '' : item.seed.notes;
           const second = [item.listName, notes].filter(Boolean).join(' · ');
+          const icon = iconOf(item.seed);
           return (
             <li
               key={item.key}
@@ -116,7 +119,11 @@ export default function PaletteResults({ s }: { s: SearchState }) {
               ) : (
                 <span className="size-4 shrink-0" aria-hidden />
               )}
-              <span className={cn('size-2 shrink-0', COLOR_CLASSES[item.color].bg)} aria-hidden />
+              {icon ? (
+                <Icon name={icon} size="0.875rem" className={cn('shrink-0', COLOR_CLASSES[item.color].text)} />
+              ) : (
+                <span className={cn('size-2 shrink-0', COLOR_CLASSES[item.color].bg)} aria-hidden />
+              )}
               <span className="flex-1 min-w-0">
                 <span
                   className={cn(

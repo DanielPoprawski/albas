@@ -13,7 +13,17 @@ import { COLOR_CLASSES, DEFAULT_COLOR } from '../colors';
 import { buildCreate, splitLocation } from '../createItem';
 import { REMINDER_QUICK, reminderLabel } from '../reminders';
 import { addDays, addMinutes, fmt, nowFloor15, shortDate } from '../dates';
-import { bySort, isRepeating, movedEnd, nextSort, resolveColor, targetOf, unitOf, validateSeed } from '../seedLogic';
+import {
+  bySort,
+  isRepeating,
+  keywordMatches,
+  movedEnd,
+  nextSort,
+  resolveColor,
+  targetOf,
+  unitOf,
+  validateSeed,
+} from '../seedLogic';
 import { TAG_ICONS } from '../tagIcons';
 import { stripMatch, type NlDateMatch } from '../nlDate';
 import { useIsCoarsePointer } from '../useMedia';
@@ -25,6 +35,7 @@ import { useModalDismiss } from './ui/useModalDismiss';
 import { useSpringHeight } from './ui/useSpringHeight';
 import { FIELD_ROW, OPTIONS, PLACEHOLDER, type FieldKey, type Props } from './addModal/catalog';
 import { FieldRow } from './addModal/parts';
+import { Marked } from './Highlighted';
 
 const ROUTINE_OPTIONS = ROUTINES.filter((r): r is Exclude<Routine, ''> => r !== '').map((value) => ({
   value,
@@ -182,7 +193,7 @@ export default function AddModal({
   function createTag() {
     const name = newTagName.trim();
     if (!name) return;
-    const created = addTag({ name, color: newTagColor, icon: newTagIcon, sort: nextSort(tags) });
+    const created = addTag({ name, color: newTagColor, icon: newTagIcon, sort: nextSort(tags), keywords: '' });
     setSeedTags((prev) => [...prev, created.id]);
     setNewTagOpen(false);
     setNewTagName('');
@@ -194,6 +205,24 @@ export default function AddModal({
   // overrides a date the user actually chose.
   const { suggestion, dismiss: dismissSuggestion } = useNlSuggestion(title);
   const [dateTouched, setDateTouched] = useState(false);
+  // What the title will set: the date phrase, and each keyword that adds a tag on save.
+  const titleMarks = [
+    ...(suggestion
+      ? [
+          {
+            index: suggestion.matched.index,
+            length: suggestion.matched.text.length,
+            className: 'bg-accent-tint border-b-2 border-accent',
+          },
+        ]
+      : []),
+    ...keywordMatches(title, tags).map((m) => ({
+      index: m.index,
+      length: m.length,
+      className: cn(COLOR_CLASSES[m.tag.color].tint, COLOR_CLASSES[m.tag.color].line, 'border-b-2'),
+    })),
+  ];
+  const titleMirror = useRef<HTMLDivElement>(null);
 
   /** Pure: what Apply (or an auto-apply on submit) would change, without touching state. */
   function computeApplied(match: NlDateMatch) {
@@ -703,21 +732,35 @@ export default function AddModal({
                   <Dot color={color ?? autoColor} size={14} />
                 </button>
               </ColorPopover>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submit();
-                  }
-                }}
-                // A touch keyboard covering half the sheet, or an edit whose text
-                // is already what the user wants, is not worth stealing focus for.
-                autoFocus={!edit && !coarse}
-                placeholder={PLACEHOLDER}
-                className="w-full min-w-0 flex-1 border-0 border-b-2 border-line bg-transparent pt-1 pb-2 text-lg font-medium text-ink transition-colors duration-150 placeholder:text-ink-muted focus:border-accent"
-              />
+              {/* The highlights sit behind the transparent input in a mirror of its
+              text box, so a pixel of drift can only shift a wash, never the text. */}
+              <div className="relative min-w-0 flex-1">
+                <div
+                  ref={titleMirror}
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre border-b-2 border-transparent pt-1 pb-2 text-lg font-medium text-transparent"
+                >
+                  <Marked text={title} marks={titleMarks} />
+                </div>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onScroll={(e) => {
+                    if (titleMirror.current) titleMirror.current.scrollLeft = e.currentTarget.scrollLeft;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                  // A touch keyboard covering half the sheet, or an edit whose text
+                  // is already what the user wants, is not worth stealing focus for.
+                  autoFocus={!edit && !coarse}
+                  placeholder={PLACEHOLDER}
+                  className="relative w-full border-0 border-b-2 border-line bg-transparent pt-1 pb-2 text-lg font-medium text-ink transition-colors duration-150 placeholder:text-ink-muted focus:border-accent"
+                />
+              </div>
               <StarButton important={important} onToggle={() => setImportant((v) => !v)} size="1.25rem" />
             </div>
 

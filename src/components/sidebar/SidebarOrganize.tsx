@@ -72,7 +72,7 @@ export default function SidebarOrganize() {
         hidden={hiddenTagIds}
         onToggle={toggleHiddenTag}
         setHidden={setHiddenTagIds}
-        onAdd={(name) => addTag({ name, color: DEFAULT_COLOR, icon: TAG_ICONS[0], sort: nextSort(tags) })}
+        onAdd={(name) => addTag({ name, color: DEFAULT_COLOR, icon: TAG_ICONS[0], sort: nextSort(tags), keywords: '' })}
         onRename={(id, name) => updateTag(id, { name })}
         onMove={(id, dir) => {
           for (const { id: target, sort } of moveSorted(sortedTags, id, dir) ?? []) updateTag(target, { sort });

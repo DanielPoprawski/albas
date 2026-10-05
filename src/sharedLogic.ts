@@ -119,6 +119,7 @@ export function mapSharedRows(rows: RawSharedRow[]): SharedGroup[] {
             color: colorKey(p.color) ?? DEFAULT_COLOR,
             icon: str(p.icon),
             sort: num(p.sort),
+            keywords: str(p.keywords),
           });
           break;
       }

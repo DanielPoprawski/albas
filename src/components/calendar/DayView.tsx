@@ -66,22 +66,26 @@ export default function DayView() {
           ))}
 
           <div className="flex flex-wrap gap-xs">
-            {barOccs.map((o) => (
-              <button
-                type="button"
-                key={o.key}
-                onClick={() => open(o)}
-                title={sharedTitleAttr(o.seed)}
-                className={cn(
-                  'text-xs font-bold px-sm py-0.5 cursor-pointer hover:opacity-90 hover:shadow-pop text-on-accent',
-                  COLOR_CLASSES[colorOf(o.seed)].bg,
-                )}
-                // dynamic: dimmed when shared
-                style={{ opacity: sharedOpacity(o.seed) }}
-              >
-                {seedTitle(o.seed)}
-              </button>
-            ))}
+            {barOccs.map((o) => {
+              const icon = iconOf(o.seed);
+              return (
+                <button
+                  type="button"
+                  key={o.key}
+                  onClick={() => open(o)}
+                  title={sharedTitleAttr(o.seed)}
+                  className={cn(
+                    'flex items-center gap-1 text-xs font-bold px-sm py-0.5 cursor-pointer hover:opacity-90 hover:shadow-pop text-on-accent',
+                    COLOR_CLASSES[colorOf(o.seed)].bg,
+                  )}
+                  // dynamic: dimmed when shared
+                  style={{ opacity: sharedOpacity(o.seed) }}
+                >
+                  {icon && <Icon name={icon} size="0.75rem" />}
+                  {seedTitle(o.seed)}
+                </button>
+              );
+            })}
             {chipOccs.map((o) => {
               const c = COLOR_CLASSES[colorOf(o.seed)];
               const icon = iconOf(o.seed);
@@ -114,6 +118,7 @@ export default function DayView() {
         days={[dateStr]}
         occurrences={timedOccs}
         onEdit={open}
+        onToggle={(o) => toggleDone(o.seed.id, occToggleDate(o, todayStr))}
         onSelectDate={setSelectedDate}
         onAddAt={(date, time) => setAddAt({ date, time })}
       />
