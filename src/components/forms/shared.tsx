@@ -81,7 +81,7 @@ export function ColorPicker({
   );
 
   return (
-    <div className="grid w-max grid-cols-7 items-center gap-1.5">
+    <div className="grid w-max grid-cols-7 items-center gap-2">
       {allowAuto && cell(null, 'Auto', auto ?? DEFAULT_COLOR)}
       {COLOR_KEYS.map((key) => cell(key, COLOR_LABELS[key], key))}
     </div>

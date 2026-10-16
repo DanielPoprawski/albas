@@ -27,7 +27,7 @@ export function ModalChrome({ title, onClose, children, footer, cardRef, innerRe
   return (
     // `modal-scrim` / `modal-card` are bare markers for DOM lookups, not CSS.
     <div
-      className="modal-scrim fixed inset-x-0 top-0 bottom-8 z-50 flex items-start justify-center bg-scrim px-8 pt-[6vh] pb-8 backdrop-blur-[0.1875rem] max-md:items-stretch max-md:p-0 max-md:bottom-0"
+      className="modal-scrim fixed inset-x-0 top-0 bottom-8 z-50 flex items-start justify-center bg-scrim px-6 pt-[6vh] pb-6 backdrop-blur-[0.1875rem] max-md:items-stretch max-md:p-0 max-md:bottom-0"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -41,19 +41,19 @@ export function ModalChrome({ title, onClose, children, footer, cardRef, innerRe
         aria-modal="true"
       >
         <div ref={innerRef} className="flex max-h-[88dvh] flex-col overflow-y-auto max-md:max-h-none max-md:flex-1">
-          <div className="flex items-center justify-between gap-3 px-5 pt-[1.125rem] max-md:border-b max-md:border-line max-md:pb-3">
+          <div className="flex items-center justify-between gap-3 px-4 pt-4 max-md:border-b max-md:border-line max-md:pb-3">
             <div className="font-heading text-base font-semibold tracking-[-0.01em]">{title}</div>
             <IconButton
               aria-label="Close"
               onClick={onClose}
               className="border-0 size-[1.625rem] text-ink-muted hover:bg-subtle hover:text-ink max-md:size-10"
             >
-              <Icon name="close" size="0.875rem" />
+              <Icon name="close" size="micro" />
             </IconButton>
           </div>
           {children}
           {footer && (
-            <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line-subtle bg-surface px-5 py-[0.8125rem] max-md:mt-auto max-md:py-3">
+            <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line-subtle bg-surface px-4 py-3 max-md:mt-auto max-md:py-3">
               {footer}
             </div>
           )}

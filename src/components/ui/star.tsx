@@ -11,7 +11,7 @@ import { Icon, type IconSize } from './icon';
 export function StarButton({
   important,
   onToggle,
-  size = '1.125rem',
+  size = 'base',
   className,
 }: {
   important: boolean;

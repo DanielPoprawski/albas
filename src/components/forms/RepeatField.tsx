@@ -257,7 +257,7 @@ export function WeekdayPicker({
             aria-pressed={active}
             onClick={() => onChange(active ? value.filter((d) => d !== day) : [...value, day])}
             className={cn(
-              'flex-1 h-8 max-md:h-10 text-meta font-bold transition-all cursor-pointer',
+              'flex-1 h-8 max-md:h-10 text-xs font-bold transition-all cursor-pointer',
               active ? 'bg-accent text-on-accent' : 'bg-subtle-strong text-ink-muted hover:bg-line-strong',
             )}
           >
@@ -289,7 +289,7 @@ function MonthDayPicker({
         aria-pressed={active}
         onClick={() => onChange(active ? days.filter((d) => d !== day) : [...days, day])}
         className={cn(
-          'h-8 max-md:h-10 text-meta font-bold transition-all cursor-pointer',
+          'h-8 max-md:h-10 text-xs font-bold transition-all cursor-pointer',
           active ? 'bg-accent text-on-accent' : 'bg-subtle-strong text-ink-muted hover:bg-line-strong',
           className,
         )}

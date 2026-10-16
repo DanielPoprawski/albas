@@ -19,10 +19,10 @@ const VARIANTS: Record<ButtonVariant, string> = {
   ghost: 'bg-transparent text-ink-secondary border border-transparent hover:bg-subtle hover:text-ink',
 };
 
-/** The design's button padding is 0.5rem 0.75rem; `sm` is the 0.375rem×0.625rem icon-row size. */
+/** Padding on the spacing steps: `md` is 0.5rem×0.75rem, `sm` the narrower 0.5rem×0.5rem icon-row size. */
 const SIZES: Record<ButtonSize, string> = {
-  sm: 'px-[0.625rem] py-[0.375rem]',
-  md: 'px-[0.75rem] py-[0.5rem]',
+  sm: 'px-2 py-2',
+  md: 'px-3 py-2',
 };
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -37,7 +37,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       type={type}
       data-slot="button"
       className={cn(
-        'inline-flex items-center justify-center gap-[0.375rem] text-sm font-semibold leading-none',
+        'inline-flex items-center justify-center gap-2 text-sm font-semibold leading-none',
         'cursor-pointer transition-colors duration-150 select-none',
         'disabled:pointer-events-none',
         VARIANTS[variant],

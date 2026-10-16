@@ -214,7 +214,7 @@ function TotpAction({ ctx }: { ctx: AuthMethodContext }) {
         </p>
         <pre
           id="totp-recovery-codes"
-          className="select-all font-mono text-sm border border-line px-3 py-[0.625rem] mt-1.5 whitespace-pre-wrap break-all"
+          className="select-all font-mono text-sm border border-line px-3 py-2 mt-2 whitespace-pre-wrap break-all"
         >
           {recoveryCodes.join('\n')}
         </pre>

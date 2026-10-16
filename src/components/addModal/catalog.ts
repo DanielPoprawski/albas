@@ -47,7 +47,7 @@ export const OPTIONS: Option[] = [
 export const PLACEHOLDER = 'Team sync, call mom, run…';
 
 /** One optional field's row, revealed with the `row-in` keyframes (App.css). */
-export const FIELD_ROW = 'flex items-center gap-2.5 animate-[row-in_0.2s_ease_both] motion-reduce:animate-none';
+export const FIELD_ROW = 'flex items-center gap-2 animate-[row-in_0.2s_ease_both] motion-reduce:animate-none';
 
 export interface Props {
   onClose: () => void;

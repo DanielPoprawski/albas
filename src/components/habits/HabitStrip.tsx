@@ -4,7 +4,7 @@ import type { ColorKey, Seed } from '../../types';
 import { HabitCell } from './HabitCell';
 import { cycleCell, type HistoryCell, weekdayInitial } from './habitModel';
 
-const GRID = 'grid grid-flow-col auto-cols-max gap-[0.25rem]';
+const GRID = 'grid grid-flow-col auto-cols-max gap-1';
 
 /**
  * A weekday initial per day, today's in the accent — under each strip, or
@@ -29,7 +29,7 @@ export function StripLabels({
           key={d}
           className={cn(
             cellClass,
-            'flex items-center justify-center text-[0.5625rem] leading-none uppercase',
+            'flex items-center justify-center text-micro leading-none uppercase',
             d === today ? 'text-accent font-bold' : 'text-ink-muted',
           )}
         >

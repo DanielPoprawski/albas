@@ -112,11 +112,11 @@ export function Settings() {
   return (
     <div className="w-full max-w-[75rem] mx-auto">
       <div className="mb-6">
-        <h1 className="mb-1.5 font-heading text-[1.375rem] font-bold text-ink">Settings</h1>
+        <h1 className="mb-2 font-heading text-h1 font-bold text-ink">Settings</h1>
         <p className="text-sm text-ink-secondary">Manage your account and preferences</p>
       </div>
 
-      <div className="grid grid-cols-2 items-start gap-5 max-md:grid-cols-1">
+      <div className="grid grid-cols-2 items-start gap-4 max-md:grid-cols-1">
         <ProfileCard />
 
         {status?.configured && (

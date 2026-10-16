@@ -107,7 +107,7 @@ export function QuickAddField({
       <div
         className={cn(
           row
-            ? 'group flex items-center gap-5 px-3 py-2.5 bg-surface transition-colors duration-150 hover:bg-surface-hover focus-within:bg-surface-hover'
+            ? 'group flex items-center gap-4 px-3 py-2 bg-surface transition-colors duration-150 hover:bg-surface-hover focus-within:bg-surface-hover'
             : 'flex items-center gap-2 border border-line bg-surface px-3 py-2',
         )}
       >
@@ -116,10 +116,10 @@ export function QuickAddField({
             aria-hidden="true"
             className="size-[1.375rem] shrink-0 flex items-center justify-center border border-dashed border-line-strong text-ink-muted transition-colors group-focus-within:border-solid group-focus-within:border-accent group-focus-within:text-accent"
           >
-            <Icon name="add" size="0.8125rem" />
+            <Icon name="add" size="micro" />
           </span>
         ) : (
-          <Icon name="add" size="0.875rem" className="text-ink-muted" />
+          <Icon name="add" size="micro" className="text-ink-muted" />
         )}
         <input
           value={text}
@@ -134,7 +134,7 @@ export function QuickAddField({
           aria-label={PLACEHOLDER[kind].split('…')[0]}
           enterKeyHint="done"
           autoComplete="off"
-          className="flex-1 min-w-0 bg-transparent border-0 text-ui text-ink placeholder:text-ink-muted"
+          className="flex-1 min-w-0 bg-transparent border-0 text-sm text-ink placeholder:text-ink-muted"
         />
         <button
           type="button"
@@ -147,7 +147,7 @@ export function QuickAddField({
               'size-7 justify-center border border-transparent transition-colors hover:border-line hover:bg-subtle',
           )}
         >
-          <Icon name="tune" size="0.875rem" />
+          <Icon name="tune" size="micro" />
         </button>
         {open && (
           <AddModal

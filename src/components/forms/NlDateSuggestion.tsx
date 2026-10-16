@@ -46,7 +46,7 @@ export function NlDateSuggestion({
           aria-label="Dismiss date suggestion"
           className="flex items-center text-ink-muted hover:text-ink"
         >
-          <Icon name="close" size="0.6875rem" />
+          <Icon name="close" size="micro" />
         </button>
       </span>
     </div>

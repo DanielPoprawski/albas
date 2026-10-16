@@ -148,7 +148,7 @@ export function SharingCard() {
         {shares?.outgoing.map((g) => (
           <div key={g.name} className={ROW_INSET}>
             <span className="setting-label flex-1 min-w-0 truncate">{g.name}</span>
-            <label className="setting-desc flex items-center gap-1.5 mt-0">
+            <label className="setting-desc flex items-center gap-2 mt-0">
               <Switch checked onCheckedChange={() => setShare(g.name, false)} />
               Shared
             </label>
@@ -188,7 +188,7 @@ export function SharingCard() {
             {shares?.incoming.map((g) => (
               <div key={g.name} className={ROW_INSET}>
                 <span className="setting-label flex-1 min-w-0 truncate">{g.name}</span>
-                <label className="setting-desc flex items-center gap-1.5 mt-0">
+                <label className="setting-desc flex items-center gap-2 mt-0">
                   <Switch checked={!hiddenOwners.includes(g.name)} onCheckedChange={() => toggleOwnerHidden(g.name)} />
                   Show
                 </label>

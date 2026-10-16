@@ -87,7 +87,7 @@ export function HabitRow({
         onKeyDown={handleKeyDown}
         onContextMenu={onContextMenu}
         className={cn(
-          'flex items-center gap-5 px-3 py-[0.875rem] cursor-pointer transition-colors duration-150 hover:bg-surface-hover data-[open]:bg-surface-hover max-md:flex-wrap',
+          'flex items-center gap-4 px-3 py-2 cursor-pointer transition-colors duration-150 hover:bg-surface-hover data-[open]:bg-surface-hover max-md:flex-wrap',
           selected && 'bg-accent/10 data-[open]:bg-accent/15 ring-1 ring-inset ring-accent/30 border-l-2 border-accent',
         )}
       >
@@ -102,7 +102,7 @@ export function HabitRow({
             {...attributes}
             {...listeners}
           >
-            <Icon name="drag_indicator" size="0.875rem" />
+            <Icon name="drag_indicator" size="micro" />
           </button>
         )}
         <button
@@ -122,28 +122,28 @@ export function HabitRow({
         >
           <Icon
             name="check"
-            size="0.8125rem"
+            size="micro"
             className={cn('transition-opacity', habit.doneToday ? 'opacity-100' : 'opacity-0 group-hover:opacity-35')}
           />
         </button>
 
-        <div className="flex flex-col gap-1 min-w-0 min-w-[12rem] max-w-[24rem]">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex flex-col gap-1 min-w-0 max-w-md">
+          <div className="flex items-center gap-2 min-w-0">
             {icon ? (
-              <Icon name={icon} size="0.875rem" className={COLOR_CLASSES[color].text} />
+              <Icon name={icon} size="micro" className={COLOR_CLASSES[color].text} />
             ) : (
               <Dot color={color} size={10} />
             )}
             <span className="font-heading text-sm font-bold text-ink truncate">{seed.title}</span>
           </div>
-          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden max-wide:hidden">
+          <div className="flex items-center gap-2 min-w-0 overflow-hidden max-wide:hidden">
             <Tag color={color} className="shrink-0">
               {routine?.label ?? fallbackLabel(seed)}
             </Tag>
             <Tag className="shrink-0">{repeatLabel(seed, firstDayOfWeek)}</Tag>
             {seed.reminders.length > 0 && (
-              <span className="flex items-center gap-1 text-meta text-ink-muted whitespace-nowrap">
-                <Icon name="notifications" size="0.75rem" aria-label="Reminder" />
+              <span className="flex items-center gap-1 text-xs text-ink-muted whitespace-nowrap">
+                <Icon name="notifications" size="micro" aria-label="Reminder" />
                 {seed.time ?? 'due days'}
               </span>
             )}
@@ -159,14 +159,14 @@ export function HabitRow({
           className="flex-1 min-w-0 items-start max-md:basis-full max-md:order-last"
         />
 
-        <div className="flex gap-3.5 w-[11.875rem] shrink-0 max-wide:hidden">
+        <div className="flex gap-3 w-[11.875rem] shrink-0 max-wide:hidden">
           {STAT_LABELS.map(([key, label, suffix]) => (
             <div key={key} className="flex flex-col">
-              <span className="font-heading text-[1rem] font-bold leading-[1.1] text-ink tabular-nums">
+              <span className="font-heading text-base font-bold leading-[1.1] text-ink tabular-nums">
                 {habit[key]}
                 {suffix}
               </span>
-              <span className="text-[0.625rem] text-ink-muted">{label}</span>
+              <span className="text-micro text-ink-muted">{label}</span>
             </div>
           ))}
         </div>
@@ -183,7 +183,7 @@ export function HabitRow({
         >
           <Icon
             name="expand_more"
-            size="0.875rem"
+            size="micro"
             className={cn('transition-transform duration-200', open && 'rotate-180')}
           />
         </button>

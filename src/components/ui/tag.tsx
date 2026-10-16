@@ -21,7 +21,7 @@ export function Tag({ className, color, solid, ...props }: TagProps) {
     <span
       data-slot="tag"
       className={cn(
-        'inline-flex items-center gap-[0.25rem] px-[0.5rem] py-[0.1875rem]',
+        'inline-flex items-center gap-1 px-2 py-1',
         'text-xs font-bold uppercase tracking-wider leading-none',
         c && (solid ? `${c.bg} text-on-accent` : `${c.tint} ${c.ink}`),
         !c && (solid ? 'bg-ink-secondary text-on-accent' : 'bg-subtle text-ink-secondary'),

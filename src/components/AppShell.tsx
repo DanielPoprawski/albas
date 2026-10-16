@@ -23,10 +23,10 @@ import { Icon } from './ui/icon';
 import { Welcome } from './Welcome';
 
 const NAV: { view: ActiveView; label: string; icon: ReactNode }[] = [
-  { view: 'calendar', label: 'Dashboard', icon: <Icon name="grid_view" size="1rem" /> },
-  { view: 'todos', label: 'To-Dos', icon: <Icon name="checklist" size="1rem" /> },
-  { view: 'habits', label: 'Habits', icon: <Icon name="target" size="1rem" /> },
-  { view: 'settings', label: 'Settings', icon: <Icon name="settings" size="1rem" /> },
+  { view: 'calendar', label: 'Dashboard', icon: <Icon name="grid_view" size="base" /> },
+  { view: 'todos', label: 'To-Dos', icon: <Icon name="checklist" size="base" /> },
+  { view: 'habits', label: 'Habits', icon: <Icon name="target" size="base" /> },
+  { view: 'settings', label: 'Settings', icon: <Icon name="settings" size="base" /> },
 ];
 
 function NavLink({
@@ -127,7 +127,7 @@ function BottomBar() {
             INSERT = an input has the keyboard, VISUAL = items are selected. */}
         <span
           className={cn(
-            'micro-label px-1.5 py-0.5',
+            'micro-label px-2 py-0.5',
             mode === 'INSERT' && 'bg-accent text-on-accent',
             mode === 'VISUAL' && 'bg-selection text-selection-ink',
             mode === 'NORMAL' && 'bg-subtle text-ink-secondary',
@@ -141,7 +141,7 @@ function BottomBar() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          className="flex cursor-pointer items-center gap-1.5 hover:text-accent"
+          className="flex cursor-pointer items-center gap-2 hover:text-accent"
           disabled={!canSync || syncing}
           title={canSync ? 'Sync now' : 'Sync is off until an account is set up'}
           onClick={() => {
@@ -282,7 +282,7 @@ export function AppShell() {
           {activeView === 'habits' && <HabitsView />}
 
           {activeView === 'settings' && (
-            <div className="min-w-0 flex-1 overflow-y-auto p-8 max-md:p-5">
+            <div className="min-w-0 flex-1 overflow-y-auto p-6 max-md:p-4">
               <Settings />
             </div>
           )}

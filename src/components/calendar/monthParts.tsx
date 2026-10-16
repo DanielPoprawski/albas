@@ -16,7 +16,7 @@ import { type DayCell, occDone, type WeekRow } from './monthModel';
  */
 const CELL_VARIANTS = {
   desktop: {
-    cell: 'px-1.5 py-[0.3125rem]',
+    cell: 'px-2 py-1',
     liveBg: 'bg-surface',
     dayRow: 'flex items-start justify-between mb-xs',
     dayNumber: 'text-xs font-semibold',
@@ -103,7 +103,7 @@ export function MonthCell({
         {o.seed.track && !o.seed.sharedBy && (
           <Icon
             name={done ? 'check_box' : 'check_box_outline_blank'}
-            size="0.75rem"
+            size="micro"
             className="cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
@@ -111,8 +111,9 @@ export function MonthCell({
             }}
           />
         )}
-        {icon && <Icon name={icon} size="0.75rem" />}
-        <span className="min-w-0 truncate">
+        {icon && <Icon name={icon} size="micro" />}
+        {/* IMPORTANT: Never truncate the titles */}
+        <span className="min-w-0">
           {v.time && o.seed.time && <span className="font-normal opacity-70">{shortTime(o.seed.time)} </span>}
           {seedTitle(o.seed)}
         </span>
@@ -243,7 +244,7 @@ export function SpanTitles({ cell, onEdit }: { cell: DayCell; onEdit: (o: Occurr
             // dynamic: dimmed when shared or elapsed
             style={{ opacity: (sharedOpacity(o.seed) ?? 1) * dimFactor }}
           >
-            {icon && <Icon name={icon} size="0.75rem" />}
+            {icon && <Icon name={icon} size="micro" />}
             {seedTitle(o.seed)}
           </div>
         );
@@ -305,7 +306,7 @@ export function BarsOverlay({
               opacity: (sharedOpacity(seg.item.seed) ?? 1) * dimFactor,
             }}
           >
-            {icon && <Icon name={icon} size="0.75rem" />}
+            {icon && <Icon name={icon} size="micro" />}
             {seg.startsHere ? seedTitle(seg.item.seed) : '…'}
           </div>
         );

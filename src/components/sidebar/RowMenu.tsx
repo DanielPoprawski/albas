@@ -14,7 +14,7 @@ const CONTENT =
   'z-50 min-w-[10rem] panel shadow-pop p-1 data-[state=open]:animate-[pop_150ms_ease-out_both] data-[state=closed]:animate-[pop_120ms_ease-in_reverse_both] motion-reduce:animate-none';
 
 const ITEM =
-  'flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-sm text-ink data-[highlighted]:bg-subtle data-[disabled]:pointer-events-none data-[disabled]:text-ink-muted';
+  'flex cursor-pointer select-none items-center gap-2 px-2 py-2 text-sm text-ink data-[highlighted]:bg-subtle data-[disabled]:pointer-events-none data-[disabled]:text-ink-muted';
 
 const SEPARATOR = 'my-1 h-px bg-line';
 
@@ -69,7 +69,7 @@ export function RowMenu({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Icon name="more_horiz" size="0.875rem" />
+          <Icon name="more_horiz" size="micro" />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -83,31 +83,31 @@ export function RowMenu({
           }}
         >
           <DropdownMenu.Item className={ITEM} onSelect={handOff(onRename)}>
-            <Icon name="edit" size="0.875rem" /> Rename
+            <Icon name="edit" size="micro" /> Rename
           </DropdownMenu.Item>
           {onColor && (
             <DropdownMenu.Item className={ITEM} onSelect={handOff(onColor)}>
-              <Icon name="palette" size="0.875rem" /> Colour
+              <Icon name="palette" size="micro" /> Colour
             </DropdownMenu.Item>
           )}
           {onIcon && (
             <DropdownMenu.Item className={ITEM} onSelect={handOff(onIcon)}>
-              <Icon name="star" size="0.875rem" /> Icon
+              <Icon name="star" size="micro" /> Icon
             </DropdownMenu.Item>
           )}
           <DropdownMenu.Separator className={SEPARATOR} />
           <DropdownMenu.Item className={ITEM} disabled={!canMoveUp} onSelect={() => onMove(-1)}>
-            <Icon name="arrow_upward" size="0.875rem" /> Move up
+            <Icon name="arrow_upward" size="micro" /> Move up
           </DropdownMenu.Item>
           <DropdownMenu.Item className={ITEM} disabled={!canMoveDown} onSelect={() => onMove(1)}>
-            <Icon name="arrow_downward" size="0.875rem" /> Move down
+            <Icon name="arrow_downward" size="micro" /> Move down
           </DropdownMenu.Item>
           <DropdownMenu.Separator className={SEPARATOR} />
           <DropdownMenu.Item
             className={cn(ITEM, 'text-danger data-[highlighted]:bg-danger-tint')}
             onSelect={handOff(onDelete)}
           >
-            <Icon name="delete" size="0.875rem" /> Delete
+            <Icon name="delete" size="micro" /> Delete
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
@@ -131,7 +131,7 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (icon
             value === name ? 'bg-accent text-on-accent' : 'text-ink-secondary hover:bg-subtle hover:text-ink',
           )}
         >
-          <Icon name={name} size="1rem" />
+          <Icon name={name} size="base" />
         </button>
       ))}
     </div>

@@ -117,7 +117,7 @@ export function SidebarSection({
         <span className={cn(CHECK, checked && (c ? `${c.bg} ${c.line} text-on-accent` : CHECKED))}>
           {checked && '✓'}
         </span>
-        {row.icon ? <Icon name={row.icon} size="0.875rem" className={c?.text} /> : <Dot color={row.color} />}
+        {row.icon ? <Icon name={row.icon} size="micro" className={c?.text} /> : <Dot color={row.color} />}
       </>
     );
   };
@@ -151,7 +151,7 @@ export function SidebarSection({
       >
         <Icon
           name="expand_more"
-          size="0.75rem"
+          size="micro"
           className={cn('transition-transform duration-150', !open && '-rotate-90')}
         />
         {title}
@@ -260,7 +260,7 @@ export function SidebarSection({
 
           {adding ? (
             <div className={cn(ROW, 'cursor-default')}>
-              <Icon name="add" size="0.875rem" />
+              <Icon name="add" size="micro" />
               <input
                 autoFocus
                 className={INLINE_INPUT}
@@ -290,7 +290,7 @@ export function SidebarSection({
                 setAdding(true);
               }}
             >
-              <Icon name="add" size="0.875rem" />
+              <Icon name="add" size="micro" />
               <span className={NAME}>New {noun}</span>
             </button>
           )}

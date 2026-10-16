@@ -38,7 +38,7 @@ function ModeButtons({
             key={value}
             onClick={() => onPick(value)}
             aria-pressed={mode === value}
-            className={`px-md py-xs font-semibold text-meta transition-colors ${
+            className={`px-md py-xs font-semibold text-xs transition-colors ${
               mode === value ? 'bg-accent text-on-accent' : 'text-ink-muted hover:text-ink hover:bg-line-strong'
             }`}
           >
@@ -49,7 +49,7 @@ function ModeButtons({
       <button
         type="button"
         onClick={onToday}
-        className="px-md py-xs font-semibold text-meta text-ink-muted bg-subtle-strong hover:text-ink hover:bg-line-strong transition-colors"
+        className="px-md py-xs font-semibold text-xs text-ink-muted bg-subtle-strong hover:text-ink hover:bg-line-strong transition-colors"
       >
         Today
       </button>
@@ -92,7 +92,7 @@ export function ModeModal({
           'text-ink-muted hover:text-ink active:scale-95',
         )}
       >
-        <Icon name={current} size="1rem" />
+        <Icon name={current} size="base" />
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -112,7 +112,7 @@ export function ModeModal({
                   mode === value ? 'border-accent bg-subtle-strong' : 'border-line hover:bg-subtle-strong'
                 }`}
               >
-                <Icon name={icon} size="1.25rem" className={mode === value ? 'text-accent' : 'text-ink-muted'} />
+                <Icon name={icon} size="primary" className={mode === value ? 'text-accent' : 'text-ink-muted'} />
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-ink">{label}</span>
                   <span className="block text-xs text-ink-muted">{hint}</span>
@@ -177,19 +177,19 @@ export function CalendarNav({ compact = false }: { compact?: boolean }) {
         variant="accent2"
         onClick={() => step(dir)}
         aria-label={dir === 1 ? 'Next' : 'Previous'}
-        className={compact ? 'size-auto p-xs' : undefined}
+        className={compact ? 'size-8 p-0' : undefined}
       >
-        <Icon name={dir === 1 ? 'chevron_right' : 'chevron_left'} size={compact ? '1.25rem' : '1.125rem'} />
+        <Icon name={dir === 1 ? 'chevron_right' : 'chevron_left'} size={compact ? 'primary' : 'base'} />
       </IconButton>
     );
   };
 
   if (compact) {
     return (
-      <div className="flex items-center gap-xs">
+      <div className="flex items-center gap-sm">
         <ModeModal mode={calendarMode} onPick={switchMode} onToday={goToday} />
         {calendarMode !== 'month' && (
-          <div className="flex items-center bg-subtle-strong p-0.5">
+          <div className="flex items-center ">
             {arrow(-1)}
             {arrow(1)}
           </div>

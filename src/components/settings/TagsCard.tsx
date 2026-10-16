@@ -38,7 +38,7 @@ function TagMark({
         c.ink,
       )}
     >
-      <Icon name={icon} size="0.875rem" />
+      <Icon name={icon} size="micro" />
     </button>
   );
 }
@@ -143,7 +143,7 @@ export function TagsCard() {
               }}
             />
             <Button size="sm" onClick={handleAdd} disabled={!newName.trim()} className="gap-xs flex-shrink-0">
-              <Icon name="add" size="0.8125rem" />
+              <Icon name="add" size="micro" />
               Add tag
             </Button>
           </div>

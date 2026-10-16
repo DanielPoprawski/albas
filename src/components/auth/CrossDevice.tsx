@@ -50,7 +50,7 @@ export function SignedOutPanel({ browser, busy }: { browser: Browser; busy: bool
 
   if (st.kind === 'waiting' && showQr && st.url) {
     return (
-      <div className="flex flex-col items-center gap-[0.75rem] text-center">
+      <div className="flex flex-col items-center gap-3 text-center">
         <QRCodeSVG value={st.url} size={176} includeMargin />
         <p className="text-sm text-ink-secondary leading-snug">
           On a phone that's signed in, open Settings → Session → <strong>Scan to sign in another device</strong>. It
@@ -82,7 +82,7 @@ export function SignedOutPanel({ browser, busy }: { browser: Browser; busy: bool
             'Waiting for the other device…'
           )}
         </p>
-        <button type="button" className={`${LINK} mt-[0.5rem]`} onClick={() => void browser.cancel()}>
+        <button type="button" className={`${LINK} mt-2`} onClick={() => void browser.cancel()}>
           Cancel
         </button>
       </div>
@@ -90,7 +90,7 @@ export function SignedOutPanel({ browser, busy }: { browser: Browser; busy: bool
   }
 
   return (
-    <div className="flex flex-col items-center gap-[0.5rem]">
+    <div className="flex flex-col items-center gap-2">
       <button type="button" className={LINK} disabled={busy} onClick={() => void browser.start('login')}>
         More sign-in options (passkey, Google)
       </button>
@@ -185,7 +185,7 @@ export function SignedInPanel() {
             : 'Show a code for your phone to scan and it joins this account — no password typing on a small keyboard.'}
         </div>
         {offer && (
-          <div className="flex flex-col items-start gap-[0.5rem] mt-3">
+          <div className="flex flex-col items-start gap-2 mt-3">
             <QRCodeSVG value={offer.url} size={176} includeMargin />
             <p className="setting-desc mt-0">
               On the signed-out device choose <strong>Scan a code from a signed-in device</strong>. Valid for five
@@ -204,7 +204,7 @@ export function SignedInPanel() {
         )}
         {error && <FormMessage>{error}</FormMessage>}
       </div>
-      <div className="flex flex-col gap-[0.5rem] items-end">
+      <div className="flex flex-col gap-2 items-end">
         {isAndroid() && (
           <button
             type="button"

@@ -50,7 +50,7 @@ export function RightPanel() {
     onEdit: setEditing,
     expanded: expandedId === task.id,
     onToggleExpand: () => toggleExpanded(task.id),
-    className: 'px-2 py-1.5',
+    className: 'px-2 py-2',
   });
 
   return (
@@ -79,7 +79,7 @@ export function RightPanel() {
                       COLOR_CLASSES[color].text,
                     )}
                   >
-                    {icon && <Icon name={icon} size="0.75rem" />}
+                    {icon && <Icon name={icon} size="micro" />}
                     <span className="truncate">{habit.title}</span>
                   </button>
                   <HabitStrip

@@ -149,7 +149,7 @@ export function TodoViewRedesign() {
               {/* The tint and hairline are the muted ink at 8% / 20% — v4's
                   colour-opacity modifiers, which do the color-mix the old
                   inline style spelled out by hand. */}
-              <div className="mb-2.5 flex w-full items-center gap-2 border border-dashed border-ink-muted/20 bg-ink-muted/8 px-2 py-1 text-xs font-bold uppercase tracking-[0.04em] text-ink-muted">
+              <div className="mb-2 flex w-full items-center gap-2 border border-dashed border-ink-muted/20 bg-ink-muted/8 px-2 py-1 text-xs font-bold uppercase tracking-[0.04em] text-ink-muted">
                 <span className="w-2 h-2 flex-shrink-0 bg-ink-muted" />
                 <span className="flex-1">Completed</span>
                 <span className="font-semibold normal-case">{completedVisible.length}</span>

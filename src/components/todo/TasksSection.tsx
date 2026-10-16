@@ -24,7 +24,7 @@ export function TasksSection({ onEdit }: { onEdit: (s: Seed) => void }) {
     onEdit,
     expanded: expandedId === task.id,
     onToggleExpand: () => toggleExpanded(task.id),
-    className: 'px-2 py-1.5',
+    className: 'px-2 py-2',
   });
   const order = [...lists].sort(bySort).map((l) => l.id);
   const groups = groupByList(

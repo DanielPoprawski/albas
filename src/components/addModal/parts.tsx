@@ -22,13 +22,13 @@ export function FieldRow({
   const top = align === 'start';
   return (
     <div className={cn(FIELD_ROW, top && 'items-start', 'max-md:flex-wrap')}>
-      <span className={cn('micro-label w-[4.625rem] shrink-0 max-md:order-1 max-md:flex-1', top && 'pt-[0.3125rem]')}>
+      <span className={cn('micro-label w-[4.625rem] shrink-0 max-md:order-1 max-md:flex-1', top && 'pt-1')}>
         {label}
       </span>
       {/* `contents` keeps the desktop row flat; on the phone it becomes the full-width second line. */}
       <div
         className={cn(
-          'contents max-md:order-3 max-md:flex max-md:basis-full max-md:gap-2.5',
+          'contents max-md:order-3 max-md:flex max-md:basis-full max-md:gap-2',
           top ? 'max-md:items-start' : 'max-md:items-center',
         )}
       >
@@ -43,7 +43,7 @@ export function FieldRow({
           top && 'mt-1',
         )}
       >
-        <Icon name="close" size="0.6875rem" />
+        <Icon name="close" size="micro" />
       </button>
     </div>
   );

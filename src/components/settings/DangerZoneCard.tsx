@@ -38,12 +38,12 @@ export function DangerZoneCard({ onAccountDeleted }: { onAccountDeleted: () => P
         These cannot be undone. If you're signed in, the deletion syncs to your other devices too; shared calendars from
         other people are never touched.
       </p>
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         {wipes.map((w) => (
           <WipeRow key={w.label} spec={w} />
         ))}
         {signedIn && (
-          <div className="pt-5 border-t border-line">
+          <div className="pt-4 border-t border-line">
             <DeleteAccount enabled={!!syncToken} onDeleted={onAccountDeleted} />
           </div>
         )}

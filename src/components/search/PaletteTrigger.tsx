@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { Icon } from '../ui/icon';
 
 export const KBD =
-  'inline-flex items-center border border-accent-2 bg-page px-[0.3125rem] py-px text-[0.625rem] font-semibold leading-none text-accent-2';
+  'inline-flex items-center border border-accent-2 bg-page px-1 py-px text-micro font-semibold leading-none text-accent-2';
 
 /**
  * The closed state: a long, quiet bar in the page header. It never holds
@@ -32,21 +32,21 @@ export const PaletteTrigger = forwardRef<
       onKeyDown={onKey}
       className={cn(
         !compact &&
-          'flex h-8 items-center gap-2 border border-line bg-surface px-[0.625rem] cursor-text transition-[border-color,box-shadow] duration-150 hover:border-accent-line focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--t-accent-tint)]',
+          'flex h-8 items-center gap-2 border border-line bg-surface px-2 cursor-text transition-[border-color,box-shadow] duration-150 hover:border-accent-line focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--t-accent-tint)]',
         compact && query && 'text-accent',
         className,
       )}
     >
       {compact ? (
-        <Icon name="search" size="1rem" />
+        <Icon name="search" size="base" />
       ) : (
         <>
-          <Icon name="search" size="0.875rem" className="text-accent-2" />
-          <span className={cn('flex-1 min-w-0 truncate text-[0.8125rem]', query ? 'text-ink' : 'text-ink-muted')}>
+          <Icon name="search" size="micro" className="text-accent-2" />
+          <span className={cn('flex-1 min-w-0 truncate text-sm', query ? 'text-ink' : 'text-ink-muted')}>
             {query || 'Search events, tasks and habits'}
           </span>
           {query && (
-            <span className="shrink-0 bg-selection px-1.5 py-px text-micro font-semibold leading-none text-selection-ink">
+            <span className="shrink-0 bg-selection px-2 py-px text-micro font-semibold leading-none text-selection-ink">
               {count}
             </span>
           )}

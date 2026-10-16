@@ -53,7 +53,7 @@ export function BulkNotice({ notice, className }: { notice: string | null; class
   return (
     <div
       className={cn(
-        'border-t border-accent-line bg-selection px-3 py-1.5 text-xs font-semibold text-selection-ink',
+        'border-t border-accent-line bg-selection px-3 py-2 text-xs font-semibold text-selection-ink',
         className,
       )}
     >

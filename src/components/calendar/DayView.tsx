@@ -81,7 +81,7 @@ export function DayView() {
                   // dynamic: dimmed when shared
                   style={{ opacity: sharedOpacity(o.seed) }}
                 >
-                  {icon && <Icon name={icon} size="0.75rem" />}
+                  {icon && <Icon name={icon} size="micro" />}
                   {seedTitle(o.seed)}
                 </button>
               );
@@ -104,8 +104,8 @@ export function DayView() {
                     done ? c.tint : 'bg-transparent opacity-70',
                   )}
                 >
-                  <Icon name={done ? 'check_circle' : 'circle'} size="0.75rem" />
-                  {icon && <Icon name={icon} size="0.75rem" />}
+                  <Icon name={done ? 'check_circle' : 'circle'} size="micro" />
+                  {icon && <Icon name={icon} size="micro" />}
                   {seedTitle(o.seed)}
                 </button>
               );

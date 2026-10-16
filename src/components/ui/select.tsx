@@ -31,7 +31,7 @@ function SelectTrigger({ className, children, ...props }: React.ComponentProps<t
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <Icon name="expand_more" size="1rem" className="opacity-60" />
+        <Icon name="expand_more" size="base" className="opacity-60" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -59,7 +59,7 @@ function SelectContent({
         {...props}
       >
         <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
-          <Icon name="expand_less" size="1rem" />
+          <Icon name="expand_less" size="base" />
         </SelectPrimitive.ScrollUpButton>
         <SelectPrimitive.Viewport
           className={cn(
@@ -71,7 +71,7 @@ function SelectContent({
           {children}
         </SelectPrimitive.Viewport>
         <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
-          <Icon name="expand_more" size="1rem" />
+          <Icon name="expand_more" size="base" />
         </SelectPrimitive.ScrollDownButton>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
@@ -83,14 +83,14 @@ function SelectItem({ className, children, ...props }: React.ComponentProps<type
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        'relative flex w-full cursor-default items-center gap-2 py-1.5 pr-8 pl-2 text-sm select-none focus:bg-subtle focus:text-ink data-[disabled]:pointer-events-none [&_svg]:pointer-events-none',
+        'relative flex w-full cursor-default items-center gap-2 py-2 pr-8 pl-2 text-sm select-none focus:bg-subtle focus:text-ink data-[disabled]:pointer-events-none [&_svg]:pointer-events-none',
         className,
       )}
       {...props}
     >
       <span data-slot="select-item-indicator" className="absolute right-2 flex size-3.5 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <Icon name="check" size="1rem" />
+          <Icon name="check" size="base" />
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>

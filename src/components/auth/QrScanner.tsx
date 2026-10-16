@@ -63,7 +63,7 @@ export function QrScanner({
       <p className="max-w-80 text-sm leading-snug [text-shadow:0_1px_2px_rgb(0_0_0/0.6)]">{error ?? hint}</p>
       <button
         type="button"
-        className="border border-white/60 bg-white/15 px-6 py-2.5 text-sm font-semibold text-white"
+        className="border border-white/60 bg-white/15 px-6 py-2 text-sm font-semibold text-white"
         onClick={onCancel}
       >
         Cancel

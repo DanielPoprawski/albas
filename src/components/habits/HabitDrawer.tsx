@@ -21,22 +21,22 @@ export function HabitDrawer({ habit }: { habit: HabitData }) {
   const reminder = seed.reminders.length > 0 ? (seed.time ? `At ${seed.time}` : 'On due days') : 'Off';
 
   return (
-    <div className="flex flex-col gap-4 pl-[3.375rem] pr-3 pt-4 pb-5 bg-surface-hover max-md:pl-3">
+    <div className="flex flex-col gap-4 pl-[3.375rem] pr-3 pt-4 pb-4 bg-surface-hover max-md:pl-3">
       <InlineEditor seed={seed} onAdvanced={() => setEditing(seed)} />
-      <div className="flex items-start gap-8 max-md:flex-col">
-        <div className="flex flex-col gap-1.5 overflow-x-auto scrollbar-hide max-w-full">
+      <div className="flex items-start gap-6 max-md:flex-col">
+        <div className="flex flex-col gap-2 overflow-x-auto scrollbar-hide max-w-full">
           <div className="flex w-max" aria-hidden>
             {labels.map((label, i) => (
               <span
                 key={habit.cells[i * 7].dateStr}
-                className="w-[0.875rem] whitespace-nowrap overflow-visible text-[0.625rem] leading-none uppercase tracking-wider text-ink-muted"
+                className="w-[0.875rem] whitespace-nowrap overflow-visible text-micro leading-none uppercase tracking-wider text-ink-muted"
               >
                 {label}
               </span>
             ))}
           </div>
           <div
-            className="grid grid-flow-col grid-rows-[repeat(7,0.6875rem)] gap-[0.1875rem] justify-start"
+            className="grid grid-flow-col grid-rows-[repeat(7,0.6875rem)] gap-1 justify-start"
             role="group"
             aria-label={`${seed.title}, last ${HISTORY_WEEKS} weeks`}
             // dynamic: one column per week of history
@@ -55,12 +55,12 @@ export function HabitDrawer({ habit }: { habit: HabitData }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 pt-[1.125rem] max-md:pt-0">
+        <div className="flex flex-col gap-3 pt-4 max-md:pt-0">
           <span className="micro-label">
             Last {HISTORY_WEEKS} weeks · {habit.completion}% complete
           </span>
-          <span className="flex items-center gap-[0.375rem] text-xs text-ink-secondary">
-            <Icon name="notifications" size="0.8125rem" />
+          <span className="flex items-center gap-2 text-xs text-ink-secondary">
+            <Icon name="notifications" size="micro" />
             Reminder · {reminder}
           </span>
         </div>

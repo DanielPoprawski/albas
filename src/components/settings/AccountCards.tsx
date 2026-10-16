@@ -47,7 +47,7 @@ export function ProfileCard() {
 
   return (
     <Card title="Profile">
-      <div className="flex gap-4 items-center mb-5">
+      <div className="flex gap-4 items-center mb-4">
         <div className="flex size-16 shrink-0 items-center justify-center bg-accent font-heading text-2xl font-semibold text-on-accent">
           {syncAccount ? initialsOf(syncAccount) : '—'}
         </div>
@@ -319,11 +319,11 @@ export function AccountSigninCard({
           })}
 
           {/* The action row — each method's own control for adding/changing it. */}
-          <div className="flex flex-wrap gap-4 items-start mt-5">
+          <div className="flex flex-wrap gap-4 items-start mt-4">
             {methods.map((m) => (m.Action ? <m.Action key={m.id} ctx={ctx} /> : null))}
           </div>
 
-          <div className="mt-6 pt-5 border-t border-line">
+          <div className="mt-6 pt-4 border-t border-line">
             <ExportDataSection ctx={ctx} />
           </div>
         </>

@@ -56,7 +56,7 @@ export function AppearanceCard() {
             Buttons, highlights and the selected day. Hover and tint shades are derived from it.
           </div>
         </div>
-        <div className="flex items-center gap-[0.5rem] flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
             type="button"
             onClick={() => setSetting('accent', '')}
@@ -80,7 +80,7 @@ export function AppearanceCard() {
               }}
             />
           ))}
-          <label className="flex items-center gap-[0.25rem] setting-desc mt-0">
+          <label className="flex items-center gap-1 setting-desc mt-0">
             <input
               type="color"
               value={isHex(custom) ? custom : DEFAULT_ACCENT}

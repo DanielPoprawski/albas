@@ -47,7 +47,7 @@ function RepeatingRow({
           )}
           title={repeatLabel(seed, firstDayOfWeek)}
         >
-          {icon && <Icon name={icon} size="0.75rem" />}
+          {icon && <Icon name={icon} size="micro" />}
           {seed.title}
         </button>
         <span className="text-xs text-ink-muted ml-auto flex-shrink-0">{statusLabel(seed, today, firstDayOfWeek)}</span>

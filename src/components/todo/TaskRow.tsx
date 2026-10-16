@@ -79,7 +79,7 @@ export function TaskRow({
       onKeyDown={handleKeyDown}
       onContextMenu={onContextMenu}
       className={cn(
-        'group flex flex-wrap items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors hover:bg-subtle',
+        'group flex flex-wrap items-center gap-2 px-3 py-2 cursor-pointer transition-colors hover:bg-subtle',
         done && 'opacity-55',
         selected && 'bg-accent/10 ring-1 ring-inset ring-accent/30 border-l-2 border-accent',
         className,
@@ -101,20 +101,20 @@ export function TaskRow({
           done ? `${c.bg} border-transparent` : 'bg-transparent border-line-strong',
         )}
       >
-        {done && <Icon name="check" size="0.6875rem" className="text-on-accent" />}
+        {done && <Icon name="check" size="micro" className="text-on-accent" />}
       </button>
 
-      {icon && <Icon name={icon} size="0.875rem" className={cn('shrink-0', c.text)} />}
+      {icon && <Icon name={icon} size="micro" className={cn('shrink-0', c.text)} />}
 
       <div className="flex-1 min-w-0">
         <p
-          className={cn('text-ui font-body truncate transition-all', done ? 'text-ink-muted line-through' : 'text-ink')}
+          className={cn('text-sm font-body truncate transition-all', done ? 'text-ink-muted line-through' : 'text-ink')}
         >
           {task.title}
         </p>
         {due && (
           <p
-            className={cn('mt-0.5 text-meta text-ink-muted tabular-nums', due.late && !done && 'font-bold text-danger')}
+            className={cn('mt-0.5 text-xs text-ink-muted tabular-nums', due.late && !done && 'font-bold text-danger')}
             title={due.late && !done ? 'Overdue' : undefined}
           >
             {due.text}

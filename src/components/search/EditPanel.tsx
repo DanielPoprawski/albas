@@ -37,9 +37,9 @@ export function EditPanel({ s }: { s: SearchState }) {
 
   return (
     <aside className="flex w-[17.5rem] shrink-0 flex-col overflow-y-auto border-l border-line bg-surface-hover max-md:max-h-[55%] max-md:w-full max-md:border-t max-md:border-l-0">
-      <div className="flex items-start justify-between gap-3 border-b border-line px-[0.875rem] pt-3 pb-2">
+      <div className="flex items-start justify-between gap-3 border-b border-line px-3 pt-3 pb-2">
         <div className="min-w-0">
-          <div className="truncate font-heading text-[0.8125rem] font-bold text-ink">
+          <div className="truncate font-heading text-sm font-bold text-ink">
             {one ? one.title : `${items.length} selected`}
           </div>
           <div className="text-micro text-ink-muted">{subline}</div>
@@ -56,7 +56,7 @@ export function EditPanel({ s }: { s: SearchState }) {
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2.5 px-[0.875rem] pt-2.5 pb-3">
+      <div className="flex flex-1 flex-col gap-2 px-3 pt-2 pb-3">
         {one && <InlineEditor seed={one.seed} onAdvanced={s.openFullEditor} />}
 
         <section className="flex flex-col gap-1">
@@ -64,17 +64,17 @@ export function EditPanel({ s }: { s: SearchState }) {
           <button type="button" onClick={() => s.applyList('')} className={cn(LIST_BTN, 'text-ink-secondary')}>
             <span className="size-2 border border-line-strong" aria-hidden />
             <span className="flex-1 text-left">None</span>
-            {s.commonList === '' && <Icon name="check" size="0.75rem" className="text-accent" />}
+            {s.commonList === '' && <Icon name="check" size="micro" className="text-accent" />}
           </button>
           {s.listOptions.map((l) => (
             <button key={l.id} type="button" onClick={() => s.applyList(l.id)} className={cn(LIST_BTN, 'text-ink')}>
               <span className="flex-1 truncate text-left">{l.name}</span>
-              {s.commonList === l.id && <Icon name="check" size="0.75rem" className="text-accent" />}
+              {s.commonList === l.id && <Icon name="check" size="micro" className="text-accent" />}
             </button>
           ))}
         </section>
 
-        <section className="flex flex-col gap-1.5">
+        <section className="flex flex-col gap-2">
           <h4 className={SECTION}>Tags</h4>
           <TagChips
             tags={s.tagOptions}
@@ -86,13 +86,13 @@ export function EditPanel({ s }: { s: SearchState }) {
           />
         </section>
 
-        <section className="flex flex-col gap-1.5">
+        <section className="flex flex-col gap-2">
           <h4 className={SECTION}>
             Shift dates{s.datedCount < items.length && ` · ${s.datedCount} of ${items.length} have dates`}
           </h4>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button type="button" aria-label="Shift earlier" onClick={() => s.applyShift(-1)} className={STEP_BTN}>
-              <Icon name="chevron_left" size="0.8125rem" />
+              <Icon name="chevron_left" size="micro" />
             </button>
             <input
               type="number"
@@ -103,13 +103,13 @@ export function EditPanel({ s }: { s: SearchState }) {
               className="field-input h-[1.625rem] w-11 px-1 py-0 text-center text-xs"
             />
             <button type="button" aria-label="Shift later" onClick={() => s.applyShift(1)} className={STEP_BTN}>
-              <Icon name="chevron_right" size="0.8125rem" />
+              <Icon name="chevron_right" size="micro" />
             </button>
             <span className="text-xs text-ink-secondary">days</span>
           </div>
         </section>
 
-        <section className="flex flex-col gap-1.5">
+        <section className="flex flex-col gap-2">
           <h4 className={SECTION}>Reminder</h4>
           <div className="flex flex-wrap gap-1">
             {REMINDER_CHOICES.map((r) => (
@@ -118,7 +118,7 @@ export function EditPanel({ s }: { s: SearchState }) {
                 type="button"
                 onClick={() => s.applyReminder(r.value)}
                 className={cn(
-                  'whitespace-nowrap border px-[0.4375rem] py-[0.1875rem] text-micro font-medium transition-colors',
+                  'whitespace-nowrap border px-2 py-1 text-micro font-medium transition-colors',
                   s.commonReminder === r.value
                     ? 'border-accent bg-accent text-on-accent'
                     : 'border-line text-ink-secondary hover:border-accent hover:text-accent',
@@ -135,7 +135,7 @@ export function EditPanel({ s }: { s: SearchState }) {
         </div>
       </div>
 
-      <BulkNotice notice={s.notice} className="px-[0.875rem] py-2 text-micro" />
+      <BulkNotice notice={s.notice} className="px-3 py-2 text-micro" />
     </aside>
   );
 }

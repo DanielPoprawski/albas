@@ -33,13 +33,13 @@ export function TagChips({
             aria-pressed={state === 'on'}
             onClick={() => onToggle(t.id)}
             className={cn(
-              'flex items-center gap-1 border px-1.5 py-0.5 text-micro font-medium transition-colors max-md:min-h-8 max-md:px-2',
+              'flex items-center gap-1 border px-2 py-0.5 text-micro font-medium transition-colors max-md:min-h-8 max-md:px-2',
               state === 'on' && `${c.bg} border-transparent text-on-accent`,
               state === 'some' && `${c.tint} ${c.line} ${c.ink}`,
               state === 'off' && 'border-line text-ink-secondary hover:border-accent hover:text-accent',
             )}
           >
-            {t.icon && <Icon name={t.icon} size="0.75rem" />}
+            {t.icon && <Icon name={t.icon} size="micro" />}
             {t.name}
           </button>
         );

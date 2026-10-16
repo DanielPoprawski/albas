@@ -39,11 +39,11 @@ export function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, onShowDa
             Today
           </Button>
           <IconButton variant="accent2" aria-label="Previous month" onClick={() => stepMonth(nav, -1)}>
-            <Icon name="chevron_left" size="0.875rem" />
+            <Icon name="chevron_left" size="micro" />
           </IconButton>
           <MonthYearPopover month={currentMonth} onPick={setCurrentMonth} />
           <IconButton variant="accent2" aria-label="Next month" onClick={() => stepMonth(nav, 1)}>
-            <Icon name="chevron_right" size="0.875rem" />
+            <Icon name="chevron_right" size="micro" />
           </IconButton>
         </div>
 
@@ -56,7 +56,7 @@ export function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, onShowDa
             title={showRightPanel ? 'Hide side panel' : 'Show side panel'}
             onClick={toggleRightPanel}
           >
-            <Icon name={showRightPanel ? 'right_panel_close' : 'right_panel_open'} size="0.875rem" />
+            <Icon name={showRightPanel ? 'right_panel_close' : 'right_panel_open'} size="micro" />
           </IconButton>
         </div>
       </div>
@@ -71,7 +71,7 @@ export function MonthViewDesktop({ weeks, onEdit, onToggle, onDayClick, onShowDa
           return (
             <div
               key={i}
-              className={`py-xs px-1.5 text-center text-xs font-bold uppercase tracking-wider ${
+              className={`py-xs px-2 text-center text-xs font-bold uppercase tracking-wider ${
                 isWeekendCol ? 'text-ink' : 'text-ink-muted'
               }`}
             >

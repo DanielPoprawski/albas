@@ -70,7 +70,7 @@ export function Segmented<T extends string>({
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(option.value)}
             className={cn(
-              'relative -ml-px cursor-pointer border px-[0.75rem] py-[0.5rem] first:ml-0',
+              'relative -ml-px cursor-pointer border px-3 py-2 first:ml-0',
               fill && 'flex-1 min-w-0 px-1',
               'text-sm font-semibold leading-none transition-colors duration-150',
               active

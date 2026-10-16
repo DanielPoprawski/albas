@@ -97,10 +97,19 @@ unnecessary. A new file or dependency needs a reason a smaller edit couldn't cov
   stylesheets) beyond the `// dynamic:` exception. Don't lift `className` strings into `const`s; if a set
   of classes must be shared, express the variation as a small JS map (`variant → classes`), and only when
   the string would otherwise sit far from its element or is reused 5+ times — otherwise keep the literal.
-- **rem, not px**: Settings › Text size scales `html` font-size, so icons (`components/ui/icon.tsx`, Material Symbols ligatures) take `size="1rem"`,
-  calendar geometry is `@theme` `--spacing-hour-h/gutter-w/lane-h/lane-row`, text sizes are Tailwind's
-  `text-xs`…`text-lg` or `text-micro/meta/ui/h1`. px only for 1–2px hairlines. Radius 0, no focus
-  outlines, by design. `min-h-0` on every `flex flex-col` ancestor of `HourGrid`.
+- **Scale classes, never typed values**: sizes come from a fixed scale, not from `-[0.875rem]`/`-[12px]`
+  brackets or raw CSS lengths; that is what keeps the app consistent. Everything is rem-based because
+  Settings › Text size scales `html` font-size.
+  - Spacing (padding, margin, gap): steps `0.5 1 2 3 4 6` (2/4/8/12/16/24px), or the aliases
+    `xs`/`base`/`sm`/`md` that equal them. No `1.5`, `2.5`, `5`, `8`. List rows are `px-3 py-2`.
+  - Text: `text-micro` (badges, weekday initials), `text-xs` (metadata, dates, hints), `text-sm` (body,
+    row titles, inputs), `text-base` (card/dialog titles), `text-h1` (screen titles).
+  - Icons (`components/ui/icon.tsx`, Material Symbols ligatures): `size="micro|base|primary"` = inline /
+    control / nav.
+  - Exceptions, each a value the scale can't express: 1–2px hairlines, calendar geometry (`@theme`
+    `--spacing-hour-h/gutter-w/lane-h/lane-row`), widths/heights of fixed components, and offsets that
+    align with another element (e.g. `HabitDrawer`'s `pl-[3.375rem]`). Need a new size? Add a `@theme` token.
+  - Radius 0, no focus outlines, by design. `min-h-0` on every `flex flex-col` ancestor of `HourGrid`.
 - Creating things goes through `createItem.ts` `buildCreate()` (`QuickAddField`, calendar clicks, Ctrl+N);
   the Add modal has no type switch — a doable checkbox beside the title and one options list
   (`addModal/catalog.ts` `OPTIONS` with `when` predicates) cover events, to-dos and habits.

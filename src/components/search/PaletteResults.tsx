@@ -48,7 +48,7 @@ export function PaletteResults({ s }: { s: SearchState }) {
 
   return (
     <>
-      <div className="flex items-center gap-4 border-b border-line px-[0.875rem]">
+      <div className="flex items-center gap-4 border-b border-line px-3">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -57,7 +57,7 @@ export function PaletteResults({ s }: { s: SearchState }) {
             aria-selected={s.tab === t.id}
             onClick={() => s.setTab(t.id)}
             className={cn(
-              'flex items-center gap-1.5 border-b-2 pt-2 pb-1.5 text-micro font-semibold uppercase tracking-wider transition-colors',
+              'flex items-center gap-2 border-b-2 pt-2 pb-2 text-micro font-semibold uppercase tracking-wider transition-colors',
               s.tab === t.id ? 'border-accent text-accent' : 'border-transparent text-ink-muted hover:text-ink',
             )}
           >
@@ -78,9 +78,9 @@ export function PaletteResults({ s }: { s: SearchState }) {
         </div>
       </div>
 
-      <ul ref={list} role="listbox" aria-label="Search results" className="flex-1 min-h-0 overflow-y-auto py-1.5">
+      <ul ref={list} role="listbox" aria-label="Search results" className="flex-1 min-h-0 overflow-y-auto py-2">
         {s.hits.length === 0 && (
-          <li className="px-[0.875rem] py-6 text-center text-[0.8125rem] text-ink-muted">
+          <li className="px-3 py-6 text-center text-sm text-ink-muted">
             {s.plan.mode === 'regex' && !s.plan.ok
               ? 'Finish the pattern to see matches.'
               : s.query.trim() || s.tagFilter.length === 0
@@ -103,7 +103,7 @@ export function PaletteResults({ s }: { s: SearchState }) {
               onMouseEnter={() => s.setActive(i)}
               onClick={() => s.primaryAction(item)}
               className={cn(
-                'flex cursor-pointer items-center gap-2.5 border-l-2 py-2 pr-[0.875rem] pl-3',
+                'flex cursor-pointer items-center gap-2 border-l-2 py-2 pr-3 pl-3',
                 isActive ? 'border-accent bg-surface-hover' : 'border-transparent',
                 isSelected && 'bg-accent-tint',
               )}
@@ -120,14 +120,14 @@ export function PaletteResults({ s }: { s: SearchState }) {
                 <span className="size-4 shrink-0" aria-hidden />
               )}
               {icon ? (
-                <Icon name={icon} size="0.875rem" className={cn('shrink-0', COLOR_CLASSES[item.color].text)} />
+                <Icon name={icon} size="micro" className={cn('shrink-0', COLOR_CLASSES[item.color].text)} />
               ) : (
                 <span className={cn('size-2 shrink-0', COLOR_CLASSES[item.color].bg)} aria-hidden />
               )}
               <span className="flex-1 min-w-0">
                 <span
                   className={cn(
-                    'block truncate text-[0.8125rem] font-medium text-ink',
+                    'block truncate text-sm font-medium text-ink',
                     isTask(item.seed) && isDone(item.seed) && 'line-through opacity-55',
                   )}
                 >
@@ -142,12 +142,12 @@ export function PaletteResults({ s }: { s: SearchState }) {
                 )}
               </span>
               {item.hasReminder && (
-                <Icon name="notifications" size="0.75rem" className="text-accent" aria-label="Has a reminder" />
+                <Icon name="notifications" size="micro" className="text-accent" aria-label="Has a reminder" />
               )}
               <span className="min-w-[5.75rem] shrink-0 text-right text-micro text-ink-secondary tabular-nums">
                 {dateLabel(item, s.firstDayOfWeek)}
               </span>
-              <span className="w-9 shrink-0 text-[0.5625rem] font-bold uppercase text-ink-muted">
+              <span className="w-10 shrink-0 text-micro font-bold uppercase text-ink-muted">
                 {kindLabel(item.seed)}
               </span>
             </li>
@@ -156,11 +156,9 @@ export function PaletteResults({ s }: { s: SearchState }) {
       </ul>
 
       {/* Keyboard hints: nothing to press on a phone. */}
-      <div className="flex items-center justify-between gap-4 border-t border-line px-[0.875rem] py-2 text-micro text-ink-muted max-md:hidden">
+      <div className="flex items-center justify-between gap-4 border-t border-line px-3 py-2 text-micro text-ink-muted max-md:hidden">
         <span>↑↓ move · ↵ open · ⇧↵ select · Ctrl+⇧A select all · Ctrl+⇧D deselect all</span>
-        <span className="font-mono text-[0.625rem] whitespace-nowrap">
-          'exact !exclude ^start end$ /regex/ cat:health
-        </span>
+        <span className="font-mono text-micro whitespace-nowrap">'exact !exclude ^start end$ /regex/ cat:health</span>
       </div>
     </>
   );

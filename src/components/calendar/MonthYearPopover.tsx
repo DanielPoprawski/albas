@@ -31,20 +31,20 @@ export function MonthYearPopover({ month, onPick }: { month: Date; onPick: (mont
         <button
           type="button"
           aria-label="Choose month and year"
-          className="flex items-center gap-1 px-xs py-[0.375rem] text-sm font-medium font-body text-ink hover:text-accent transition-colors"
+          className="flex items-center gap-1 px-xs py-2 text-sm font-medium font-body text-ink hover:text-accent transition-colors"
         >
           {month.toLocaleString('default', { month: 'long', year: 'numeric' })}
-          <Icon name="expand_more" size="0.875rem" className="text-ink-muted" />
+          <Icon name="expand_more" size="micro" className="text-ink-muted" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-[14rem]">
         <div className="flex items-center justify-between mb-2">
           <IconButton aria-label="Previous year" onClick={() => setYear((y) => y - 1)}>
-            <Icon name="chevron_left" size="0.875rem" />
+            <Icon name="chevron_left" size="micro" />
           </IconButton>
           <span className="font-heading text-sm font-bold text-ink tabular-nums">{year}</span>
           <IconButton aria-label="Next year" onClick={() => setYear((y) => y + 1)}>
-            <Icon name="chevron_right" size="0.875rem" />
+            <Icon name="chevron_right" size="micro" />
           </IconButton>
         </div>
         <div className="grid grid-cols-3 gap-1">
@@ -61,7 +61,7 @@ export function MonthYearPopover({ month, onPick }: { month: Date; onPick: (mont
                   setOpen(false);
                 }}
                 className={cn(
-                  'py-1.5 text-xs font-medium border transition-colors',
+                  'py-2 text-xs font-medium border transition-colors',
                   viewed
                     ? 'bg-accent border-accent text-on-accent'
                     : current

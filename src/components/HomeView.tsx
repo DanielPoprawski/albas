@@ -70,15 +70,18 @@ export function HomeView() {
     <div className="flex h-full w-full flex-col bg-page">
       {/* Mobile Header: [calendar view] [date / tab name] [search, settings].
           Both sides are two buttons wide so the title stays centred. */}
-      <div className="z-10 flex h-10 shrink-0 items-center justify-between border-b border-line bg-surface px-2">
-        <div className="flex w-18 gap-2">{currentTab === 'dashboard' && <CalendarNav compact />}</div>
-        <div className="flex-1 text-center font-heading text-sm font-bold text-ink">
-          {/* Top bar view with either the date or the tab name, depending on which tab is active. */}
+      {/* Top bar */}
+      <div className="flex items-center justify-between text-center font-heading text-sm p-2 font-bold text-ink">
+        {/* Left side */}
+        <div className="flex flex-1 justify-start">{currentTab === 'dashboard' && <CalendarNav compact />}</div>
+        {/* Center panel */}
+        <div className="shrink-0 ">
           {currentTab === 'dashboard' && displayDate()}
           {currentTab === 'habits' && 'Habits'}
           {currentTab === 'tasks' && 'Tasks'}
         </div>
-        <div className="flex w-18 justify-end gap-2">
+        {/* Right side */}
+        <div className="flex flex-1 justify-end gap-2">
           <SearchPalette scope={SEARCH_SCOPE[currentTab]} compact className={MOBILE_HEADER_BUTTON} />
           {/* The only route to Settings on a phone: the sidebar and bottom bar
               are `max-md:hidden`, and the tab row has no slot. */}
@@ -88,7 +91,7 @@ export function HomeView() {
             title="Settings"
             onClick={() => setActiveView('settings')}
           >
-            <Icon name="settings" size="1rem" />
+            <Icon name="settings" size="base" />
           </button>
         </div>
       </div>
@@ -108,7 +111,7 @@ export function HomeView() {
           onClick={() => setAdding(true)}
           className="fixed right-4 bottom-19 z-20 flex size-12 cursor-pointer items-center justify-center border-0 bg-accent text-on-accent shadow-pop active:bg-accent-hover"
         >
-          <Icon name="add" size="1.25rem" />
+          <Icon name="add" size="primary" />
         </button>
       )}
 
@@ -122,7 +125,7 @@ export function HomeView() {
             onClick={() => setCurrentTab(tab)}
             title={label}
           >
-            <Icon name={icon} size="1.125rem" />
+            <Icon name={icon} size="primary" />
             <span>{label}</span>
           </button>
         ))}

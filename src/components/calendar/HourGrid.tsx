@@ -183,7 +183,7 @@ export function HourGrid({ days, occurrences, onEdit, onToggle, onSelectDate, on
                       {occ.seed.track && !occ.seed.sharedBy && (
                         <Icon
                           name={done ? 'check_box' : 'check_box_outline_blank'}
-                          size="0.75rem"
+                          size="micro"
                           className="cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -191,10 +191,9 @@ export function HourGrid({ days, occurrences, onEdit, onToggle, onSelectDate, on
                           }}
                         />
                       )}
-                      {icon && <Icon name={icon} size="0.75rem" />}
-                      <span className={cn('min-w-0 truncate', done && 'line-through opacity-50')}>
-                        {seedTitle(occ.seed)}
-                      </span>
+                      {icon && <Icon name={icon} size="micro" />}
+                      {/* IMPORTANT: Never truncate the titles */}
+                      <span className={cn('min-w-0', done && 'line-through opacity-50')}>{seedTitle(occ.seed)}</span>
                     </div>
                     {minutes >= 45 && (
                       <div className="text-xs opacity-70 overflow-hidden whitespace-nowrap">

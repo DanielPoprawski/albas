@@ -3,14 +3,14 @@ import { errorMessage } from '@/lib/utils';
 import { Card as UiCard } from '../ui/card';
 import { FormMessage } from '../ui/field';
 
-const SW_TH = 'micro-label border-b border-line px-2.5 py-2 text-left';
-export const SW_TD = 'border-b border-subtle p-2.5 text-ink';
+const SW_TH = 'micro-label border-b border-line px-2 py-2 text-left';
+export const SW_TD = 'border-b border-subtle p-2 text-ink';
 /** The hairline belongs *between* rows, so the last row drops it. */
 export const SW_TR = 'last:[&>td]:border-b-0';
 /** A muted inline text button ("Advanced", "Show recovery codes"). */
 export const LINK_MUTED = 'cursor-pointer border-0 bg-transparent p-0 text-xs text-ink-muted underline hover:text-ink';
 /** A flat inset row inside a card (the share lists). */
-export const ROW_INSET = 'mb-1 flex items-center gap-3 bg-subtle px-2 py-1.5';
+export const ROW_INSET = 'mb-1 flex items-center gap-3 bg-subtle px-2 py-2';
 
 /** Where a card's one background action is: the shape every Settings card reports with. */
 export type AsyncState =

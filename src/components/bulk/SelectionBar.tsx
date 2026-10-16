@@ -68,7 +68,7 @@ export function SelectionBar({
         </button>
         {scope === 'tasks' && (
           <>
-            <label className="flex items-center gap-1.5 text-xs text-ink-secondary">
+            <label className="flex items-center gap-2 text-xs text-ink-secondary">
               List
               <Select options={listOptions} value={common} onChange={actions.applyList} className="w-auto" />
             </label>

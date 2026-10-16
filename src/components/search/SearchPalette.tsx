@@ -175,8 +175,8 @@ export function SearchPalette({
               style={{ left, width }}
             >
               <div className="flex min-w-0 flex-1 flex-col">
-                <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line px-[0.875rem] py-1.5">
-                  <Icon name="search" size="1rem" className="text-accent" />
+                <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
+                  <Icon name="search" size="base" className="text-accent" />
                   {/* The tag filter, as removable chips ahead of the text; Backspace in an empty input drops the last. */}
                   {filterTags.map((t) => (
                     <button
@@ -185,12 +185,12 @@ export function SearchPalette({
                       aria-label={`Remove tag filter ${t.name}`}
                       onClick={() => s.toggleTagFilter(t.id)}
                       className={cn(
-                        'flex shrink-0 items-center gap-1 px-1.5 py-0.5 text-micro font-semibold text-on-accent max-md:min-h-8',
+                        'flex shrink-0 items-center gap-1 px-2 py-0.5 text-micro font-semibold text-on-accent max-md:min-h-8',
                         COLOR_CLASSES[t.color].bg,
                       )}
                     >
                       #{t.name}
-                      <Icon name="close" size="0.75rem" />
+                      <Icon name="close" size="micro" />
                     </button>
                   ))}
                   <input
@@ -208,7 +208,7 @@ export function SearchPalette({
                   {regexChip && (
                     <span
                       className={cn(
-                        'flex shrink-0 items-center gap-1 px-[0.4375rem] py-0.5 text-micro font-semibold leading-none',
+                        'flex shrink-0 items-center gap-1 px-2 py-0.5 text-micro font-semibold leading-none',
                         regexChip.live ? 'bg-selection text-selection-ink' : 'bg-subtle text-ink-secondary',
                       )}
                     >
@@ -223,11 +223,11 @@ export function SearchPalette({
                     aria-pressed={tagsOpen}
                     onClick={() => setTagsOpen((v) => !v)}
                     className={cn(
-                      'shrink-0 hover:text-ink max-md:p-1.5',
+                      'shrink-0 hover:text-ink max-md:p-2',
                       tagsOpen || filterTags.length > 0 ? 'text-accent' : 'text-ink-muted',
                     )}
                   >
-                    <Icon name="sell" size="1rem" />
+                    <Icon name="sell" size="base" />
                   </button>
                   {(s.query || filterTags.length > 0) && (
                     <button
@@ -240,7 +240,7 @@ export function SearchPalette({
                       }}
                       className="shrink-0 text-ink-muted hover:text-ink"
                     >
-                      <Icon name="close" size="0.875rem" />
+                      <Icon name="close" size="micro" />
                     </button>
                   )}
                   <kbd className={cn(KBD, 'max-md:hidden')}>esc</kbd>
@@ -250,7 +250,7 @@ export function SearchPalette({
                     tags={s.tagOptions}
                     stateOf={(id) => (s.tagFilter.includes(id) ? 'on' : 'off')}
                     onToggle={s.toggleTagFilter}
-                    className="shrink-0 border-b border-line px-[0.875rem] py-2"
+                    className="shrink-0 border-b border-line px-3 py-2"
                   />
                 )}
                 <PaletteResults s={s} />

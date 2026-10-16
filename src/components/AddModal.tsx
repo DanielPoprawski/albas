@@ -450,7 +450,7 @@ export function AddModal({
     list: has('list') && (
       <FieldRow label="List" align="start" onRemove={() => removeOn('list')}>
         <div className="flex-1 flex flex-col gap-2">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {sortedLists.map((l) => (
               <button
                 key={l.id}
@@ -467,7 +467,7 @@ export function AddModal({
             </button>
           </div>
           {newListOpen && (
-            <div className={cn(FIELD_ROW, 'gap-1.5')}>
+            <div className={cn(FIELD_ROW, 'gap-2')}>
               <input
                 autoFocus
                 placeholder="List name"
@@ -492,7 +492,7 @@ export function AddModal({
     tags: has('tags') && (
       <FieldRow label="Tags" align="start" onRemove={() => removeOn('tags')}>
         <div className="flex-1 flex flex-col gap-2">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {sortedTags.map((t) => {
               const selected = seedTags.includes(t.id);
               return (
@@ -504,7 +504,7 @@ export function AddModal({
                   className="chip"
                   data-selected={selected || undefined}
                 >
-                  <Icon name={t.icon} size="0.875rem" className={COLOR_CLASSES[t.color].text} />
+                  <Icon name={t.icon} size="micro" className={COLOR_CLASSES[t.color].text} />
                   {t.name}
                 </button>
               );
@@ -514,7 +514,7 @@ export function AddModal({
             </button>
           </div>
           {newTagOpen && (
-            <div className={cn(FIELD_ROW, 'flex-col items-stretch gap-1.5')}>
+            <div className={cn(FIELD_ROW, 'flex-col items-stretch gap-2')}>
               <input
                 autoFocus
                 placeholder="Tag name"
@@ -542,7 +542,7 @@ export function AddModal({
                       newTagIcon === icon && `border-accent ${COLOR_CLASSES[newTagColor].text}`,
                     )}
                   >
-                    <Icon name={icon} size="1rem" />
+                    <Icon name={icon} size="base" />
                   </button>
                 ))}
               </div>
@@ -567,7 +567,7 @@ export function AddModal({
     remind: has('remind') && (
       <FieldRow label="Remind" align="start" onRemove={() => removeOn('remind')}>
         <div className="flex-1 flex flex-col gap-2">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {Array.from(new Set([...REMINDER_QUICK, ...Object.keys(reminders).map(Number)]))
               .sort((a, b) => a - b)
               .map((m) => (
@@ -702,7 +702,7 @@ export function AddModal({
           Below `md` the aside is gone and a strip of `+` chips does that job. */}
       <div className="flex max-md:flex-col">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-[0.875rem] px-5 pt-[1.125rem] pb-1">
+          <div className="flex flex-col gap-3 px-4 pt-4 pb-1">
             {/* Title row: the doable checkbox, the colour dot, the title, the star */}
             <div className="flex items-center gap-2">
               <Checkbox
@@ -761,7 +761,7 @@ export function AddModal({
                   className="relative w-full border-0 border-b-2 border-line bg-transparent pt-1 pb-2 text-lg font-medium text-ink transition-colors duration-150 placeholder:text-ink-muted focus:border-accent"
                 />
               </div>
-              <StarButton important={important} onToggle={() => setImportant((v) => !v)} size="1.25rem" />
+              <StarButton important={important} onToggle={() => setImportant((v) => !v)} size="primary" />
             </div>
 
             {/* Appears the moment a date/time phrase is recognised in the title,
@@ -777,7 +777,7 @@ export function AddModal({
 
             {/* When: always shown. The time and the end join it as options. */}
             <div className={cn(FIELD_ROW, 'flex-col items-stretch gap-2 p-3 bg-page border border-line')}>
-              <div className="flex flex-wrap items-center gap-[0.625rem]">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="micro-label w-[2.875rem] shrink-0">{clearable ? 'Due' : 'When'}</span>
                 <DateField
                   className="flex-1 min-w-[8rem]"
@@ -795,7 +795,7 @@ export function AddModal({
                 {has('time') && timeInput('Start time', time, setTime)}
               </div>
               {has('ends') && (
-                <div className="flex flex-wrap items-center gap-[0.625rem]">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="micro-label w-[2.875rem] shrink-0">Ends</span>
                   <DateField
                     className="flex-1 min-w-[8rem]"
@@ -816,7 +816,7 @@ export function AddModal({
             ))}
 
             {/* Phone: the options not yet on, as `+` chips. */}
-            <div className="hidden max-md:flex flex-wrap gap-1.5">
+            <div className="hidden max-md:flex flex-wrap gap-2">
               {options
                 .filter((o) => !has(o.key))
                 .map((o) => (
@@ -830,10 +830,10 @@ export function AddModal({
           </div>
         </div>
 
-        <aside className="w-[14rem] shrink-0 border-l border-line px-5 pt-[1.125rem] pb-4 max-md:hidden">
+        <aside className="w-[14rem] shrink-0 border-l border-line px-4 pt-4 pb-4 max-md:hidden">
           <div className="micro-label pb-2">Options</div>
           {options.map((o) => (
-            <label key={o.key} className="flex cursor-pointer items-center gap-2.5 py-1.5 text-sm text-ink">
+            <label key={o.key} className="flex cursor-pointer items-center gap-2 py-2 text-sm text-ink">
               <Checkbox checked={has(o.key)} onCheckedChange={() => toggleField(o.key)} />
               {o.label}
             </label>

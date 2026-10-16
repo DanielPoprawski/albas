@@ -22,7 +22,7 @@ export function DeleteRow({
   if (!armed) {
     return (
       <IconButton onClick={() => onArm(true)} aria-label={`Delete ${label}`}>
-        <Icon name="delete" size="0.875rem" />
+        <Icon name="delete" size="micro" />
       </IconButton>
     );
   }
@@ -57,12 +57,12 @@ export function MoveButtons({
   onMove: (dir: -1 | 1) => void;
 }) {
   return (
-    <div className="flex items-center gap-[0.125rem] flex-shrink-0">
+    <div className="flex items-center gap-0.5 flex-shrink-0">
       <IconButton onClick={() => onMove(-1)} disabled={index === 0} aria-label="Move up">
-        <Icon name="expand_less" size="0.875rem" />
+        <Icon name="expand_less" size="micro" />
       </IconButton>
       <IconButton onClick={() => onMove(1)} disabled={index === length - 1} aria-label="Move down">
-        <Icon name="expand_more" size="0.875rem" />
+        <Icon name="expand_more" size="micro" />
       </IconButton>
     </div>
   );
@@ -129,7 +129,7 @@ export function ListsCard() {
             }}
           />
           <Button size="sm" onClick={handleAdd} disabled={!newName.trim()} className="gap-xs flex-shrink-0">
-            <Icon name="add" size="0.8125rem" />
+            <Icon name="add" size="micro" />
             Add list
           </Button>
         </div>

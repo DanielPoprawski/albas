@@ -6,14 +6,9 @@ import { cn } from '@/lib/utils';
  * classes rather than a template: Tailwind only emits what it can read.
  */
 const SIZES = {
-  '0.625rem': 'text-[0.625rem]',
-  '0.6875rem': 'text-[0.6875rem]',
-  '0.75rem': 'text-[0.75rem]',
-  '0.8125rem': 'text-[0.8125rem]',
-  '0.875rem': 'text-[0.875rem]',
-  '1rem': 'text-[1rem]',
-  '1.125rem': 'text-[1.125rem]',
-  '1.25rem': 'text-[1.25rem]',
+  micro: 'text-[0.75rem]',
+  base: 'text-[1rem]',
+  primary: 'text-[1.25rem]',
 } as const;
 
 export type IconSize = keyof typeof SIZES;

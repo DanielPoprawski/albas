@@ -46,7 +46,7 @@ export function PasswordForm({
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-[0.875rem]">
+    <form onSubmit={submit} className="flex flex-col gap-3">
       <div>
         <label className={LABEL} htmlFor={`pw-${mode}-name`}>
           Account name

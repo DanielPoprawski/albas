@@ -104,8 +104,8 @@ export function WeekView() {
                 className={cn(
                   'cursor-pointer h-[0.3125rem] mb-0.5 opacity-65',
                   COLOR_CLASSES[colorOf(seg.item.seed)].bg,
-                  seg.startsHere && 'ml-1.5',
-                  seg.endsHere && 'mr-1.5',
+                  seg.startsHere && 'ml-2',
+                  seg.endsHere && 'mr-2',
                 )}
                 // dynamic: grid placement
                 style={{ gridColumn: `${seg.startCol} / span ${seg.span}`, gridRow: lane + 1 }}
@@ -131,7 +131,7 @@ export function WeekView() {
                     opacity: sharedOpacity(seg.item.seed),
                   }}
                 >
-                  {icon && <Icon name={icon} size="0.75rem" />}
+                  {icon && <Icon name={icon} size="micro" />}
                   {seg.startsHere ? seedTitle(seg.item.seed) : '…'}
                 </div>
               );
@@ -168,15 +168,16 @@ export function WeekView() {
                         {!o.seed.sharedBy && (
                           <Icon
                             name={done ? 'check_box' : 'check_box_outline_blank'}
-                            size="0.75rem"
+                            size="micro"
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleDone(o.seed.id, occToggleDate(o, todayStr));
                             }}
                           />
                         )}
-                        {icon && <Icon name={icon} size="0.75rem" />}
-                        <span className="min-w-0 truncate">{seedTitle(o.seed)}</span>
+                        {icon && <Icon name={icon} size="micro" />}
+                        {/* IMPORTANT: Never truncate seed title */}
+                        <span className="min-w-0">{seedTitle(o.seed)}</span>
                       </div>
                     );
                   })}
